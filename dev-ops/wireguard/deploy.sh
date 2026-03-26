@@ -12,7 +12,9 @@ source "${SERVICE_DIR}/../sh/lib/common.sh"
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
   usage_header
   echo
-  echo "Deploy the WireGuard Easy stack defined in wg-easy.yaml."
+  echo "Server-side entrypoint: deploy the WireGuard Easy stack defined in wg-easy.yaml."
+  echo "Use generate-wg-password-hash.sh first to produce WG_PASSWORD_HASH."
+  echo "This script does not install a WireGuard client on the host."
   exit 0
 fi
 

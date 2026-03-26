@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 #
 # 渲染并部署 Unbound DNS 容器。
-# 本地记录和转发器配置都采用模板形式保存，这样 DNS 拓扑可以放到 env 中管理，
-# 同时仍然能够生成可重复的配置文件。
+# 记录文件使用本地维护的 conf 清单，避免把真实域名和内网地址写入仓库模板。
 
 set -euo pipefail
 
@@ -13,14 +12,26 @@ source "${SERVICE_DIR}/../sh/lib/common.sh"
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
   usage_header
   echo
-  echo "Render unbound config templates and deploy unbound.yaml."
+  echo "Seed local unbound record files when missing and deploy unbound.yaml."
+  echo "Before deploy, make sure no local DNS service is still binding port 53."
+  echo "Use ./setup.sh if you want this directory to also disable systemd-resolved and rewrite /etc/resolv.conf."
   exit 0
 fi
 
 load_standard_env "${SERVICE_DIR}"
 ensure_value UNBOUND_IMAGE
 
-# 在启动容器前，先渲染两个会被 bind mount 进去的 Unbound 配置片段。
-render_template "${SERVICE_DIR}/a-records.conf" "${SERVICE_DIR}/a-records.generated.conf"
-render_template "${SERVICE_DIR}/forward-records.conf" "${SERVICE_DIR}/forward-records.generated.conf"
+seed_local_file() {
+  local example_file="$1"
+  local target_file="$2"
+
+  if [ ! -f "${target_file}" ]; then
+    cp "${example_file}" "${target_file}"
+    log "seeded $(basename "${target_file}") from example template"
+  fi
+}
+
+seed_local_file "${SERVICE_DIR}/local-records.conf.example" "${SERVICE_DIR}/local-records.conf"
+seed_local_file "${SERVICE_DIR}/forward-zones.conf.example" "${SERVICE_DIR}/forward-zones.conf"
+
 run_compose_stack "${SERVICE_DIR}" "unbound.yaml"

@@ -15,7 +15,7 @@ build_url() {
   local host="$2"
   local port="${3:-}"
 
-  if [ -n "${port}" ]; then
+  if [ -n "${port}" ] && ! { [ "${scheme}" = "https" ] && [ "${port}" = "443" ]; } && ! { [ "${scheme}" = "http" ] && [ "${port}" = "80" ]; }; then
     printf '%s://%s:%s' "${scheme}" "${host}" "${port}"
   else
     printf '%s://%s' "${scheme}" "${host}"
@@ -29,42 +29,14 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
   exit 0
 fi
 
-load_standard_env "${SERVICE_DIR}"
-
-# 只在 env 中暴露原子化的地址与端口字段，完整 URL 在这里组合。
-: "${GITLAB_EXTERNAL_SCHEME:=https}"
-: "${GITLAB_EXTERNAL_HOST:=gitlab.example.com}"
-: "${GITLAB_EXTERNAL_PORT:=443}"
-: "${GITLAB_HTTP_PORT:=8080}"
-: "${GITLAB_INTERNAL_HTTP_PORT:=80}"
-: "${GITLAB_SSH_PORT:=222}"
-: "${GITLAB_DNS_PRIMARY:=1.1.1.1}"
-: "${GITLAB_CONFIG_DIR:=./config}"
-: "${GITLAB_DATA_DIR:=./data}"
-: "${GITLAB_LOG_DIR:=./logs}"
-: "${GITLAB_GITDATA_DIR:=./gitdata}"
-: "${GITLAB_CERTS_DIR:=./certs}"
-
-: "${GITLAB_REGISTRY_EXTERNAL_SCHEME:=https}"
-: "${GITLAB_REGISTRY_EXTERNAL_HOST:=registry.example.com}"
-: "${GITLAB_REGISTRY_EXTERNAL_PORT:=5050}"
-: "${GITLAB_REGISTRY_BIND_PORT:=5050}"
-: "${GITLAB_REGISTRY_INTERNAL_PORT:=5000}"
-: "${GITLAB_REGISTRY_DATA_DIR:=./certs/shared/registry}"
-: "${GITLAB_REGISTRY_ISSUER:=gitlab-registry}"
-
-: "${SMTP_HOST:=mail.example.com}"
-: "${SMTP_PORT:=465}"
-: "${SMTP_DOMAIN:=example.com}"
-: "${SMTP_TLS:=true}"
-: "${SMTP_FROM:=noreply@example.com}"
-: "${SMTP_REPLY_TO:=noreply@example.com}"
+load_env_with_example "${SERVICE_DIR}"
 
 GITLAB_EXTERNAL_URL="$(build_url "${GITLAB_EXTERNAL_SCHEME}" "${GITLAB_EXTERNAL_HOST}" "${GITLAB_EXTERNAL_PORT}")"
 GITLAB_REGISTRY_EXTERNAL_URL="$(build_url "${GITLAB_REGISTRY_EXTERNAL_SCHEME}" "${GITLAB_REGISTRY_EXTERNAL_HOST}" "${GITLAB_REGISTRY_EXTERNAL_PORT}")"
 GITLAB_REGISTRY_HOST="${GITLAB_REGISTRY_EXTERNAL_HOST}"
 GITLAB_REGISTRY_PORT="${GITLAB_REGISTRY_EXTERNAL_PORT}"
 GITLAB_REGISTRY_AUTH_REALM="${GITLAB_EXTERNAL_URL}/jwt/auth"
+SMTP_REPLY_TO="${SMTP_REPLY_TO:-${SMTP_FROM}}"
 
 export GITLAB_EXTERNAL_URL GITLAB_REGISTRY_EXTERNAL_URL GITLAB_REGISTRY_HOST
 export GITLAB_REGISTRY_PORT GITLAB_REGISTRY_AUTH_REALM
@@ -77,4 +49,5 @@ export GITLAB_CONTAINER_NAME GITLAB_REGISTRY_IMAGE GITLAB_REGISTRY_CONTAINER_NAM
 
 ensure_value GITLAB_IMAGE
 ensure_value GITLAB_EXTERNAL_HOST
+ensure_value GITLAB_REGISTRY_EXTERNAL_HOST
 run_compose_stack "${SERVICE_DIR}" "gitlab.yaml"

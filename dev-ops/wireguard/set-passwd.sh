@@ -9,5 +9,5 @@ SERVICE_DIR="$(cd "$(dirname "$0")" && pwd)"
 TARGET_SCRIPT="${SERVICE_DIR}/generate-wg-password-hash.sh"
 
 printf '[%s] %s\n' "$(basename "$0")" \
-  "Deprecated entrypoint. Use $(basename "${TARGET_SCRIPT}") to generate WG_PASSWORD_HASH." >&2
+  "Deprecated helper. Use $(basename "${TARGET_SCRIPT}") for server-side WG_PASSWORD_HASH generation." >&2
 exec "${TARGET_SCRIPT}" "$@"

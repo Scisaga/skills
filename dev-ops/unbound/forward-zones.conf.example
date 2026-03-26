@@ -1,0 +1,13 @@
+# 在本机维护上游递归解析器或条件转发规则。
+# 建议把真实内容写入未纳入版本控制的 forward-zones.conf。
+
+forward-zone:
+    name: .
+    forward-addr: 8.8.8.8
+    # forward-addr: 1.1.1.1@853#cloudflare-dns.com
+    # forward-addr: 8.8.8.8@853#dns.google
+
+# 条件转发示例
+# forward-zone:
+#     name: internal.example.
+#     forward-addr: 10.0.0.53

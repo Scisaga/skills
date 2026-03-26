@@ -57,6 +57,14 @@ load_standard_env() {
   load_env_file "${service_dir}/.env.local"
 }
 
+# 先加载仓库中的示例默认值，再允许本地 env 覆盖。
+load_env_with_example() {
+  local service_dir="$1"
+
+  load_env_file "${service_dir}/.env.example"
+  load_standard_env "${service_dir}"
+}
+
 # 在执行前强制要求某个环境变量非空。
 ensure_value() {
   local name="$1"

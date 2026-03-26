@@ -1,0 +1,21 @@
+# 在本机维护需要覆盖或补充的权威记录。
+# 建议把真实内容写入未纳入版本控制的 local-records.conf。
+
+server:
+  # A / AAAA 记录
+  # local-data: "git.example.com. A 10.0.0.10"
+  # local-data: "git-v6.example.com. AAAA 2001:db8::10"
+
+  # PTR 记录
+  # local-data-ptr: "10.0.0.10 git.example.com"
+  # local-data-ptr: "2001:db8::10 git-v6.example.com"
+
+  # CNAME 记录
+  # local-data: "registry.example.com. CNAME git.example.com."
+
+  # MX / TXT 记录
+  # local-data: "example.com. MX 10 mail.example.com."
+  # local-data: "example.com. TXT \"v=spf1 include:_spf.example.com ~all\""
+
+  # 需要把整个私有域名固定在本地时，可显式声明 zone
+  # local-zone: "internal.example." static

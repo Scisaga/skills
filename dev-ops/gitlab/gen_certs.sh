@@ -9,8 +9,8 @@ SERVICE_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=sh/lib/common.sh
 source "${SERVICE_DIR}/../sh/lib/common.sh"
 
-load_standard_env "${SERVICE_DIR}"
-CERTS_DIR="${GITLAB_CERTS_DIR:-./certs}"
+load_env_with_example "${SERVICE_DIR}"
+CERTS_DIR="${GITLAB_CERTS_DIR}"
 
 case "${CERTS_DIR}" in
   /*) ;;

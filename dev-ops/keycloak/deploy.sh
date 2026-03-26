@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# 部署带有仓库自定义主题和 provider 挂载的 Keycloak 容器。
+# 部署 Keycloak 容器。
 # 这里没有模板渲染步骤，包装脚本主要负责校验 bootstrap 管理员凭据并启动服务。
 
 set -euo pipefail

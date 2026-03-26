@@ -20,6 +20,13 @@ print_help() {
   cat <<EOF
 
 Usage: $(basename "$0") <wg-interface> <config-file>
+
+Client-side entrypoint:
+  - installs wireguard-tools on the host
+  - copies an existing client .conf into /etc/wireguard
+  - enables wg-quick@<interface>
+
+This script does not deploy the wg-easy server.
 EOF
 }
 

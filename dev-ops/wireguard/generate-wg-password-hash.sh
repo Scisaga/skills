@@ -16,7 +16,7 @@ PLAIN_PASSWORD="${1:-}"
 if [ "${PLAIN_PASSWORD}" = "--help" ] || [ "${PLAIN_PASSWORD}" = "-h" ]; then
   usage_header
   echo
-  echo "Generate a WG_PASSWORD_HASH value for WireGuard Easy."
+  echo "Helper entrypoint: generate a WG_PASSWORD_HASH value for the server-side wg-easy admin UI."
   echo
   echo "Usage: $(basename "$0") <plain-password>"
   echo
@@ -31,5 +31,5 @@ require_cmd docker
 # 直接复用 wg-easy 镜像本身生成哈希，确保格式始终与部署版本一致。
 WG_PASSWORD_HASH="$(docker run --rm "${WG_EASY_IMAGE}" wgpw "${PLAIN_PASSWORD}")"
 
-log "Generated WG_PASSWORD_HASH. Paste this into wireguard/.env or wireguard/.env.local:"
+log "Generated WG_PASSWORD_HASH. Paste this into wireguard/.env or wireguard/.env.local for deploy.sh:"
 printf 'WG_PASSWORD_HASH=%s\n' "${WG_PASSWORD_HASH}"

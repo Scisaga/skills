@@ -14,6 +14,7 @@ print_help() {
   cat <<EOF
 
 Also updates /etc/resolv.conf to point to the local unbound instance.
+This entrypoint disables systemd-resolved before deployment so port 53 can be claimed by unbound.
 EOF
 }
 

@@ -10,8 +10,8 @@ services:
       - "${UNBOUND_PORT}:53/tcp"
       - "${UNBOUND_PORT}:53/udp"
     volumes:
-      - "./forward-records.generated.conf:/opt/unbound/etc/unbound/forward-records.conf"
-      - "./a-records.generated.conf:/opt/unbound/etc/unbound/a-records.conf"
+      - "./forward-zones.conf:/opt/unbound/etc/unbound/forward-records.conf"
+      - "./local-records.conf:/opt/unbound/etc/unbound/a-records.conf"
     restart: unless-stopped
 networks:
   dns:

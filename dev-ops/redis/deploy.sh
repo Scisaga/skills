@@ -12,7 +12,7 @@ source "${SERVICE_DIR}/../sh/lib/common.sh"
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
   usage_header
   echo
-  echo "Deploy the Redis stack defined in redis.yaml."
+  echo "Deploy the Redis stack defined in docker-compose.yaml."
   exit 0
 fi
 
@@ -20,4 +20,4 @@ load_standard_env "${SERVICE_DIR}"
 ensure_value REDIS_IMAGE
 ensure_value REDIS_EXPORTER_IMAGE
 ensure_value REDIS_INSIGHT_IMAGE
-run_compose_stack "${SERVICE_DIR}" "redis.yaml"
+run_compose_stack "${SERVICE_DIR}" "docker-compose.yaml"
