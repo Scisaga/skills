@@ -1,0 +1,27 @@
+services:
+  keycloak:
+    image: ${KEYCLOAK_IMAGE}
+    container_name: ${KEYCLOAK_CONTAINER_NAME}
+    hostname: ${KEYCLOAK_HOSTNAME}
+    restart: unless-stopped
+    volumes:
+      - ./keywind/theme/keywind:/opt/keycloak/themes/keywind
+      - ./weixin/keycloak-services-social-weixin-0.1.1.jar:/opt/keycloak/providers/keycloak-services-social-weixin-0.1.1.jar
+      - ./weixin/realm-identity-provider-weixin.html:/opt/keycloak/themes/base/admin/resources/partials/realm-identity-provider-weixin.html
+      - ./weixin/realm-identity-provider-weixin-ext.html:/opt/keycloak/themes/base/admin/resources/partials/realm-identity-provider-weixin-ext.html
+    ports:
+      - "${KEYCLOAK_PORT}:8080"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      PROXY_ADDRESS_FORWARDING: "true"
+      KC_FEATURES: ${KEYCLOAK_FEATURES}
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_RELATIVE_PATH: ${KEYCLOAK_HTTP_RELATIVE_PATH}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_HOSTNAME}
+    command: [
+      "--spi-login-protocol-openid-connect-legacy-logout-redirect-uri=true",
+      "start-dev"
+    ]
+    entrypoint: [ "/opt/keycloak/bin/kc.sh" ]

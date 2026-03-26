@@ -1,0 +1,301 @@
+services:
+  timescaledb:
+    image: ${TSDB_IMAGE}
+    container_name: ${TSDB_CONTAINER_NAME}
+    shm_size: ${TSDB_SHM_SIZE}
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${TSDB_PRIMARY_DB}
+      POSTGRES_MULTIPLE_DATABASES: ${TSDB_EXTRA_DATABASES}
+    ports:
+      - "${TSDB_PORT}:5432"
+    volumes:
+      - ${TSDB_DATA_DIR}:/var/lib/postgresql/data
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=timescaledb,pg_stat_statements
+      - -c
+      - shared_buffers=${TSDB_SHARED_BUFFERS}
+      - -c
+      - effective_cache_size=${TSDB_EFFECTIVE_CACHE_SIZE}
+      - -c
+      - work_mem=${TSDB_WORK_MEM}
+      - -c
+      - maintenance_work_mem=${TSDB_MAINTENANCE_WORK_MEM}
+      - -c
+      - max_connections=${TSDB_MAX_CONNECTIONS}
+      - -c
+      - max_parallel_workers=${TSDB_MAX_PARALLEL_WORKERS}
+      - -c
+      - max_parallel_workers_per_gather=${TSDB_MAX_PARALLEL_WORKERS_PER_GATHER}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    mem_limit: ${TSDB_MEM_LIMIT}
+    mem_reservation: ${TSDB_MEM_RESERVATION}
+
+  pgadmin:
+    image: ${PGADMIN_IMAGE}
+    container_name: ${PGADMIN_CONTAINER_NAME}
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      PGADMIN_LISTEN_PORT: ${PGADMIN_INTERNAL_PORT}
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+      PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
+    ports:
+      - "${PGADMIN_PORT}:80"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    volumes:
+      - ${PGADMIN_DATA_DIR}:/var/lib/pgadmin
+      - ./scripts/pgadmin_servers.json:/pgadmin4/servers.json:ro
+    restart: unless-stopped
+    mem_limit: ${PGADMIN_MEM_LIMIT}
+    mem_reservation: ${PGADMIN_MEM_RESERVATION}
+
+  tsdb-exporter:
+    image: ${POSTGRES_EXPORTER_IMAGE}
+    container_name: ${POSTGRES_EXPORTER_CONTAINER_NAME}
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${DB_USER}:${DB_PASSWORD}@timescaledb:5432/${TSDB_PRIMARY_DB}?sslmode=disable"
+    ports:
+      - "${POSTGRES_EXPORTER_PORT}:9187"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: ${POSTGRES_EXPORTER_MEM_LIMIT}
+    mem_reservation: ${POSTGRES_EXPORTER_MEM_RESERVATION}
+
+  elasticsearch:
+    init: true
+    container_name: ${DB_ELASTICSEARCH_CONTAINER_NAME}
+    image: ${DB_ELASTICSEARCH_IMAGE}
+    environment:
+      discovery.type: single-node
+      bootstrap.memory_lock: "true"
+      ES_JAVA_OPTS: ${DB_ELASTICSEARCH_JAVA_OPTS}
+      ELASTIC_PASSWORD: ${DB_ELASTIC_PASSWORD}
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        chmod +x /usr/share/elasticsearch/init-token.sh
+        /usr/share/elasticsearch/init-token.sh &
+        /usr/local/bin/docker-entrypoint.sh
+    ports:
+      - "${DB_ELASTICSEARCH_HTTP_PORT}:9200"
+    volumes:
+      - ${DB_ELASTICSEARCH_DATA_DIR}:/usr/share/elasticsearch/data
+      - ${DB_ELASTICSEARCH_LOG_DIR}:/usr/share/elasticsearch/logs
+      - ./elasticsearch/elasticsearch.generated.yml:/usr/share/elasticsearch/config/elasticsearch.yml
+      - ./elasticsearch/plugins:/usr/share/elasticsearch/plugins
+      - ./elasticsearch/token:/token
+      - ./elasticsearch/init-token.sh:/usr/share/elasticsearch/init-token.sh
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+      memlock:
+        soft: -1
+        hard: -1
+    mem_limit: ${DB_ELASTICSEARCH_MEM_LIMIT}
+    mem_reservation: ${DB_ELASTICSEARCH_MEM_RESERVATION}
+    healthcheck:
+      test: ["CMD-SHELL", "curl --silent --fail -u elastic:${DB_ELASTIC_PASSWORD} http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+
+  kibana:
+    init: true
+    container_name: ${DB_KIBANA_CONTAINER_NAME}
+    image: ${DB_KIBANA_IMAGE}
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        export ELASTICSEARCH_SERVICEACCOUNTTOKEN="$(cat /token/service-token)"
+        exec /usr/local/bin/kibana-docker
+    environment:
+      ELASTICSEARCH_HOSTS: "http://elasticsearch:9200"
+      SERVER_NAME: ${DB_KIBANA_SERVER_NAME}
+      SERVER_HOST: "0.0.0.0"
+    ports:
+      - "${DB_KIBANA_PORT}:5601"
+    volumes:
+      - ${DB_KIBANA_DATA_DIR}:/usr/share/kibana/data
+      - ./elasticsearch/kibana.generated.yml:/usr/share/kibana/config/kibana.yml
+      - ./elasticsearch/token:/token
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    mem_limit: ${DB_KIBANA_MEM_LIMIT}
+    mem_reservation: ${DB_KIBANA_MEM_RESERVATION}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS -o /dev/null http://localhost:5601/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+    restart: unless-stopped
+    labels:
+      co.elastic.logs/module: kibana
+
+  elasticsearch-exporter:
+    container_name: ${DB_ELASTICSEARCH_EXPORTER_CONTAINER_NAME}
+    image: ${DB_ELASTICSEARCH_EXPORTER_IMAGE}
+    command:
+      - --es.uri=http://elastic:${DB_ELASTIC_PASSWORD}@elasticsearch:9200
+      - --es.all
+      - --es.timeout=5s
+    ports:
+      - "${DB_ELASTICSEARCH_EXPORTER_PORT}:9114"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    mem_limit: ${DB_ELASTICSEARCH_EXPORTER_MEM_LIMIT}
+    mem_reservation: ${DB_ELASTICSEARCH_EXPORTER_MEM_RESERVATION}
+    restart: unless-stopped
+
+  mongodb:
+    init: true
+    image: ${MONGODB_IMAGE}
+    container_name: ${MONGODB_CONTAINER_NAME}
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${DB_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${MONGODB_PORT}:27017"
+    volumes:
+      - ${MONGODB_DATA_DIR}:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --host localhost --port 27017 -u \"$$MONGO_INITDB_ROOT_USERNAME\" -p \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --eval \"db.adminCommand({ ping: 1 })\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    mem_limit: ${MONGODB_MEM_LIMIT}
+    mem_reservation: ${MONGODB_MEM_RESERVATION}
+
+  mongodb-exporter:
+    image: ${MONGODB_EXPORTER_IMAGE}
+    container_name: ${MONGODB_EXPORTER_CONTAINER_NAME}
+    command:
+      - --mongodb.uri=mongodb://${DB_USER}:${DB_PASSWORD}@mongo:27017/admin?authSource=admin&directConnection=true
+      - --collect-all
+    ports:
+      - "${MONGODB_EXPORTER_PORT}:9216"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: ${MONGODB_EXPORTER_MEM_LIMIT}
+    mem_reservation: ${MONGODB_EXPORTER_MEM_RESERVATION}
+
+  mongo-express:
+    image: ${MONGO_EXPRESS_IMAGE}
+    container_name: ${MONGO_EXPRESS_CONTAINER_NAME}
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${DB_USER}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${DB_PASSWORD}
+      ME_CONFIG_MONGODB_SERVER: mongo
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_WEB_USER}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_WEB_PASSWORD}
+    ports:
+      - "${MONGO_EXPRESS_PORT}:8081"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: ${MONGO_EXPRESS_MEM_LIMIT}
+    mem_reservation: ${MONGO_EXPRESS_MEM_RESERVATION}
+
+  qdrant:
+    image: ${QDRANT_IMAGE}
+    container_name: ${QDRANT_CONTAINER_NAME}
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: ${QDRANT_HTTP_INTERNAL_PORT}
+      QDRANT__SERVICE__GRPC_PORT: ${QDRANT_GRPC_INTERNAL_PORT}
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}
+      QDRANT__STORAGE__STORAGE_PATH: /qdrant/storage
+      QDRANT__TELEMETRY__DISABLE: "true"
+      QDRANT__SERVICE__ENABLE_TLS: "false"
+      QDRANT__CLUSTER__ENABLED: "false"
+    ports:
+      - "${QDRANT_HTTP_PORT}:6333"
+      - "${QDRANT_GRPC_PORT}:6334"
+    volumes:
+      - ${QDRANT_DATA_DIR}:/qdrant/storage
+    restart: unless-stopped
+    mem_limit: ${QDRANT_MEM_LIMIT}
+    mem_reservation: ${QDRANT_MEM_RESERVATION}
+
+  prometheus:
+    container_name: ${DB_PROMETHEUS_CONTAINER_NAME}
+    image: ${DB_PROMETHEUS_IMAGE}
+    user: "${DB_PROMETHEUS_RUN_AS}"
+    environment:
+      TZ: ${GLOBAL_TIMEZONE}
+    ports:
+      - "${DB_PROMETHEUS_PORT}:9090"
+    volumes:
+      - ./prometheus/prometheus.generated.yml:/etc/prometheus/prometheus.yml:ro
+      - ${DB_PROMETHEUS_DATA_DIR}:/prometheus:rw
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${DB_PROMETHEUS_RETENTION}
+      - --web.enable-lifecycle
+      - --web.enable-admin-api
+      - --log.level=${DB_PROMETHEUS_LOG_LEVEL}
+    mem_limit: ${DB_PROMETHEUS_MEM_LIMIT}
+    mem_reservation: ${DB_PROMETHEUS_MEM_RESERVATION}
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:9090/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  grafana:
+    container_name: ${DB_GRAFANA_CONTAINER_NAME}
+    image: ${DB_GRAFANA_IMAGE}
+    user: "${DB_GRAFANA_RUN_AS}"
+    environment:
+      TZ: ${GLOBAL_TIMEZONE}
+      GF_SECURITY_ADMIN_USER: ${GF_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD}
+      GF_AUTH_ANONYMOUS_ENABLED: ${DB_GRAFANA_ANONYMOUS_ENABLED}
+      GF_AUTH_BASIC_ENABLED: "true"
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_LOG_LEVEL: info
+      GF_LIVE_ALLOWED_ORIGINS: "*"
+    ports:
+      - "${DB_GRAFANA_PORT}:3000"
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+    mem_limit: ${DB_GRAFANA_MEM_LIMIT}
+    mem_reservation: ${DB_GRAFANA_MEM_RESERVATION}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped

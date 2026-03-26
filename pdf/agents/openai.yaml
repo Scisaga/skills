@@ -1,0 +1,4 @@
+interface:
+  display_name: "PDF"
+  short_description: "Watermark, rearrange, batch-process, and convert PDFs locally"
+  default_prompt: "Use $pdf to add a visible watermark while keeping this PDF searchable and selectable."

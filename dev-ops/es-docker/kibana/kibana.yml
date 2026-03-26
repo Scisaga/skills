@@ -1,0 +1,7 @@
+server.host: "0.0.0.0"
+server.shutdownTimeout: "5s"
+server.rewriteBasePath: true
+server.basePath: "${ES_DOCKER_KIBANA_BASE_PATH}"
+elasticsearch.hosts: [ "http://elasticsearch:9200" ]
+xpack.encryptedSavedObjects.encryptionKey: "${ES_DOCKER_KIBANA_ENCRYPTION_KEY}"
+monitoring.ui.container.elasticsearch.enabled: true

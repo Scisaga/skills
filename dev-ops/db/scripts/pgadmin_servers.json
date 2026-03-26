@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "TimescaleDB",
+      "Group": "Servers",
+      "Host": "timescaledb",
+      "Port": 5432,
+      "MaintenanceDB": "timeseries",
+      "SSLMode": "prefer",
+      "ConnectNow": false
+    }
+  }
+}

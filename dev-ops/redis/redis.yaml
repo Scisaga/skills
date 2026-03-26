@@ -1,0 +1,51 @@
+services:
+  redis:
+    image: ${REDIS_IMAGE}
+    container_name: ${REDIS_CONTAINER_NAME}
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT}:6379"
+    environment:
+      TZ: ${GLOBAL_TIMEZONE}
+    command:
+      [
+        "redis-server",
+        "--appendonly", "yes",
+        "--save", "900", "1",
+        "--save", "300", "10",
+        "--save", "60", "10000"
+      ]
+    volumes:
+      - ${REDIS_DATA_DIR}:/data
+    ulimits:
+      nofile:
+        soft: 100000
+        hard: 100000
+    sysctls:
+      net.core.somaxconn: "1024"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "redis-cli ping | grep PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+  
+  redis-exporter:
+    image: ${REDIS_EXPORTER_IMAGE}
+    container_name: ${REDIS_EXPORTER_CONTAINER_NAME}
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    ports:
+      - "${REDIS_EXPORTER_PORT}:9121"
+    depends_on: [redis]
+    restart: unless-stopped
+
+  redisinsight:
+    image: ${REDIS_INSIGHT_IMAGE}
+    container_name: ${REDIS_INSIGHT_CONTAINER_NAME}
+    restart: unless-stopped
+    ports:
+      - "${REDIS_INSIGHT_PORT}:5540"
+    volumes:
+      - ${REDIS_INSIGHT_DATA_DIR}:/data
+    depends_on:
+      - redis

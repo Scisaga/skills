@@ -1,0 +1,36 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+
+  - job_name: 'timescaledb'
+    static_configs: [{targets: ['tsdb-exporter:9187']}]
+
+  - job_name: 'mongodb'
+    static_configs: [{targets: ['mongodb-exporter:9216']}]
+
+  - job_name: 'elasticsearch'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['elasticsearch-exporter:9114']
+
+  # 需要配置鉴权
+  #- job_name: 'qdrant'
+  #  static_configs: [{targets: ['qdrant:6333']}]
+
+  - job_name: 'redis'
+    static_configs: [{targets: ${DB_PROMETHEUS_REDIS_TARGETS}}]
+
+  - job_name: 'minio'
+    metrics_path: '/minio/v2/metrics/cluster'
+    static_configs: [{targets: ${DB_PROMETHEUS_MINIO_TARGETS}}]
+  
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['prometheus:9090']
+      
+  - job_name: 'node'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ${DB_PROMETHEUS_NODE_TARGETS}

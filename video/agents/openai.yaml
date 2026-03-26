@@ -1,0 +1,4 @@
+interface:
+  display_name: "Video Toolkit"
+  short_description: "Frames, subtitles, muxing, and movie lookup"
+  default_prompt: "Use $video to install ffmpeg, extract keyframes, search or generate subtitles, merge subtitles into MP4, validate sync, or summarize a movie with reviews."

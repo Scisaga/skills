@@ -1,0 +1,17 @@
+services:
+  unbound:
+    container_name: ${UNBOUND_CONTAINER_NAME}
+    image: ${UNBOUND_IMAGE}
+    expose:
+      - "53"
+    networks:
+      - dns
+    ports:
+      - "${UNBOUND_PORT}:53/tcp"
+      - "${UNBOUND_PORT}:53/udp"
+    volumes:
+      - "./forward-records.generated.conf:/opt/unbound/etc/unbound/forward-records.conf"
+      - "./a-records.generated.conf:/opt/unbound/etc/unbound/a-records.conf"
+    restart: unless-stopped
+networks:
+  dns:

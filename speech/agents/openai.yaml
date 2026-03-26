@@ -1,0 +1,4 @@
+interface:
+  display_name: "Speech I/O"
+  short_description: "TTS and ASR for text/audio"
+  default_prompt: "Use $speech to turn this script into speech or transcribe an audio file into text."

@@ -1,0 +1,30 @@
+volumes:
+  etc_wireguard: {}
+
+services:
+  wg-easy:
+    environment:
+      LANG: ${WG_LANG}
+      WG_HOST: ${WG_HOST}
+      PASSWORD_HASH: ${WG_PASSWORD_HASH}
+      WG_PORT: ${WG_PORT}
+      WG_DEFAULT_ADDRESS: ${WG_DEFAULT_ADDRESS}
+      WG_DEFAULT_DNS: ${WG_DEFAULT_DNS}
+      WG_ALLOWED_IPS: ${WG_ALLOWED_IPS}
+      WG_PERSISTENT_KEEPALIVE: ${WG_PERSISTENT_KEEPALIVE}
+      WG_POST_UP: ${WG_POST_UP:-}
+      WG_PRE_DOWN: ${WG_PRE_DOWN:-}
+    image: ${WG_EASY_IMAGE}
+    container_name: ${WG_CONTAINER_NAME}
+    volumes:
+      - etc_wireguard:/etc/wireguard
+    ports:
+      - "${WG_PORT}:${WG_PORT}/udp"
+      - "${WG_WEB_PORT}:51821/tcp"
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1

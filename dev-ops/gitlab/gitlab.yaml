@@ -1,0 +1,76 @@
+services:
+  gitlab:
+    image: ${GITLAB_IMAGE}
+    container_name: ${GITLAB_CONTAINER_NAME}
+    restart: unless-stopped
+    environment:
+      TZ: ${GLOBAL_TIMEZONE}
+      GITLAB_OMNIBUS_CONFIG: |
+        gitaly['env'] = {
+          'MALLOC_CONF' => 'dirty_decay_ms:1000,muzzy_decay_ms:1000',
+          'GITALY_COMMAND_SPAWN_MAX_PARALLEL' => '2'
+        }
+        external_url = '${GITLAB_EXTERNAL_URL}'
+        registry_external_url = '${GITLAB_REGISTRY_EXTERNAL_URL}'
+        nginx['listen_https'] = false
+        nginx['listen_port'] = ${GITLAB_INTERNAL_HTTP_PORT}
+        nginx['redirect_http_to_https'] = false
+        letsencrypt['enable'] = false
+        gitlab_rails['time_zone'] = '${GLOBAL_TIMEZONE}'
+        gitlab_rails['allow_local_requests_from_web_hooks_and_services'] = true
+        gitlab_rails['allow_local_requests_from_system_hooks'] = true
+        gitlab_rails['smtp_enable'] = true
+        gitlab_rails['smtp_address'] = '${SMTP_HOST}'
+        gitlab_rails['smtp_port'] = ${SMTP_PORT}
+        gitlab_rails['smtp_user_name'] = '${SMTP_USERNAME}'
+        gitlab_rails['smtp_password'] = '${SMTP_PASSWORD}'
+        gitlab_rails['smtp_domain'] = '${SMTP_DOMAIN}'
+        gitlab_rails['smtp_authentication'] = 'login'
+        gitlab_rails['smtp_tls'] = ${SMTP_TLS}
+        gitlab_rails['gitlab_email_from'] = '${SMTP_FROM}'
+        gitlab_rails['gitlab_email_reply_to'] = '${SMTP_REPLY_TO}'
+        gitlab_rails['gitlab_email_enabled'] = true
+        gitlab_rails['gitlab_shell_ssh_port'] = ${GITLAB_SSH_PORT}
+        gitlab_rails['registry_enabled'] = true
+        gitlab_rails['registry_host'] = '${GITLAB_REGISTRY_HOST}'
+        gitlab_rails['registry_port'] = ${GITLAB_REGISTRY_PORT}
+        gitlab_rails['registry_api_url'] = 'http://registry:${GITLAB_REGISTRY_INTERNAL_PORT}'
+        gitlab_rails['registry_key_path'] = '/certs/registry.key'
+        gitlab_rails['registry_issuer'] = '${GITLAB_REGISTRY_ISSUER}'
+    ports:
+      - '${GITLAB_HTTP_PORT}:${GITLAB_INTERNAL_HTTP_PORT}'
+    dns:
+      - ${GITLAB_DNS_PRIMARY}
+    volumes:
+      - ${GITLAB_CONFIG_DIR}:/etc/gitlab
+      - ${GITLAB_DATA_DIR}:/var/opt/gitlab
+      - ${GITLAB_LOG_DIR}:/var/log/gitlab
+      - ${GITLAB_GITDATA_DIR}:/home/git/data
+      - ${GITLAB_CERTS_DIR}:/certs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:${GITLAB_INTERNAL_HTTP_PORT}/-/readiness || exit 1"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+
+  registry:
+    image: ${GITLAB_REGISTRY_IMAGE}
+    container_name: ${GITLAB_REGISTRY_CONTAINER_NAME}
+    restart: unless-stopped
+    expose:
+      - "${GITLAB_REGISTRY_INTERNAL_PORT}"
+    ports:
+      - "${GITLAB_REGISTRY_BIND_PORT}:${GITLAB_REGISTRY_INTERNAL_PORT}"
+    volumes:
+      - ${GITLAB_REGISTRY_DATA_DIR}:/registry
+      - ${GITLAB_CERTS_DIR}:/certs
+    environment:
+      REGISTRY_HTTP_ADDR: 0.0.0.0:${GITLAB_REGISTRY_INTERNAL_PORT}
+      REGISTRY_LOG_LEVEL: info
+      REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: registry
+      REGISTRY_AUTH_TOKEN_REALM: ${GITLAB_REGISTRY_AUTH_REALM}
+      REGISTRY_AUTH_TOKEN_SERVICE: container_registry
+      REGISTRY_AUTH_TOKEN_ISSUER: ${GITLAB_REGISTRY_ISSUER}
+      REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE: /certs/registry.crt
+      REGISTRY_STORAGE_DELETE_ENABLED: 'true'
+
