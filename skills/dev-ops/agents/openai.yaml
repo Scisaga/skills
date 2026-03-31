@@ -1,0 +1,4 @@
+interface:
+  display_name: "Dev Ops"
+  short_description: "Maintain standardized deployment scripts, service assets, and rollout workflows"
+  default_prompt: "Use $dev-ops to update a standardized service script under scripts/, adjust service assets under assets/services/, or refine a deployment workflow in this repository."

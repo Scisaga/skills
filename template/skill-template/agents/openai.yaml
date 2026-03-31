@@ -1,0 +1,4 @@
+interface:
+  display_name: "Skill Template"
+  short_description: "Starter template for a new skill"
+  default_prompt: "Use this template as the starting point for a new skill."

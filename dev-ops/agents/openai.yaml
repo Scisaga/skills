@@ -1,4 +1,0 @@
-interface:
-  display_name: "Dev Ops"
-  short_description: "Maintain deployment assets and service rollout workflows"
-  default_prompt: "Use $dev-ops to update a deployment script, compose stack, or remote rollout flow in this repository."
