@@ -16,6 +16,7 @@
   - `scripts/`
   - `references/`
   - `assets/`
+- 涉及远程服务器部署时，远程主机上的目录和启动方式约定统一遵循 `skills/dev-ops/references/deploy-conventions.md`，不要把远程主机目录规范写进 skill 结构规范。
 
 ## 创建或编辑 Skill 的基本原则
 

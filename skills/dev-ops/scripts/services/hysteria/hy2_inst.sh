@@ -16,7 +16,7 @@ readonly HY2_BINARY_PATH="/usr/local/bin/hysteria"
 readonly HY2_BBR_SYSCTL="/etc/sysctl.d/90-hysteria-bbr.conf"
 readonly HY2_SYSTEMD_UNIT="/etc/systemd/system/hy2-server.service"
 
-hy2_version="2.7.1"
+hy2_version="2.8.1"
 hy2_domain=""
 hy2_password=""
 hy2_acme_email=""
@@ -35,7 +35,7 @@ Options:
   --domain example.com
   --password secret
   --email ops@example.com
-  --version 2.7.1
+  --version 2.8.1
   --obfs-password secret
   --udp-range 20000-30000
   --listen-port 443

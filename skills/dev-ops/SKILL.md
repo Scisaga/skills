@@ -29,6 +29,7 @@ description: 维护当前仓库中的部署脚本、服务资产、模板渲染�
 3. 日常执行统一走 `bash skills/dev-ops/scripts/run.sh`，而不是直接从旧目录调用脚本。
 4. 如果服务依赖 `.env` 或 `.env.local`，默认把它们放在 `assets/services/<service>/`。
 5. 如果服务依赖未纳入版本控制的本地文件，也明确放在对应的 `assets/services/<service>/` 下，例如 Unbound 的本地记录文件。
+6. 如果任务涉及数据库类服务部署或迁移，先了解目标服务器的存储配置，再给出数据目录、挂载点和资源分配建议；在用户明确确认之前，不直接执行部署、重建或数据目录切换。
 
 ## 命令模式
 
@@ -45,7 +46,7 @@ bash skills/dev-ops/scripts/run.sh service wireguard deploy.sh
 ## 资源使用
 
 - 需要确认目录职责和新结构时，读 `references/repo-layout.md`
-- 需要确认 `.env`、模板渲染、Compose 校验和远程发布约定时，读 `references/deploy-conventions.md`
+- 需要确认 `.env`、模板渲染、Compose 校验、远程发布约定或 SSH 凭据准备方式时，读 `references/deploy-conventions.md`
 - 需要处理 DDNS 或证书同步时，读 `references/ddns-workflows.md`
 - 需要处理 Unbound 本地记录或条件转发时，读 `references/unbound-records.md`
 - 需要处理 WireGuard 服务端、客户端或密码哈希生成时，读 `references/wireguard-workflows.md`
@@ -56,4 +57,5 @@ bash skills/dev-ops/scripts/run.sh service wireguard deploy.sh
 - 不把真实密钥、密码、令牌、证书私钥或真实主机地址写进版本控制。
 - 新增或修改入口时，同时更新 `SKILL.md`、对应 reference 和 `agents/openai.yaml`。
 - 改服务脚本后，优先给出可执行的校验命令，而不是只描述思路。
+- 如果任务涉及数据库类服务的远程部署，先输出对目标服务器存储配置的理解、建议的数据落盘位置和原因，并要求用户明确确认后再执行实际部署命令。
 

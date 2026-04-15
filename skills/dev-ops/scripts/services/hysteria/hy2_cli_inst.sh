@@ -15,7 +15,7 @@ readonly HY2_CLIENT_CONFIG="/etc/hysteria/client.yaml"
 readonly HY2_BINARY_PATH="/usr/local/bin/hysteria"
 readonly HY2_SYSTEMD_UNIT="/etc/systemd/system/hy2-client.service"
 
-hy2_version="2.7.1"
+hy2_version="2.8.1"
 hy2_domain=""
 hy2_password=""
 hy2_obfs_password=""
@@ -32,7 +32,7 @@ Usage: $(basename "$0") [options]
 Options:
   --domain example.com
   --password secret
-  --version 2.7.1
+  --version 2.8.1
   --obfs-password secret
   --udp-range 20000-30000
   --http-port 10809
