@@ -21,6 +21,7 @@ dist/
 
 # Virtual environments
 .venv/
+.venv-win/
 venv/
 env/
 
