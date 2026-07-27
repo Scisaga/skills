@@ -99,7 +99,7 @@ bash skills/speech/scripts/run.sh transcribe --input-file meeting.wav --output-j
 ## Important TTS parameters
 
 - `--voice`: Azure voice name such as `zh-CN-XiaochenNeural`
-- `--style`: expressive style such as `newscast-casual`
+- `--style`: 可选表达风格；默认不设置。风格必须与音色匹配，例如 `zh-CN-XiaoxiaoNeural + newscast` 或 `zh-CN-XiaochenNeural + livecommercial`
 - `--rate`: speaking rate such as `+5%`
 - `--pitch`: pitch offset such as `+0st`
 - `--region`: Azure Speech region, default `eastasia`
@@ -117,7 +117,8 @@ bash skills/speech/scripts/run.sh transcribe --input-file meeting.wav --output-j
 
 - Missing dependency: run `bash skills/speech/scripts/bootstrap.sh`.
 - Empty output: check that input text is not blank.
-- Azure cancellation: verify the speech key, region, and whether the chosen voice/style is supported.
+- Azure cancellation: 脚本会保留 Azure 返回的 cancellation reason、error code 和 error details；按详情检查密钥、区域、音色或请求内容。
+- Unsupported voice/style: 指定 `--style` 时脚本会先查询 Azure 音色清单；根据错误列出的可用风格改用有效组合，或省略 `--style`。
 - Corrupted or partial output: reduce `--max-chars` if a request is too large.
 - ASR request failure: verify the service is reachable and the audio file exists.
 - HTTP 422 from ASR: check that the request is multipart form-data and includes the `file` field.

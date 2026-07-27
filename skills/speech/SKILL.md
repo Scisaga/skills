@@ -28,7 +28,8 @@ description: 为中文或多语言场景提供文本转语音与音频转文本�
 
 4. 保守选择参数。
    - 除非用户指定，否则保持默认音色。
-   - 只有用户明确要求语气变化时，再调整 `--style`、`--rate` 和 `--pitch`。
+   - 默认不设置表达风格。只有用户明确要求语气变化时，才传入 `--style`；脚本会从 Azure 音色清单校验音色与风格是否匹配。
+   - 只有用户明确要求语速或音高变化时，再调整 `--rate` 和 `--pitch`。
    - `--max-chars` 要足够大以减少分段，但不能超过 Azure 的请求限制。
    - 对 ASR 而言，只有在音频语言已知且稳定时才传 `--language`。
    - `--prompt` 仅在术语、产品名等会明显影响识别效果时使用。
@@ -47,7 +48,7 @@ description: 为中文或多语言场景提供文本转语音与音频转文本�
 ```bash
 bash skills/speech/scripts/bootstrap.sh
 bash skills/speech/scripts/run.sh synthesize --text "你好，欢迎使用语音合成。" --output-mp3 out/demo.mp3
-bash skills/speech/scripts/run.sh synthesize --input-file script.txt --voice zh-CN-XiaoxiaoNeural --style cheerful
+bash skills/speech/scripts/run.sh synthesize --input-file script.txt --voice zh-CN-XiaoxiaoNeural --style newscast
 cat notes.txt | bash skills/speech/scripts/run.sh synthesize --stdin --output-mp3 out/notes.mp3
 bash skills/speech/scripts/run.sh transcribe --input-file demo.mp3 --output-text out/demo.txt
 bash skills/speech/scripts/run.sh transcribe --input-file meeting.wav --language zh --prompt "产品名 Servforce.AI"

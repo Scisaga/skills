@@ -7,12 +7,13 @@ import sys
 import time
 from pathlib import Path
 from textwrap import dedent
+from xml.sax.saxutils import escape, quoteattr
 
 from common import configure_logging, ensure_python_modules, load_env
 
 DEFAULT_REGION = "eastasia"
 DEFAULT_VOICE = "zh-CN-XiaochenNeural"
-DEFAULT_STYLE = "newscast-casual"
+DEFAULT_STYLE = None
 DEFAULT_RATE = "+5%"
 DEFAULT_PITCH = "+0st"
 DEFAULT_OUT_MP3 = "output.mp3"
@@ -58,31 +59,76 @@ def get_speech_config(*, speech_key: str, region: str):
     return speechsdk, speech_config
 
 
-def escape_xml(text: str) -> str:
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+def infer_locale(voice: str) -> str:
+    match = re.match(r"^([a-z]{2,3}-[A-Z]{2})-", voice)
+    return match.group(1) if match else "zh-CN"
 
 
 def build_ssml(
     paragraph: str,
     *,
     voice: str,
-    style: str,
+    style: str | None,
     rate: str,
     pitch: str,
 ) -> str:
-    paragraph = escape_xml(paragraph)
+    paragraph = escape(paragraph)
+    language = infer_locale(voice)
+    prosody = (
+        f"<prosody rate={quoteattr(rate)} pitch={quoteattr(pitch)}>"
+        f"<p>{paragraph}</p>"
+        "</prosody>"
+    )
+    content = prosody
+    if style:
+        content = (
+            f"<mstts:express-as style={quoteattr(style)} styledegree=\"1.0\">"
+            f"{prosody}"
+            "</mstts:express-as>"
+        )
+
     return f"""<?xml version="1.0" encoding="utf-8"?>
-<speak version="1.0" xml:lang="zh-CN"
+<speak version="1.0" xml:lang={quoteattr(language)}
        xmlns="http://www.w3.org/2001/10/synthesis"
        xmlns:mstts="https://www.w3.org/2001/mstts">
-  <voice name="{voice}">
-    <mstts:express-as style="{style}" styledegree="1.0">
-      <prosody rate="{rate}" pitch="{pitch}">
-        <p>{paragraph}</p>
-      </prosody>
-    </mstts:express-as>
+  <voice name={quoteattr(voice)}>
+    {content}
   </voice>
 </speak>"""
+
+
+def validate_voice_style(
+    *,
+    speechsdk,
+    speech_config,
+    voice: str,
+    style: str,
+) -> None:
+    synthesizer = speechsdk.SpeechSynthesizer(
+        speech_config=speech_config,
+        audio_config=None,
+    )
+    result = synthesizer.get_voices_async("").get()
+
+    if result.reason != speechsdk.ResultReason.VoicesListRetrieved:
+        details = getattr(result, "error_details", "") or "未返回错误详情"
+        raise RuntimeError(f"无法获取 Azure 音色清单: {details}")
+
+    voice_info = next(
+        (candidate for candidate in result.voices if candidate.short_name == voice),
+        None,
+    )
+    if voice_info is None:
+        raise RuntimeError(f"Azure 区域 {speech_config.region} 不提供音色 {voice}。")
+
+    supported_styles = list(voice_info.style_list)
+    if style not in supported_styles:
+        available = "、".join(supported_styles) if supported_styles else "无"
+        raise RuntimeError(
+            f"音色 {voice} 不支持风格 {style}；可用风格: {available}。"
+        )
+
+    logger.info("已验证音色与风格: %s + %s", voice, style)
 
 
 def split_into_chunks(text: str, max_chars: int = DEFAULT_MAX_CHARS) -> list[str]:
@@ -125,12 +171,19 @@ def synth_to_mp3(
     speech_key: str,
     region: str,
     voice: str,
-    style: str,
+    style: str | None,
     rate: str,
     pitch: str,
     max_chars: int,
 ) -> None:
-    speechsdk, _ = get_speech_config(speech_key=speech_key, region=region)
+    speechsdk, speech_config = get_speech_config(speech_key=speech_key, region=region)
+    if style:
+        validate_voice_style(
+            speechsdk=speechsdk,
+            speech_config=speech_config,
+            voice=voice,
+            style=style,
+        )
 
     output_path = Path(out_mp3)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -168,9 +221,12 @@ def synth_to_mp3(
                 raise RuntimeError("TTS 返回空结果。")
 
             if result.reason == speechsdk.ResultReason.Canceled:
-                details = speechsdk.CancellationDetails(result)
+                details = speechsdk.SpeechSynthesisCancellationDetails(result)
                 raise RuntimeError(
-                    f"TTS 已取消: reason={details.reason}, error_details={details.error_details}"
+                    "TTS 已取消: "
+                    f"reason={details.reason}, "
+                    f"error_code={details.error_code}, "
+                    f"error_details={details.error_details}"
                 )
             if result.reason != speechsdk.ResultReason.SynthesizingAudioCompleted:
                 raise RuntimeError(f"TTS 未完成，reason={result.reason}")
@@ -230,7 +286,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-text-save", action="store_true", help="不落盘保存文本")
     parser.add_argument("--region", default=DEFAULT_REGION, help=f"Azure region，默认 {DEFAULT_REGION}")
     parser.add_argument("--voice", default=DEFAULT_VOICE, help=f"语音，默认 {DEFAULT_VOICE}")
-    parser.add_argument("--style", default=DEFAULT_STYLE, help=f"风格，默认 {DEFAULT_STYLE}")
+    parser.add_argument(
+        "--style",
+        default=DEFAULT_STYLE,
+        help="表达风格；默认不设置，指定前会校验音色是否支持",
+    )
     parser.add_argument("--rate", default=DEFAULT_RATE, help=f"语速，默认 {DEFAULT_RATE.replace('%', '%%')}")
     parser.add_argument("--pitch", default=DEFAULT_PITCH, help=f"音高，默认 {DEFAULT_PITCH}")
     parser.add_argument("--max-chars", type=int, default=DEFAULT_MAX_CHARS, help="单段最大字符数")
