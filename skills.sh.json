@@ -1,0 +1,24 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "notGrouped": "bottom",
+  "groupings": [
+    {
+      "title": "内容与媒体",
+      "description": "用于演示文稿、PDF、语音、字幕和视频处理的 Skills。",
+      "skills": [
+        "build-narrated-presentation",
+        "pdf",
+        "speech",
+        "subtitle-matcher",
+        "video"
+      ]
+    },
+    {
+      "title": "运维",
+      "description": "用于部署、服务配置和主机运维的 Skills。",
+      "skills": [
+        "dev-ops"
+      ]
+    }
+  ]
+}
