@@ -64,6 +64,30 @@ case "${COMMAND}" in
   audio-timeline)
     exec "${PYTHON_BIN}" "${SCRIPT_DIR}/build_audio_timeline.py" "$@"
     ;;
+  synthesize)
+    exec "${PYTHON_BIN}" "${SCRIPT_DIR}/audio_production.py" synthesize "$@"
+    ;;
+  voice-audition)
+    exec "${PYTHON_BIN}" "${SCRIPT_DIR}/audio_production.py" audition "$@"
+    ;;
+  replace-audio)
+    exec "${PYTHON_BIN}" "${SCRIPT_DIR}/pptx_production.py" replace-audio "$@"
+    ;;
+  assemble-pptx)
+    exec "${PYTHON_BIN}" "${SCRIPT_DIR}/pptx_production.py" assemble-pptx "$@"
+    ;;
+  export-video)
+    exec "${PYTHON_BIN}" "${SCRIPT_DIR}/powerpoint_production.py" export-video "$@"
+    ;;
+  export-pages)
+    exec "${PYTHON_BIN}" "${SCRIPT_DIR}/powerpoint_production.py" export-pages "$@"
+    ;;
+  qa)
+    exec "${PYTHON_BIN}" "${SCRIPT_DIR}/qa_presentation.py" "$@"
+    ;;
+  rebuild)
+    exec "${PYTHON_BIN}" "${SCRIPT_DIR}/rebuild_presentation.py" "$@"
+    ;;
   validate)
     exec "${PYTHON_BIN}" "${SCRIPT_DIR}/validate_project.py" "$@"
     ;;
@@ -76,11 +100,19 @@ Usage:
   scripts/run.sh prepare-input-review --document source.md --output input-review.json
   scripts/run.sh validate-input --document source.md --review input-review.json --json-output input-gate.json --markdown-output input-gate.md
   scripts/run.sh init --output /path/to/project --name "Project" --input-document source.md --input-review input-review.json
-  scripts/run.sh manifest --visual animation_manifest.json --director narration_director.json --output animation_manifest.json --review narration_review.md
+  scripts/run.sh manifest --visual animation_manifest.json --director narration_director.json --voice-profile voice_profile.json --output animation_manifest.json --review narration_review.md
   scripts/run.sh timing --manifest animation_manifest.json --output fast_animation_timing.json
   scripts/run.sh timing --manifest animation_manifest.json --output fast_animation_timing.json --check
   scripts/run.sh audio-timeline --manifest animation_manifest.json --audio-dir audio --output audio_timeline.json
   scripts/run.sh audio-timeline --manifest animation_manifest.json --audio-dir audio --output audio_timeline.json --check
+  scripts/run.sh voice-audition --project /path/to/project --voices voice-a,voice-b [--dry-run]
+  scripts/run.sh synthesize --project /path/to/project [--pages 1-3] [--dry-run]
+  scripts/run.sh replace-audio --project /path/to/project
+  scripts/run.sh assemble-pptx --project /path/to/project [--adapter command]
+  scripts/run.sh export-video --project /path/to/project
+  scripts/run.sh export-pages --project /path/to/project --pages 8,9,14 --format pdf --output selected.pdf
+  scripts/run.sh qa --project /path/to/project --level audio|standard|release
+  scripts/run.sh rebuild --project /path/to/project --scope audio --qa standard [--voice voice-name]
   scripts/run.sh validate --project /path/to/project [--strict]
 USAGE
     ;;

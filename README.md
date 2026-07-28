@@ -1,12 +1,12 @@
 # Skill Repository
 
-把复杂工作流沉淀为可复用、可执行的 Skills——开箱即用，也方便持续扩展。
+日常工具
 
 ## 当前 Skills
 
 | Logo | 技能名称 | 描述 |
 |---|---|---|
-| <img src="skills/build-narrated-presentation/assets/logo.svg" alt="Build Narrated Presentation logo" width="44"> | [`build-narrated-presentation`](skills/build-narrated-presentation/) | 验证 Markdown 输入质量，再生成 SVG、静态/动画 PPTX、逐页旁白和 PowerPoint 视频。 |
+| <img src="skills/build-narrated-presentation/assets/logo.svg" alt="Build Narrated Presentation logo" width="44"> | [`build-narrated-presentation`](skills/build-narrated-presentation/) | 验证 Markdown 输入质量，生成 SVG/PPTX/视频；支持跨页连续旁白、只改音频和分级验收。 |
 | <img src="skills/dev-ops/assets/logo.svg" alt="Dev Ops logo" width="44"> | [`dev-ops`](skills/dev-ops/) | 维护部署脚本、服务资产、Compose、远程发布和主机级安装流程。 |
 | <img src="skills/pdf/assets/logo.svg" alt="PDF logo" width="44"> | [`pdf`](skills/pdf/) | 本地处理 PDF 水印、骑缝章、页面重排、批量操作以及 PDF/图片转换。 |
 | <img src="skills/speech/assets/logo.svg" alt="Speech I/O logo" width="44"> | [`speech`](skills/speech/) | 使用 Azure Speech 合成语音，并通过 Qwen3-ASR 兼容接口转写音频。 |

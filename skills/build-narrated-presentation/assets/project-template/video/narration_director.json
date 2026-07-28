@@ -1,12 +1,5 @@
 {
-  "schema_version": 1,
-  "voice": {
-    "provider": "azure-speech",
-    "name": "zh-CN-XiaochenNeural",
-    "style": null,
-    "default_rate": "+5%",
-    "pitch": "+0st"
-  },
+  "schema_version": 2,
   "policy": {
     "visual_sync": "independent",
     "audio_start_ms": 0,
@@ -16,6 +9,7 @@
   "pages": [
     {
       "page": 1,
+      "chapter": "chapter-01",
       "role": "建立共同问题并给出核心判断",
       "direction": "自然、直接，不逐项念画面文字。",
       "segments": [

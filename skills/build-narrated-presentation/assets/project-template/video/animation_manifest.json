@@ -1,15 +1,8 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "deck": "{{DECK_FILE}}",
   "slide_count": 1,
   "target_total_seconds": 12,
-  "voice": {
-    "provider": "azure-speech",
-    "name": "zh-CN-XiaochenNeural",
-    "style": null,
-    "rate": "+5%",
-    "pitch": "+0st"
-  },
   "narration_policy": {
     "visual_sync": "independent",
     "audio_start_ms": 0,

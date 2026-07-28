@@ -11,6 +11,12 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Sequence
 
+from production_common import (
+    canonical_hash,
+    load_voice_profile,
+    normalize_director_pages,
+    project_paths,
+)
 from validate_input_document import gate_document
 
 
@@ -155,9 +161,48 @@ def validate(project: Path) -> tuple[list[str], list[str]]:
     director_policy = director.get("policy", {})
     if director_policy.get("visual_sync") != "independent":
         errors.append("director.policy.visual_sync must be independent")
-    director_pages = page_map(director.get("pages"), "director.pages", errors)
-    if sorted(director_pages) != sorted(slides):
-        errors.append("Director and manifest page sets differ")
+    try:
+        normalized_director = normalize_director_pages(
+            director,
+            sorted(slides),
+        )
+    except ValueError as exc:
+        errors.append(f"Director contract: {exc}")
+        director_pages = page_map(
+            director.get("pages"),
+            "director.pages",
+            errors,
+        )
+    else:
+        director_pages = {
+            row["page"]: row for row in normalized_director
+        }
+    try:
+        voice_profile = load_voice_profile(
+            project_paths(project)["voice_profile"],
+            director=director,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        errors.append(f"Voice profile: {exc}")
+        voice_profile = {}
+    manifest_voice = manifest.get("voice")
+    expected_voice = {
+        "provider": voice_profile.get("provider"),
+        "name": voice_profile.get("voice"),
+        "style": voice_profile.get("style"),
+        "rate": voice_profile.get("rate"),
+        "pitch": voice_profile.get("pitch"),
+    }
+    if isinstance(manifest_voice, dict):
+        for field, value in expected_voice.items():
+            if manifest_voice.get(field) != value:
+                errors.append(
+                    f"Manifest voice {field} differs from voice profile"
+                )
+        if manifest_voice.get("profile_sha256") != canonical_hash(voice_profile):
+            errors.append("Manifest voice profile_sha256 is stale")
+    else:
+        errors.append("Manifest voice is missing")
 
     layer_plan = load_object(required["layers"])
     if layer_plan.get("canvas") != {"width": 1600, "height": 900}:
@@ -281,7 +326,7 @@ def validate(project: Path) -> tuple[list[str], list[str]]:
             )
             if merged_narration.get("text") != expected_text:
                 errors.append(f"Manifest page {page} narration is stale")
-            for field in ("role", "direction", "segments"):
+            for field in ("chapter", "role", "direction", "segments"):
                 if merged_narration.get(field) != narration.get(field):
                     errors.append(
                         f"Manifest page {page} narration {field} "

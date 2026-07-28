@@ -5,12 +5,14 @@ from __future__ import annotations
 
 import importlib.util
 import platform
+import shutil
 
 
 MODULES = {
     "azure.cognitiveservices.speech": "azure-cognitiveservices-speech",
     "fitz": "PyMuPDF",
     "lxml": "lxml",
+    "lameenc": "lameenc",
     "mutagen": "mutagen",
     "PIL": "Pillow",
     "pptx": "python-pptx",
@@ -33,6 +35,12 @@ def main() -> int:
             print(f"OK  Python dependency: {package}")
     print(f"INFO platform: {platform.system()} {platform.machine()}")
     if platform.system() == "Windows":
+        powershell = shutil.which("powershell") or shutil.which("pwsh")
+        if powershell:
+            print(f"OK  PowerShell: {powershell}")
+        else:
+            missing.append("PowerShell")
+            print("ERROR PowerShell is required for PowerPoint automation.")
         print("INFO Validate the final PPTX in the installed desktop PowerPoint.")
     else:
         print(

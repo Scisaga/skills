@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the slide-advance timeline from the real duration of per-slide MP3s."""
+"""Build slide advances from real MP3s, including chapter-split narration."""
 
 from __future__ import annotations
 
@@ -30,6 +30,14 @@ def build_timeline(
         if not isinstance(slide, dict):
             raise ValueError(f"slides[{fallback_page - 1}] must be an object")
         page = int(slide.get("page", fallback_page))
+        if page != fallback_page:
+            raise ValueError("Manifest pages must be contiguous from 1")
+        narration = slide.get("narration")
+        chapter = (
+            narration.get("chapter", f"page-{page:02d}")
+            if isinstance(narration, dict)
+            else f"page-{page:02d}"
+        )
         audio_path = audio_dir / f"{page:02d}.mp3"
         if not audio_path.is_file():
             raise FileNotFoundError(audio_path)
@@ -37,6 +45,7 @@ def build_timeline(
         rows.append(
             {
                 "page": page,
+                "chapter": chapter,
                 "audio_file": os.path.relpath(
                     audio_path.resolve(),
                     output.resolve().parent,
@@ -58,12 +67,13 @@ def build_timeline(
         3,
     )
     return {
-        "schema_version": 1,
-        "profile": "continuous-independent-narration",
+        "schema_version": 2,
+        "profile": "chapter-continuous-page-split",
         "advance_safety_ms": safety_ms,
         "slide_transition_ms": transition_ms,
         "audio_total_seconds": audio_total,
         "estimated_deck_seconds": estimated_deck,
+        "chapter_count": len({row["chapter"] for row in rows}),
         "slides": rows,
     }
 

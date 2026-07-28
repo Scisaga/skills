@@ -6,12 +6,17 @@ from __future__ import annotations
 import argparse
 import copy
 import json
-import re
 from pathlib import Path
 from typing import Any, Sequence
 
+from production_common import (
+    canonical_hash,
+    chapter_groups,
+    load_voice_profile,
+    normalize_director_pages,
+    voice_profile_from_legacy_director,
+)
 
-RATE_RE = re.compile(r"^[+-]\d+%$")
 
 
 def load_object(path: Path) -> dict[str, Any]:
@@ -25,56 +30,16 @@ def validate_director(
     director: dict[str, Any],
     expected_pages: list[int],
 ) -> dict[int, dict[str, Any]]:
-    policy = director.get("policy")
-    if not isinstance(policy, dict) or policy.get("visual_sync") != "independent":
-        raise ValueError("director.policy.visual_sync must be independent")
-    pages = director.get("pages")
-    if not isinstance(pages, list):
-        raise ValueError("director.pages must be an array")
-
-    rows: dict[int, dict[str, Any]] = {}
-    for row in pages:
-        if not isinstance(row, dict):
-            raise ValueError("director.pages[] must be objects")
-        page = row.get("page")
-        if isinstance(page, bool) or not isinstance(page, int) or page <= 0:
-            raise ValueError(f"Invalid director page: {page!r}")
-        if page in rows:
-            raise ValueError(f"Duplicate director page: {page}")
-        for field in ("role", "direction"):
-            if not isinstance(row.get(field), str) or not row[field].strip():
-                raise ValueError(f"Page {page} is missing {field}")
-        segments = row.get("segments")
-        if not isinstance(segments, list) or not segments:
-            raise ValueError(f"Page {page} is missing narration segments")
-        for index, segment in enumerate(segments, 1):
-            if not isinstance(segment, dict):
-                raise ValueError(f"Page {page} segment {index} must be an object")
-            if not isinstance(segment.get("text"), str) or not segment["text"].strip():
-                raise ValueError(f"Page {page} segment {index} is missing text")
-            if not isinstance(segment.get("rate"), str) or not RATE_RE.fullmatch(
-                segment["rate"]
-            ):
-                raise ValueError(f"Page {page} segment {index} has invalid rate")
-            pause = segment.get("pause_after_ms")
-            if (
-                isinstance(pause, bool)
-                or not isinstance(pause, int)
-                or not 0 <= pause <= 300
-            ):
-                raise ValueError(f"Page {page} segment {index} has invalid pause")
-        rows[page] = row
-
-    if sorted(rows) != expected_pages:
-        raise ValueError(
-            f"Director pages must be {expected_pages}; got {sorted(rows)}"
-        )
-    return rows
+    return {
+        row["page"]: row
+        for row in normalize_director_pages(director, expected_pages)
+    }
 
 
 def build_manifest(
     visual: dict[str, Any],
     director: dict[str, Any],
+    voice_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     slides = visual.get("slides")
     if not isinstance(slides, list) or not slides:
@@ -83,17 +48,26 @@ def build_manifest(
     if expected_pages != list(range(1, len(expected_pages) + 1)):
         raise ValueError("Visual manifest pages must be contiguous from 1")
     rows = validate_director(director, expected_pages)
+    if voice_profile is None:
+        voice_profile = voice_profile_from_legacy_director(director)
+    if voice_profile is None:
+        raise ValueError(
+            "A voice profile is required; pass --voice-profile or keep legacy "
+            "director.voice"
+        )
 
     result = copy.deepcopy(visual)
-    result["schema_version"] = 2
+    result["schema_version"] = 3
     result["voice"] = {
-        "provider": director["voice"]["provider"],
-        "name": director["voice"]["name"],
-        "style": director["voice"].get("style"),
-        "rate": director["voice"]["default_rate"],
-        "pitch": director["voice"]["pitch"],
+        "provider": voice_profile["provider"],
+        "name": voice_profile["voice"],
+        "style": voice_profile["style"],
+        "rate": voice_profile["rate"],
+        "pitch": voice_profile["pitch"],
+        "profile_sha256": canonical_hash(voice_profile),
     }
     result["narration_policy"] = copy.deepcopy(director["policy"])
+    result["narration_policy"]["continuous_chapter_synthesis"] = True
     for slide in result["slides"]:
         page = int(slide["page"])
         narration = copy.deepcopy(rows[page])
@@ -102,6 +76,14 @@ def build_manifest(
             segment["text"] for segment in narration["segments"]
         )
         slide["narration"] = narration
+    normalized_pages = [rows[page] for page in expected_pages]
+    result["narration_chapters"] = [
+        {
+            "id": chapter["id"],
+            "pages": [page["page"] for page in chapter["pages"]],
+        }
+        for chapter in chapter_groups(normalized_pages)
+    ]
     result["slide_count"] = len(result["slides"])
     return result
 
@@ -118,6 +100,8 @@ def render_review(manifest: dict[str, Any]) -> str:
         lines.extend(
             [
                 f"## 第 {slide['page']} 页",
+                "",
+                f"**连续合成章节：** `{narration['chapter']}`",
                 "",
                 f"**讲述目的：** {narration['role']}",
                 "",
@@ -140,6 +124,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--visual", type=Path, required=True)
     parser.add_argument("--director", type=Path, required=True)
+    parser.add_argument(
+        "--voice-profile",
+        type=Path,
+        help="Defaults to voice_profile.json next to --director",
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--review", type=Path, required=True)
     return parser
@@ -149,7 +138,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     visual = load_object(args.visual)
     director = load_object(args.director)
-    manifest = build_manifest(visual, director)
+    profile_path = args.voice_profile or args.director.with_name(
+        "voice_profile.json"
+    )
+    voice_profile = load_voice_profile(profile_path, director=director)
+    manifest = build_manifest(visual, director, voice_profile)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.review.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(

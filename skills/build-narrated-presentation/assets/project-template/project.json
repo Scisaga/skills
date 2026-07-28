@@ -8,7 +8,9 @@
   "paths": {
     "assets": "assets",
     "video": "video",
-    "deliverables": "deliverables"
+    "deliverables": "deliverables",
+    "voice_profile": "video/voice_profile.json",
+    "build_state": "video/build_state.json"
   },
   "source": {
     "mode": "uninitialized"

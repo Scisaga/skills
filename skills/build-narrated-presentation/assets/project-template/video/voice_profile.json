@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "provider": "azure-speech",
+  "voice": "zh-CN-XiaochenNeural",
+  "style": null,
+  "rate": "+0%",
+  "pitch": "+0st",
+  "page_break_ms": 120,
+  "pronunciations": {
+    "PsiAI": {
+      "alias": "波塞AI"
+    }
+  },
+  "audition": {
+    "text": "这是一段用于比较音色、语速和专有名词发音的试听文案，确认自然度后再批量生成整套旁白。"
+  }
+}
