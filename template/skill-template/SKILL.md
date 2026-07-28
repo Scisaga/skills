@@ -12,7 +12,7 @@ description: 用于创建新 skill 的基础模板。适用于需要快速初始
 ## 工作流
 
 1. 修改 frontmatter 中的 `name` 和 `description`
-2. 补充 `agents/openai.yaml`
+2. 替换 `assets/logo.svg`，并同步 `agents/openai.yaml` 的图标和品牌色
 3. 把稳定流程写进 `scripts/`
 4. 把细节说明写进 `references/`
 5. 把模板或资源放进 `assets/`

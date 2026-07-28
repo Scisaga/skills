@@ -57,6 +57,14 @@ POST /v1/audio/transcriptions
 
 `skills/speech/scripts/transcribe.py` 当前正是按这个接口形态构造 `multipart/form-data` 请求。
 
+## 认证边界
+
+当前 `speech` 客户端不会发送 API Key、Bearer token 或其他 `Authorization` header，`qwen3-asr-openai` 的默认转写接口也不要求 key。
+
+服务端环境变量 `ADMIN_TOKEN` 只保护 `POST /admin/reload`，与 `POST /v1/audio/transcriptions` 无关；不要把它配置成 `speech` skill 的转写 key。
+
+若把 ASR 暴露到其他主机或公网，应通过受信网络、防火墙或反向代理限制访问。若代理要求认证，必须先为 `transcribe.py` 增加对应认证方式；仅设置一个未被脚本读取的环境变量不会生效。
+
 ## MCP 能力与限制
 
 该服务同时提供 MCP 能力，但 `speech` skill 默认不走 MCP，而是走 HTTP 上传接口。

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">PDF pages to validated output</title>
+  <path d="M14 3h34l13 13v34L50 61H16L3 48V14z" fill="#111827" stroke="#FB7185" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M9 19h17l5 5v25H9z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" opacity=".55"/>
+  <path d="M14 14h17l5 5v25H14z" fill="#111827" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M31 14v5h5M20 26h10M20 32h10M20 38h7" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M37 30h5" fill="none" stroke="#FB7185" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="m40 27 4 3-4 3" fill="none" stroke="#FB7185" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="49" cy="37" r="8" fill="#111827" stroke="#FB7185" stroke-width="2.8"/>
+  <path d="m45.5 37 2.3 2.4 4.8-5.2" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

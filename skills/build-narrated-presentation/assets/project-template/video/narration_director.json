@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "voice": {
+    "provider": "azure-speech",
+    "name": "zh-CN-XiaochenNeural",
+    "style": null,
+    "default_rate": "+5%",
+    "pitch": "+0st"
+  },
+  "policy": {
+    "visual_sync": "independent",
+    "audio_start_ms": 0,
+    "paragraph_per_slide": 1,
+    "animation_window_ms": 1000
+  },
+  "pages": [
+    {
+      "page": 1,
+      "role": "建立共同问题并给出核心判断",
+      "direction": "自然、直接，不逐项念画面文字。",
+      "segments": [
+        {
+          "text": "先用一句话说明观众共同面对的问题。",
+          "rate": "+8%",
+          "pause_after_ms": 80
+        },
+        {
+          "text": "再清楚说出这一页最重要的结论。",
+          "rate": "+5%",
+          "pause_after_ms": 120
+        }
+      ]
+    }
+  ]
+}

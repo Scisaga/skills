@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Video split into media tracks</title>
+  <path d="M14 3h34l13 13v34L50 61H16L3 48V14z" fill="#111827" stroke="#FBBF24" stroke-width="2" stroke-linejoin="round"/>
+  <rect x="8.5" y="18" width="20" height="26" rx="3" fill="none" stroke="#fff" stroke-width="2.5"/>
+  <path d="M16 25v12l9-6z" fill="#FBBF24"/>
+  <path d="M29 31h8m0 0 7-11m-7 11h7m-7 0 7 11" fill="none" stroke="#FBBF24" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="44" cy="20" r="2.5" fill="#FBBF24"/>
+  <circle cx="44" cy="31" r="2.5" fill="#FBBF24"/>
+  <circle cx="44" cy="42" r="2.5" fill="#FBBF24"/>
+  <path d="M48 20h8M48 31h6M48 42h9" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

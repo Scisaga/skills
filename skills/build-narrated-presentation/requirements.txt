@@ -1,0 +1,8 @@
+azure-cognitiveservices-speech>=1.37.0
+lxml>=5.2.0
+mutagen>=1.47.0
+Pillow>=10.3.0
+PyMuPDF>=1.24.0
+python-dotenv>=1.0.0
+python-pptx>=1.0.0
+WeasyPrint>=62.0

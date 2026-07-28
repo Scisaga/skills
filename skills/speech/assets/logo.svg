@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Bidirectional text and speech conversion</title>
+  <path d="M14 3h34l13 13v34L50 61H16L3 48V14z" fill="#111827" stroke="#E879F9" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M9 23h14M9 29h11M9 35h14" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M23 19h9l-3-3m3 3-3 3M32 42h-9l3 3m-3-3 3-3" fill="none" stroke="#E879F9" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M35 35v-7m5 11V24m5 19V20m5 17V26m5 8v-5" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round"/>
+  <circle cx="45" cy="31.5" r="2.4" fill="#E879F9"/>
+</svg>

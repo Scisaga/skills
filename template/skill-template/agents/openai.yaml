@@ -1,4 +1,7 @@
 interface:
   display_name: "Skill Template"
   short_description: "Starter template for a new skill"
+  icon_small: "./assets/logo.svg"
+  icon_large: "./assets/logo.svg"
+  brand_color: "#94A3B8"
   default_prompt: "Use this template as the starting point for a new skill."

@@ -1,0 +1,44 @@
+{
+  "version": 2,
+  "canvas": {
+    "width": 1600,
+    "height": 900
+  },
+  "pages": {
+    "01": {
+      "slide_number": 1,
+      "source": "assets/00_cover.svg",
+      "expected_source_sha256": "{{SOURCE_SHA256}}",
+      "layers": [
+        {
+          "name": "base",
+          "animation": "none",
+          "description": "背景",
+          "container_xpath": ".",
+          "indices": [0]
+        },
+        {
+          "name": "title",
+          "animation": "fade",
+          "description": "主标题",
+          "container_xpath": ".",
+          "indices": [1]
+        },
+        {
+          "name": "beat_01",
+          "animation": "fade",
+          "description": "问题或背景",
+          "container_xpath": ".",
+          "indices": [2]
+        },
+        {
+          "name": "beat_02",
+          "animation": "wipe_left",
+          "description": "方案或结论",
+          "container_xpath": ".",
+          "indices": [3]
+        }
+      ]
+    }
+  }
+}

@@ -9,6 +9,20 @@ description: 为中文或多语言场景提供文本转语音与音频转文本�
 
 这个 skill 用于确定性的语音输入输出任务。文本生成 MP3 时使用合成脚本；从音频提取文本时使用转写脚本，ASR 默认地址为 `http://127.0.0.1:12301/`。
 
+## 运行前提与外部依赖
+
+TTS 与 ASR 是两条独立能力：只做转写不需要 Azure Key，只做合成也不需要启动 Qwen3-ASR 服务。
+
+| 能力 | 外部服务 | 必需配置 | 是否需要 Key |
+|---|---|---|---|
+| 文本转语音（TTS） | Azure AI Speech 云服务；使用前须有 Azure 订阅并创建 Speech 资源 | `AZURE_SPEECH_KEY`；`AZURE_SPEECH_REGION` 必须与该资源的区域一致，也可分别用 `--speech-key`、`--region` 覆盖 | 需要 Azure Speech resource key |
+| 音频转文本（ASR） | 一台可访问的自托管 `qwen3-asr-openai` 服务；本 skill 不负责自动部署它 | `QWEN_ASR_API_BASE`，或 `--api-base`；默认 `http://127.0.0.1:12301` | 当前转写接口和客户端不使用 API Key；`ADMIN_TOKEN` 只保护服务端模型热重载，不用于转写 |
+| 本地脚本 | Bash、Python 3、pip，以及 `requirements.txt` 中的 Python 包 | 首次运行 `scripts/bootstrap.sh` | 不需要 |
+
+还必须满足相应网络条件：TTS 运行机能访问 Azure Speech；ASR 运行机能访问配置的 Qwen3-ASR 地址。`bootstrap.sh` 只安装本地 Python 依赖并做检查，不会创建 Azure 资源、申请 Key、部署 ASR 服务或下载 ASR 模型。
+
+优先从仓库根目录 `.env.example` 复制本地 `.env`，只填写自己环境的值，不要提交真实 Key。完整准备步骤、配置优先级和系统依赖见 `references/usage.md`；ASR 服务部署与资源需求见 `references/qwen3-asr-openai.md`。
+
 ## 工作流
 
 1. 先确认任务方向。
@@ -21,9 +35,9 @@ description: 为中文或多语言场景提供文本转语音与音频转文本�
    - 如果文本已经由其他命令生成，用 `--stdin`。
 
 3. 确认运行前置条件。
-   - TTS 需要环境变量 `AZURE_SPEECH_KEY`，或显式传入 `--speech-key`。
+   - TTS 需要 `AZURE_SPEECH_KEY` 和与资源匹配的 `AZURE_SPEECH_REGION`，也可用命令行参数覆盖。
    - ASR 可使用 `QWEN_ASR_API_BASE`，未设置时默认走 `http://127.0.0.1:12301`。
-   - 首次使用前优先执行 `skills/speech/scripts/bootstrap.sh` 完成依赖安装和环境检查。
+   - 首次使用前优先执行 `skills/speech/scripts/bootstrap.sh --mode synthesize` 或 `--mode transcribe`；只有两项都已配置时才使用默认的 `--mode all`。
    - 只有当前 shell 里没有所需变量时，才使用 `--env-file`。
 
 4. 保守选择参数。
@@ -46,7 +60,8 @@ description: 为中文或多语言场景提供文本转语音与音频转文本�
 ## 命令模式
 
 ```bash
-bash skills/speech/scripts/bootstrap.sh
+bash skills/speech/scripts/bootstrap.sh --mode synthesize
+bash skills/speech/scripts/bootstrap.sh --mode transcribe
 bash skills/speech/scripts/run.sh synthesize --text "你好，欢迎使用语音合成。" --output-mp3 out/demo.mp3
 bash skills/speech/scripts/run.sh synthesize --input-file script.txt --voice zh-CN-XiaoxiaoNeural --style newscast
 cat notes.txt | bash skills/speech/scripts/run.sh synthesize --stdin --output-mp3 out/notes.mp3

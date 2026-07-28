@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Skill Template</title>
+  <path d="M14 3h34l13 13v34L50 61H16L3 48V14z" fill="#111827" stroke="#94A3B8" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M10 16h17l5 5v27H10z" fill="none" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M27 16v5h5M16 28h10M16 34h10M16 40h7" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M39 23h14M46 16v14" fill="none" stroke="#94A3B8" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="m39 43 4 4 9-10" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

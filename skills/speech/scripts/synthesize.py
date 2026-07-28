@@ -284,7 +284,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-mp3", default=DEFAULT_OUT_MP3, help="输出 MP3 文件路径")
     parser.add_argument("--output-text", default=DEFAULT_OUT_TXT, help="输出文本文件路径")
     parser.add_argument("--skip-text-save", action="store_true", help="不落盘保存文本")
-    parser.add_argument("--region", default=DEFAULT_REGION, help=f"Azure region，默认 {DEFAULT_REGION}")
+    parser.add_argument(
+        "--region",
+        help=f"Azure region，默认读取 AZURE_SPEECH_REGION 或 {DEFAULT_REGION}",
+    )
     parser.add_argument("--voice", default=DEFAULT_VOICE, help=f"语音，默认 {DEFAULT_VOICE}")
     parser.add_argument(
         "--style",
@@ -323,6 +326,7 @@ def main(argv: list[str]) -> int:
         raise RuntimeError("输入文本为空。")
 
     speech_key = args.speech_key or os.getenv("AZURE_SPEECH_KEY", "")
+    region = args.region or os.getenv("AZURE_SPEECH_REGION") or DEFAULT_REGION
 
     if not args.skip_text_save:
         save_text(text, args.output_text)
@@ -332,7 +336,7 @@ def main(argv: list[str]) -> int:
         text,
         args.output_mp3,
         speech_key=speech_key,
-        region=args.region,
+        region=region,
         voice=args.voice,
         style=args.style,
         rate=args.rate,

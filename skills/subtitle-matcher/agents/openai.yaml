@@ -1,4 +1,7 @@
 interface:
   display_name: "Subtitle Matcher"
   short_description: "Find, score, validate, normalize Chinese subtitles, and render HTML reports"
+  icon_small: "./assets/logo.svg"
+  icon_large: "./assets/logo.svg"
+  brand_color: "#38BDF8"
   default_prompt: "Use $subtitle-matcher to find, score, validate, and normalize Chinese subtitles for a local video folder; generate the HTML report in the video root and enable VLC report playback when on Windows."

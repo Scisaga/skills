@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <rect id="background" width="1600" height="900" fill="#f7f8fa"/>
+  <g id="title" font-family="Arial, sans-serif" fill="#17202a">
+    <text x="120" y="210" font-size="42">演示项目</text>
+    <text x="120" y="300" font-size="72" font-weight="700">在这里替换主标题</text>
+  </g>
+  <g id="beat-01" font-family="Arial, sans-serif">
+    <rect x="120" y="410" width="620" height="240" rx="24" fill="#ffffff" stroke="#ccd2d9"/>
+    <text x="170" y="500" font-size="34" fill="#17202a">问题或背景</text>
+    <text x="170" y="560" font-size="26" fill="#56616f">用一个清楚判断建立共同语境。</text>
+  </g>
+  <g id="beat-02" font-family="Arial, sans-serif">
+    <rect x="860" y="410" width="620" height="240" rx="24" fill="#17202a"/>
+    <text x="910" y="500" font-size="34" fill="#ffffff">方案或结论</text>
+    <text x="910" y="560" font-size="26" fill="#d7dde4">说明观众看完这一页应记住什么。</text>
+  </g>
+</svg>

@@ -8,6 +8,7 @@ from urllib import error, request
 from common import configure_logging, ensure_python_modules, load_env
 
 DEFAULT_API_BASE = "http://127.0.0.1:12301"
+DEFAULT_REGION = "eastasia"
 logger = logging.getLogger("speech.doctor")
 
 
@@ -20,6 +21,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="检查范围，默认 all",
     )
     parser.add_argument("--api-base", help=f"ASR 服务地址，默认读取 QWEN_ASR_API_BASE 或 {DEFAULT_API_BASE}")
+    parser.add_argument(
+        "--region",
+        help=f"Azure region，默认读取 AZURE_SPEECH_REGION 或 {DEFAULT_REGION}",
+    )
     parser.add_argument(
         "--env-file",
         help="指定 .env 文件路径；未指定时依次尝试当前目录 .env、skill 根目录 .env、脚本目录 .env",
@@ -66,6 +71,8 @@ def main(argv: list[str]) -> int:
             print("OK  已检测到环境变量: AZURE_SPEECH_KEY")
         else:
             raise RuntimeError("缺少环境变量 `AZURE_SPEECH_KEY`，TTS 无法使用。")
+        region = args.region or os.getenv("AZURE_SPEECH_REGION") or DEFAULT_REGION
+        print(f"OK  Azure Speech region: {region}")
 
     if args.mode in {"all", "transcribe"}:
         api_base = args.api_base or os.getenv("QWEN_ASR_API_BASE", DEFAULT_API_BASE)

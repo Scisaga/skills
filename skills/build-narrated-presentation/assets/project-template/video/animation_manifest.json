@@ -1,0 +1,48 @@
+{
+  "schema_version": 2,
+  "deck": "{{DECK_FILE}}",
+  "slide_count": 1,
+  "target_total_seconds": 12,
+  "voice": {
+    "provider": "azure-speech",
+    "name": "zh-CN-XiaochenNeural",
+    "style": null,
+    "rate": "+5%",
+    "pitch": "+0st"
+  },
+  "narration_policy": {
+    "visual_sync": "independent",
+    "audio_start_ms": 0,
+    "paragraph_per_slide": 1,
+    "animation_window_ms": 1000
+  },
+  "animation_defaults": {
+    "slide_transition": "fade",
+    "slide_transition_ms": 250,
+    "advance_safety_ms": 150
+  },
+  "slides": [
+    {
+      "page": 1,
+      "source_svg": "assets/00_cover.svg",
+      "target_seconds": 12,
+      "beats": [
+        {
+          "id": "title",
+          "label": "主标题",
+          "effect": "fade"
+        },
+        {
+          "id": "beat_01",
+          "label": "问题或背景",
+          "effect": "fade"
+        },
+        {
+          "id": "beat_02",
+          "label": "方案或结论",
+          "effect": "wipe_left"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Build Narrated Presentation"
+  short_description: "验证输入文档，再生成自动旁白动画 PPTX 和视频"
+  icon_small: "./assets/logo.svg"
+  icon_large: "./assets/logo.svg"
+  brand_color: "#A78BFA"
+  default_prompt: "使用 $build-narrated-presentation 先验证输入文档的叙事、事实边界和演示可制作性；不合格时只给出返工报告，合格后再制作带首秒动画、逐页旁白和自动换页的 PPTX，并给出 PowerPoint 视频导出与验收结果。"

@@ -1,4 +1,7 @@
 interface:
   display_name: "Speech I/O"
-  short_description: "TTS and ASR for text/audio"
-  default_prompt: "Use $speech to turn this script into speech or transcribe an audio file into text."
+  short_description: "Azure TTS and self-hosted Qwen ASR"
+  icon_small: "./assets/logo.svg"
+  icon_large: "./assets/logo.svg"
+  brand_color: "#E879F9"
+  default_prompt: "Use $speech to synthesize or transcribe this content, and first check the required external service, credentials, and runtime dependencies."

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Subtitle tracks matched to one timeline</title>
+  <path d="M14 3h34l13 13v34L50 61H16L3 48V14z" fill="#111827" stroke="#38BDF8" stroke-width="2" stroke-linejoin="round"/>
+  <circle cx="10" cy="22" r="2.3" fill="#38BDF8"/>
+  <circle cx="10" cy="41" r="2.3" fill="#38BDF8"/>
+  <rect x="15" y="17" width="20" height="10" rx="3" fill="none" stroke="#fff" stroke-width="2.3"/>
+  <rect x="20" y="36" width="20" height="10" rx="3" fill="none" stroke="#fff" stroke-width="2.3"/>
+  <path d="M19 22h12M24 41h12" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M35 22h5l7 9M40 41h1l6-10" fill="none" stroke="#38BDF8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="49" cy="31" r="8" fill="#111827" stroke="#38BDF8" stroke-width="2.8"/>
+  <path d="m45.5 31 2.3 2.4 4.8-5.2" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

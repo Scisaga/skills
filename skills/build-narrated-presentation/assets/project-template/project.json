@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "name": "{{PROJECT_NAME}}",
+  "canvas": {
+    "width": 1600,
+    "height": 900
+  },
+  "paths": {
+    "assets": "assets",
+    "video": "video",
+    "deliverables": "deliverables"
+  },
+  "source": {
+    "mode": "uninitialized"
+  },
+  "outputs": {
+    "static_pptx": "deliverables/{{PROJECT_NAME}}_静态.pptx",
+    "animated_pptx": "deliverables/{{DECK_FILE}}",
+    "video": "deliverables/{{PROJECT_NAME}}_自动旁白.mp4"
+  }
+}

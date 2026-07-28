@@ -4,13 +4,15 @@
 
 ## 仓库约定
 
-- 所有真实 skill 统一放在 `skills/` 目录下，例如 `skills/speech/`、`skills/pdf/`。
+- 所有真实 skill 统一放在 `skills/` 目录下，例如 `skills/build-narrated-presentation/`、`skills/speech/`、`skills/pdf/`、`skills/subtitle-matcher/`。
 - 仓库根目录只保留仓库级文档、模板和规范，不直接放 skill。
 - 推荐同时维护：
   - `template/skill-template/`
   - `spec/`
+- 仓库级环境变量示例统一维护在根目录 `.env.example`；不得写入真实密钥、token 或含凭据的代理地址。
 - 平台专属元数据不是默认结构；只有明确要接入某个平台 marketplace 或插件系统时，才增加对应目录。
 - 一个 skill 至少包含 `SKILL.md`。
+- 每个真实 skill 必须提供 `assets/logo.svg`，使用可在浅色和深色背景中识别的简洁矢量图形。
 - 推荐为每个 skill 提供：
   - `agents/openai.yaml`
   - `scripts/`
@@ -25,6 +27,8 @@
 - 详细参数、排障、接口细节放到 `references/`。
 - 需要重复执行、需要确定性、或容易出错的操作，落成 `scripts/`。
 - `agents/openai.yaml` 应与 `SKILL.md` 保持一致，尤其是名称、用途和默认提示。
+- `agents/openai.yaml` 应配置 `icon_small`、`icon_large` 和 `brand_color`；两个图标字段默认复用 `./assets/logo.svg`。
+- 声明会阻断下游工作的质量门禁，必须由脚本退出码和输入摘要实际执行，不能只写成文档提醒。
 
 ## SKILL.md 规则
 
@@ -45,7 +49,7 @@
 
 ## 脚本型 Skill 运行约定
 
-适用于像 `skills/speech/` 这类依赖脚本执行的 skill。新建类似 skill 时，默认沿用同样模式。
+适用于像 `skills/build-narrated-presentation/`、`skills/speech/`、`skills/subtitle-matcher/` 这类依赖脚本执行的 skill。新建类似 skill 时，默认沿用同样模式。
 
 ### `.env` 读取规则
 
@@ -53,11 +57,13 @@
 - 再读 skill 根目录的 `.env`
 - 再读脚本同目录 `.env`
 
-以当前 `skills/speech/` 为例，实际顺序是：
+以当前 `skills/speech/` 和 `skills/subtitle-matcher/` 为例，实际顺序是：
 
 - 当前工作目录 `.env`
-- `skills/speech/.env`
-- `skills/speech/scripts/.env`
+- `skills/<name>/.env`
+- `skills/<name>/scripts/.env`
+
+新增或修改环境变量时，同步更新根目录 `.env.example`，只保留变量名、注释和安全默认值。
 
 ### 依赖检查
 
@@ -101,6 +107,9 @@ skills/skill-name/
 
 - 目录结构符合 `skills/<name>/` 约定
 - `SKILL.md` 与目录职责一致
+- README 技能表、`assets/logo.svg` 与实际技能目录一致
+- `agents/openai.yaml` 的图标路径存在且品牌色有效
 - 命令示例可运行
 - 缺依赖时提示明确
 - `.env` 加载顺序明确
+- `.env.example` 覆盖当前公开支持的环境变量且不含敏感值
