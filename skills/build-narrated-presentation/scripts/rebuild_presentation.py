@@ -11,6 +11,7 @@ from typing import Sequence
 
 from production_common import (
     current_input_fingerprints,
+    load_project_config,
     load_state,
     project_paths,
     write_object,
@@ -83,6 +84,14 @@ def ensure_audio_scope(
 
 def rebuild_audio(args: argparse.Namespace) -> int:
     project = args.project.expanduser().resolve()
+    config = load_project_config(project)
+    deliverable = config["deliverable"]
+    if deliverable not in {"narrated_pptx", "video"}:
+        raise RuntimeError(
+            "Audio rebuild requires narrated_pptx or video deliverable"
+        )
+    if args.qa == "release" and deliverable != "video":
+        raise RuntimeError("Release QA requires deliverable=video")
     paths = project_paths(project)
     if (args.voice or args.rate or args.pitch) and args.pages:
         raise ValueError(
@@ -156,13 +165,15 @@ def rebuild_audio(args: argparse.Namespace) -> int:
                 *(["--force"] if args.force else []),
             ],
         )
-    if not args.skip_export:
+    if deliverable == "video" and not args.skip_export:
         run_script(
             "powerpoint_production.py",
             ["export-video", "--project", str(project)],
         )
-    else:
+    elif deliverable == "video":
         print("WARN PowerPoint video export was explicitly skipped")
+    else:
+        print("INFO deliverable=narrated_pptx; stopping before video export")
     if args.qa == "release":
         if args.skip_export:
             raise RuntimeError("Release QA requires PowerPoint video export")
@@ -190,7 +201,7 @@ def rebuild_audio(args: argparse.Namespace) -> int:
     write_object(paths["build_state"], state)
     print(
         f"OK  rebuild scope=audio qa={args.qa}; "
-        f"video_exported={not args.skip_export}"
+        f"video_exported={deliverable == 'video' and not args.skip_export}"
     )
     return 0
 

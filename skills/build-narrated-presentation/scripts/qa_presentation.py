@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import zipfile
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
@@ -20,10 +21,14 @@ from production_common import (
     current_input_fingerprints,
     file_hash,
     load_object,
+    load_project_config,
     load_state,
     load_voice_profile,
     normalize_director_pages,
     project_paths,
+    require_approvals,
+    source_fingerprint,
+    visual_fingerprint,
     write_object,
 )
 from validate_project import validate as validate_full_project
@@ -50,6 +55,41 @@ def cache_fingerprint(
     state: dict[str, Any],
 ) -> str:
     paths = project_paths(project)
+    config = load_project_config(project)
+    manifest = (
+        load_object(paths["manifest"])
+        if paths["manifest"].is_file()
+        else {"slides": []}
+    )
+    static_payload = {
+        "source": source_fingerprint(project, config),
+        "visual": visual_fingerprint(
+            project,
+            config,
+            manifest,
+            include_timing=False,
+        ),
+        "template": (
+            file_hash(paths["template_working"])
+            if paths["template_working"].is_file()
+            else None
+        ),
+        "pptx": (
+            file_hash(paths["static_pptx"])
+            if paths["static_pptx"].is_file()
+            else None
+        ),
+        "qa_tools": {
+            path.name: file_hash(path)
+            for path in (
+                Path(__file__),
+                Path(__file__).with_name("validate_project.py"),
+                Path(__file__).with_name("production_common.py"),
+            )
+        },
+    }
+    if level == "static":
+        return canonical_hash(static_payload)
     audio_payload = {
         "director": file_hash(paths["director"]) if paths["director"].is_file() else None,
         "voice_profile": (
@@ -83,8 +123,8 @@ def cache_fingerprint(
     standard_payload = {
         "audio": audio_payload,
         "pptx": (
-            file_hash(paths["animated_pptx"])
-            if paths["animated_pptx"].is_file()
+            file_hash(paths["narrated_pptx"])
+            if paths["narrated_pptx"].is_file()
             else None
         ),
     }
@@ -99,6 +139,125 @@ def cache_fingerprint(
     return canonical_hash(release_payload)
 
 
+def static_qa(
+    project: Path,
+    errors: list[str],
+    warnings: list[str],
+) -> tuple[str, dict[str, Any]]:
+    paths = project_paths(project)
+    config = load_project_config(project)
+    full_errors, full_warnings = validate_full_project(
+        project,
+        stage="static_pptx",
+    )
+    errors.extend(full_errors)
+    warnings.extend(full_warnings)
+    template = paths["template_working"]
+    if not template.is_file():
+        errors.append(f"Working template not found: {template}")
+    elif not zipfile.is_zipfile(template):
+        errors.append(f"Working template is not a valid PPTX package: {template}")
+
+    manifest = load_object(paths["manifest"])
+    expected_pages = [
+        row.get("page")
+        for row in manifest.get("slides", [])
+        if isinstance(row, dict)
+    ]
+    pptx = paths["static_pptx"]
+    pptx_report: dict[str, Any] | None = None
+    if not pptx.is_file():
+        errors.append(f"Static PPTX not found: {pptx}")
+    else:
+        try:
+            with zipfile.ZipFile(pptx) as archive:
+                bad_member = archive.testzip()
+                if bad_member is not None:
+                    errors.append(f"PPTX ZIP member is corrupt: {bad_member}")
+                slide_names = {
+                    name
+                    for name in archive.namelist()
+                    if name.startswith("ppt/slides/slide")
+                    and name.endswith(".xml")
+                    and "/_rels/" not in name
+                }
+                if len(slide_names) != len(expected_pages):
+                    errors.append(
+                        f"Static PPTX slide count {len(slide_names)} "
+                        f"!= manifest pages {len(expected_pages)}"
+                    )
+                svg_members = [
+                    name
+                    for name in archive.namelist()
+                    if name.startswith("ppt/media/")
+                    and name.lower().endswith(".svg")
+                ]
+                if len(svg_members) < len(expected_pages):
+                    errors.append(
+                        "Static PPTX does not contain one embedded SVG per page"
+                    )
+                external_media: list[str] = []
+                for name in archive.namelist():
+                    if not name.endswith(".rels"):
+                        continue
+                    root = ET.fromstring(archive.read(name))
+                    for relationship in root:
+                        rel_type = relationship.get("Type", "")
+                        if (
+                            relationship.get("TargetMode") == "External"
+                            and rel_type.rsplit("/", 1)[-1]
+                            in {"audio", "image", "media"}
+                        ):
+                            external_media.append(
+                                f"{name}:{relationship.get('Target')}"
+                            )
+                if external_media:
+                    errors.append(
+                        "Static PPTX contains external media relationships: "
+                        + ", ".join(external_media)
+                    )
+                pptx_report = {
+                    "file": str(pptx.relative_to(project)),
+                    "sha256": file_hash(pptx),
+                    "slides": len(slide_names),
+                    "embedded_svg": len(svg_members),
+                }
+        except (ET.ParseError, zipfile.BadZipFile) as exc:
+            errors.append(f"Invalid static PPTX package: {exc}")
+
+    fingerprint = canonical_hash(
+        {
+            "source": source_fingerprint(project, config),
+            "visual": visual_fingerprint(
+                project,
+                config,
+                manifest,
+                include_timing=False,
+            ),
+            "template": (
+                file_hash(template) if template.is_file() else None
+            ),
+            "pptx": file_hash(pptx) if pptx.is_file() else None,
+            "qa_script": file_hash(Path(__file__)),
+        }
+    )
+    return fingerprint, {
+        "project": {
+            "errors": full_errors,
+            "warnings": full_warnings,
+        },
+        "template": (
+            {
+                "file": str(template.relative_to(project)),
+                "sha256": file_hash(template),
+            }
+            if template.is_file()
+            else None
+        ),
+        "pptx": pptx_report,
+    }
+
+
 def audio_qa(
     project: Path,
     errors: list[str],
@@ -107,7 +266,7 @@ def audio_qa(
     paths = project_paths(project)
     director = load_object(paths["director"])
     manifest = load_object(paths["manifest"])
-    voice = load_voice_profile(paths["voice_profile"], director=director)
+    voice = load_voice_profile(paths["voice_profile"])
     expected_pages = [
         int(row["page"])
         for row in manifest.get("slides", [])
@@ -303,9 +462,9 @@ def standard_qa(
 ) -> tuple[str, dict[str, Any]]:
     audio_fingerprint, audio_report = audio_qa(project, errors, warnings)
     paths = project_paths(project)
-    pptx = paths["animated_pptx"]
+    pptx = paths["narrated_pptx"]
     if not pptx.is_file():
-        errors.append(f"Animated PPTX not found: {pptx}")
+        errors.append(f"Narrated PPTX not found: {pptx}")
         return canonical_hash({"audio": audio_fingerprint, "pptx": None}), {
             "audio": audio_report,
             "pptx": None,
@@ -442,7 +601,10 @@ def release_qa(
         errors,
         warnings,
     )
-    full_errors, full_warnings = validate_full_project(project)
+    full_errors, full_warnings = validate_full_project(
+        project,
+        stage="video",
+    )
     errors.extend(f"Full project: {message}" for message in full_errors)
     errors.extend(f"Full project warning: {message}" for message in full_warnings)
     paths = project_paths(project)
@@ -478,7 +640,11 @@ def release_qa(
         if isinstance(powerpoint, dict)
         else None
     )
-    pptx_sha = file_hash(paths["animated_pptx"]) if paths["animated_pptx"].is_file() else None
+    pptx_sha = (
+        file_hash(paths["narrated_pptx"])
+        if paths["narrated_pptx"].is_file()
+        else None
+    )
     video_sha = file_hash(video) if video.is_file() else None
     if not isinstance(opened, dict) or opened.get("pptx_sha256") != pptx_sha:
         errors.append("Current PPTX has no matching PowerPoint-open evidence")
@@ -514,6 +680,24 @@ def release_qa(
 
 def qa_command(args: argparse.Namespace) -> int:
     project = args.project.expanduser().resolve()
+    config = load_project_config(project)
+    deliverable = config["deliverable"]
+    if args.level in {"audio", "standard"} and deliverable not in {
+        "narrated_pptx",
+        "video",
+    }:
+        raise RuntimeError(
+            f"qa={args.level} requires narrated_pptx or video deliverable"
+        )
+    if args.level == "release" and deliverable != "video":
+        raise RuntimeError("qa=release requires deliverable=video")
+    approval_requirements = {
+        "static": ("content", "visual"),
+        "audio": ("content", "narration"),
+        "standard": ("content", "visual", "narration"),
+        "release": ("content", "visual", "narration"),
+    }
+    require_approvals(project, approval_requirements[args.level])
     paths = project_paths(project)
     state = load_state(paths["build_state"])
     if args.human_confirmed and args.level != "release":
@@ -546,7 +730,9 @@ def qa_command(args: argparse.Namespace) -> int:
 
     errors: list[str] = []
     warnings: list[str] = []
-    if args.level == "audio":
+    if args.level == "static":
+        _, report = static_qa(project, errors, warnings)
+    elif args.level == "audio":
         _, report = audio_qa(project, errors, warnings)
     elif args.level == "standard":
         _, report = standard_qa(project, errors, warnings)
@@ -595,7 +781,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--project", type=Path, required=True)
     parser.add_argument(
         "--level",
-        choices=("audio", "standard", "release"),
+        choices=("static", "audio", "standard", "release"),
         required=True,
     )
     parser.add_argument("--force", action="store_true")

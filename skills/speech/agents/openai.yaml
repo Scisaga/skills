@@ -1,7 +1,7 @@
 interface:
   display_name: "Speech I/O"
-  short_description: "Azure TTS and self-hosted Qwen ASR"
+  short_description: "Azure TTS and optional self-hosted Qwen ASR"
   icon_small: "./assets/logo.svg"
   icon_large: "./assets/logo.svg"
   brand_color: "#E879F9"
-  default_prompt: "Use $speech to synthesize or transcribe this content, and first check the required external service, credentials, and runtime dependencies."
+  default_prompt: "Use $speech to synthesize or transcribe this content; check only the selected mode's dependencies, and for ASR connect to a reachable user-deployed qwen3-asr-openai service without deploying it automatically."

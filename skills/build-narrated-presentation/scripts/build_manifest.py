@@ -14,7 +14,6 @@ from production_common import (
     chapter_groups,
     load_voice_profile,
     normalize_director_pages,
-    voice_profile_from_legacy_director,
 )
 
 
@@ -39,7 +38,7 @@ def validate_director(
 def build_manifest(
     visual: dict[str, Any],
     director: dict[str, Any],
-    voice_profile: dict[str, Any] | None = None,
+    voice_profile: dict[str, Any],
 ) -> dict[str, Any]:
     slides = visual.get("slides")
     if not isinstance(slides, list) or not slides:
@@ -48,14 +47,6 @@ def build_manifest(
     if expected_pages != list(range(1, len(expected_pages) + 1)):
         raise ValueError("Visual manifest pages must be contiguous from 1")
     rows = validate_director(director, expected_pages)
-    if voice_profile is None:
-        voice_profile = voice_profile_from_legacy_director(director)
-    if voice_profile is None:
-        raise ValueError(
-            "A voice profile is required; pass --voice-profile or keep legacy "
-            "director.voice"
-        )
-
     result = copy.deepcopy(visual)
     result["schema_version"] = 3
     result["voice"] = {
@@ -141,7 +132,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     profile_path = args.voice_profile or args.director.with_name(
         "voice_profile.json"
     )
-    voice_profile = load_voice_profile(profile_path, director=director)
+    voice_profile = load_voice_profile(profile_path)
     manifest = build_manifest(visual, director, voice_profile)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.review.parent.mkdir(parents=True, exist_ok=True)

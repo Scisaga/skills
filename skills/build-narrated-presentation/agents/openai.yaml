@@ -1,7 +1,7 @@
 interface:
   display_name: "Build Narrated Presentation"
-  short_description: "从文档制作可增量重建的旁白动画 PPTX 与视频"
+  short_description: "从文档分阶段制作静态、动画、旁白 PPTX 与视频"
   icon_small: "./assets/logo.svg"
   icon_large: "./assets/logo.svg"
   brand_color: "#A78BFA"
-  default_prompt: "使用 $build-narrated-presentation 先验证输入文档；合格后制作首秒动画、章节连续合成但按页播放的旁白 PPTX，并按变更影响选择全量或只改音频流程。先试听音色和专有名词，使用真实 MP3 时长换页，按 audio、standard、release 分级验收，并把 PowerPoint 导出与人工完整观看分开报告。"
+  default_prompt: "使用 $build-narrated-presentation 先验证输入文档并确认交付目标，再依次确认逐页文字稿、PPT 模板和代表性 SVG。按需制作静态、动画、逐页旁白 PPTX 或视频；跨页语气用章节连续合成后切成逐页 MP3，禁止一个 MP3 跨多页，并按 static、audio、standard、release 分级验收。"

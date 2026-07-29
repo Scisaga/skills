@@ -16,7 +16,7 @@ bash skills/build-narrated-presentation/scripts/run.sh assemble-pptx \
   --adapter "python /path/to/project/scripts/build_deck.py"
 ```
 
-也可在 `project.json` 中设置 `production.assemble_command`。通用入口会给适配器追加 `--project <path>`，然后用真实音频时间轴更新生成的 PPTX。
+也可在 `project.json` 中设置 `production.assemble_command`。通用入口会给适配器追加 `--project <path>`：静态和动画模式检查对应视觉 PPTX 后停止；旁白和视频模式再使用真实音频时间轴，从动画基线生成独立的自动旁白 PPTX。
 
 现代 PowerPoint 优先显示 SVG；不支持 SVG 的环境仍显示 PNG fallback。
 
@@ -102,7 +102,7 @@ ppt/slides/slideN.xml 中的 transition advTm
 
 完成后生成 `video/replace_audio_report.json`，报告具体媒体目标和 ZIP 成员变化；若其他包成员变化则失败。该模式不会重做 SVG、PNG fallback、图层、动画或像素比较。
 
-如果现有 PPTX 不具备上述稳定结构，先用项目适配器完成一次初始装配和 release 验收，不能把局部替换器当作通用 PPTX 修复器。
+如果动画基线 PPTX 不具备上述稳定结构，先用项目适配器完成一次初始装配和标准验收，不能把局部替换器当作通用 PPTX 修复器。
 
 ## OOXML 校验
 

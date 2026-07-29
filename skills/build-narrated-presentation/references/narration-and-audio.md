@@ -80,7 +80,7 @@ bash skills/build-narrated-presentation/scripts/run.sh voice-audition \
 
 ## 章节连续、按页交付
 
-PowerPoint 仍要求每页恰好一个 MP3，但 TTS 可以让一段旁白贯穿连续多页。在 `narration_director.json` 中给连续页面设置相同 `chapter`：
+PowerPoint 要求每页恰好一个 MP3。禁止一个 MP3 跨多页播放。需要连续语气时，在 `narration_director.json` 中给连续页面设置相同 `chapter`：
 
 ```json
 {
@@ -130,6 +130,17 @@ PowerPoint 仍要求每页恰好一个 MP3，但 TTS 可以让一段旁白贯穿
 
 如果某页使用独立章节，效果等同于逐页合成。修改章节中任意一页的文字、局部语速、停顿或发音规则时，必须重做整个章节。
 
+完成导演稿、`narration_review.md` 和声音试听后执行：
+
+```bash
+bash skills/build-narrated-presentation/scripts/run.sh approve \
+  --project /path/to/project \
+  --stage narration \
+  --approved-by "reviewer"
+```
+
+旁白审批绑定当前导演稿、声音配置和内容摘要。导演稿或声音配置变化后，`synthesize` 必须阻断，直到重新生成审阅稿、试听并批准。
+
 ## SSML 契约
 
 每页对应一个 `<p>`，但同一章节的多个 `<p>` 位于一个 `<speak>` 中：
@@ -167,7 +178,9 @@ bash skills/build-narrated-presentation/scripts/run.sh synthesize \
 - 最终 SSML；
 - 音频生产管线版本。
 
-命令会先用当前导演稿和声音配置刷新 manifest 中派生的 `narration`、`voice` 与审阅稿，再进入 TTS。摘要一致、所有逐页 MP3 都存在时复用整个章节。`--pages 8,9` 选择的是受影响页面，实际仍重做它们所属的完整章节。`--force` 忽略音频缓存；`--dry-run` 只列出计划，不修改声音配置、manifest 或生成目录，也不请求 TTS。
+命令先验证内容和旁白审批，再用当前导演稿和声音配置刷新 manifest 中派生的 `narration`、`voice` 与审阅稿，然后进入 TTS。摘要一致、所有逐页 MP3 都存在时复用整个章节。`--pages 8,9` 选择的是受影响页面，实际仍重做它们所属的完整章节。`--force` 忽略音频缓存；`--dry-run` 只列出计划，不修改声音配置、manifest 或生成目录，也不请求 TTS。
+
+通过 `synthesize --voice`、`--rate` 或 `--pitch` 更改全局声音时，命令只更新 `voice_profile.json` 并停止。必须重新运行 `manifest`、试听并批准旁白，再次执行 `synthesize`。
 
 ## 真实时长与换页
 

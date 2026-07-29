@@ -43,11 +43,12 @@ function Show-Usage {
   @"
 Usage:
   scripts\run.ps1 bootstrap
-  scripts\run.ps1 doctor
+  scripts\run.ps1 doctor [--stage static|audio|video]
   scripts\run.ps1 inspect-input --document source.md --markdown-output input-preflight.md
   scripts\run.ps1 prepare-input-review --document source.md --output input-review.json
   scripts\run.ps1 validate-input --document source.md --review input-review.json --markdown-output input-gate.md
-  scripts\run.ps1 init --output C:\work\presentation --name "Project" --input-document source.md --input-review input-review.json
+  scripts\run.ps1 init --output C:\work\presentation --name "Project" --deliverable static_pptx|animated_pptx|narrated_pptx|video --input-document source.md --input-review input-review.json [--template-source template.pptx] [--visual-style technical-infographic] [--visual-theme light|dark]
+  scripts\run.ps1 approve --project C:\work\presentation --stage content|visual|narration --approved-by NAME [--pages 3,7,10]
   scripts\run.ps1 manifest --visual animation_manifest.json --director narration_director.json --voice-profile voice_profile.json --output animation_manifest.json --review narration_review.md
   scripts\run.ps1 timing --manifest animation_manifest.json --output fast_animation_timing.json
   scripts\run.ps1 audio-timeline --manifest animation_manifest.json --audio-dir audio --output audio_timeline.json
@@ -57,7 +58,7 @@ Usage:
   scripts\run.ps1 assemble-pptx --project C:\work\presentation
   scripts\run.ps1 export-video --project C:\work\presentation
   scripts\run.ps1 export-pages --project C:\work\presentation --pages 8,9,14 --format pdf --output C:\work\selected.pdf
-  scripts\run.ps1 qa --project C:\work\presentation --level audio
+  scripts\run.ps1 qa --project C:\work\presentation --level static|audio|standard|release
   scripts\run.ps1 rebuild --project C:\work\presentation --scope audio --qa standard
   scripts\run.ps1 validate --project C:\work\presentation
 "@
@@ -80,6 +81,9 @@ switch ($Command) {
   }
   "init" {
     & $Python (Join-Path $ScriptDir "init_project.py") @CommandArgs
+  }
+  "approve" {
+    & $Python (Join-Path $ScriptDir "approve_project.py") @CommandArgs
   }
   "inspect-input" {
     & $Python (Join-Path $ScriptDir "validate_input_document.py") "inspect" @CommandArgs

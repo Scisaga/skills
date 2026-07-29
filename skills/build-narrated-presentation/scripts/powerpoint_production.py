@@ -13,9 +13,12 @@ from pathlib import Path
 from typing import Sequence
 
 from production_common import (
+    deliverable_pptx,
     file_hash,
+    load_project_config,
     load_state,
     project_paths,
+    require_approvals,
     write_object,
 )
 
@@ -70,12 +73,35 @@ def run_powershell(script: Path, arguments: list[str]) -> None:
 
 def export_video_command(args: argparse.Namespace) -> int:
     project = args.project.expanduser().resolve()
+    config = load_project_config(project)
+    if config["deliverable"] != "video":
+        raise RuntimeError("Video export requires deliverable=video")
+    require_approvals(project, ("content", "visual", "narration"))
     paths = project_paths(project)
+    state = load_state(paths["build_state"])
+    from qa_presentation import cache_fingerprint
+
+    standard = state["qa"].get("standard")
+    current_standard = cache_fingerprint(project, "standard", state)
+    if (
+        not isinstance(standard, dict)
+        or standard.get("status") != "passed"
+        or standard.get("fingerprint") != current_standard
+    ):
+        raise RuntimeError(
+            "Current standard QA has not passed; run qa --level standard "
+            "before exporting video"
+        )
     input_pptx = (
         args.input_pptx.expanduser().resolve()
         if args.input_pptx
-        else paths["animated_pptx"]
+        else paths["narrated_pptx"]
     )
+    if input_pptx != paths["narrated_pptx"].resolve():
+        raise ValueError(
+            "--input-pptx must be the configured narrated PPTX that passed "
+            "standard QA"
+        )
     output_mp4 = (
         args.output_mp4.expanduser().resolve()
         if args.output_mp4
@@ -106,7 +132,6 @@ def export_video_command(args: argparse.Namespace) -> int:
     with report_path.open(encoding="utf-8-sig") as handle:
         report = json.load(handle)
     output_sha = file_hash(output_mp4)
-    state = load_state(paths["build_state"])
     state["artifacts"]["video"] = output_sha
     state["powerpoint"]["opened"] = {
         "status": "passed",
@@ -131,11 +156,11 @@ def export_video_command(args: argparse.Namespace) -> int:
 
 def export_pages_command(args: argparse.Namespace) -> int:
     project = args.project.expanduser().resolve()
-    paths = project_paths(project)
+    load_project_config(project)
     input_pptx = (
         args.input_pptx.expanduser().resolve()
         if args.input_pptx
-        else paths["animated_pptx"]
+        else deliverable_pptx(project)
     )
     output = args.output.expanduser().resolve()
     run_powershell(

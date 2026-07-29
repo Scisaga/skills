@@ -46,6 +46,9 @@ case "${COMMAND}" in
   init)
     exec "${PYTHON_BIN}" "${SCRIPT_DIR}/init_project.py" "$@"
     ;;
+  approve)
+    exec "${PYTHON_BIN}" "${SCRIPT_DIR}/approve_project.py" "$@"
+    ;;
   inspect-input)
     exec "${PYTHON_BIN}" "${SCRIPT_DIR}/validate_input_document.py" inspect "$@"
     ;;
@@ -95,11 +98,12 @@ case "${COMMAND}" in
     cat <<'USAGE'
 Usage:
   scripts/run.sh bootstrap
-  scripts/run.sh doctor
+  scripts/run.sh doctor [--stage static|audio|video]
   scripts/run.sh inspect-input --document source.md --markdown-output input-preflight.md
   scripts/run.sh prepare-input-review --document source.md --output input-review.json
   scripts/run.sh validate-input --document source.md --review input-review.json --json-output input-gate.json --markdown-output input-gate.md
-  scripts/run.sh init --output /path/to/project --name "Project" --input-document source.md --input-review input-review.json
+  scripts/run.sh init --output /path/to/project --name "Project" --deliverable static_pptx|animated_pptx|narrated_pptx|video --input-document source.md --input-review input-review.json [--template-source template.pptx] [--visual-style technical-infographic] [--visual-theme light|dark]
+  scripts/run.sh approve --project /path/to/project --stage content|visual|narration --approved-by NAME [--pages 3,7,10]
   scripts/run.sh manifest --visual animation_manifest.json --director narration_director.json --voice-profile voice_profile.json --output animation_manifest.json --review narration_review.md
   scripts/run.sh timing --manifest animation_manifest.json --output fast_animation_timing.json
   scripts/run.sh timing --manifest animation_manifest.json --output fast_animation_timing.json --check
@@ -111,7 +115,7 @@ Usage:
   scripts/run.sh assemble-pptx --project /path/to/project [--adapter command]
   scripts/run.sh export-video --project /path/to/project
   scripts/run.sh export-pages --project /path/to/project --pages 8,9,14 --format pdf --output selected.pdf
-  scripts/run.sh qa --project /path/to/project --level audio|standard|release
+  scripts/run.sh qa --project /path/to/project --level static|audio|standard|release
   scripts/run.sh rebuild --project /path/to/project --scope audio --qa standard [--voice voice-name]
   scripts/run.sh validate --project /path/to/project [--strict]
 USAGE

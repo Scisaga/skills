@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from production_common import (
+    approval_status,
     canonical_hash,
+    load_project_config,
     load_voice_profile,
     normalize_director_pages,
     project_paths,
@@ -67,22 +69,59 @@ def validate_svg(path: Path, errors: list[str]) -> None:
         errors.append(f"{path} viewBox must be 0 0 1600 900")
 
 
-def validate(project: Path) -> tuple[list[str], list[str]]:
+def validate(
+    project: Path,
+    *,
+    stage: str | None = None,
+) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
+    project_path = project / "project.json"
+    if not project_path.is_file():
+        return [f"Missing required file: {project_path}"], warnings
+    try:
+        project_config = load_project_config(project)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return [f"Project contract: {exc}"], warnings
+    target = stage or project_config["deliverable"]
+    if target not in {
+        "static_pptx",
+        "animated_pptx",
+        "narrated_pptx",
+        "video",
+    }:
+        return [f"Unsupported validation stage: {target}"], warnings
+    needs_animation = target != "static_pptx"
+    needs_narration = target in {"narrated_pptx", "video"}
     required = {
-        "project": project / "project.json",
+        "project": project_path,
         "manifest": project / "video" / "animation_manifest.json",
-        "director": project / "video" / "narration_director.json",
-        "layers": project / "video" / "svg_layer_plan.json",
     }
+    if needs_animation:
+        required["layers"] = project / "video" / "svg_layer_plan.json"
+    if needs_narration:
+        required["director"] = project / "video" / "narration_director.json"
     missing = [str(path) for path in required.values() if not path.is_file()]
     if missing:
         return [f"Missing required file: {path}" for path in missing], warnings
 
-    project_config = load_object(required["project"])
-    if project_config.get("canvas") != {"width": 1600, "height": 900}:
-        errors.append("project.json canvas must be 1600x900")
+    paths = project_paths(project, project_config)
+    if not paths["page_script"].is_file():
+        errors.append(f"Page script not found: {paths['page_script']}")
+    elif not paths["page_script"].read_text(encoding="utf-8").strip():
+        errors.append("page-script.md must not be empty")
+    if not paths["template_working"].is_file():
+        warnings.append(
+            f"Working template has not been prepared: {paths['template_working']}"
+        )
+    template_config = project_config["template"]
+    if (
+        template_config["mode"] == "provided"
+        and not paths["template_source"].is_file()
+    ):
+        errors.append(
+            f"Preserved template source not found: {paths['template_source']}"
+        )
     source_config = project_config.get("source")
     if not isinstance(source_config, dict):
         errors.append("project.json source must be an object")
@@ -153,64 +192,68 @@ def validate(project: Path) -> tuple[list[str], list[str]]:
         errors.append(f"Manifest pages must be contiguous from 1: {sorted(slides)}")
     if manifest.get("slide_count") not in (None, len(slides)):
         errors.append("manifest.slide_count does not match slides[]")
-    policy = manifest.get("narration_policy", {})
-    if policy.get("visual_sync") != "independent":
-        errors.append("manifest narration_policy.visual_sync must be independent")
-
-    director = load_object(required["director"])
-    director_policy = director.get("policy", {})
-    if director_policy.get("visual_sync") != "independent":
-        errors.append("director.policy.visual_sync must be independent")
-    try:
-        normalized_director = normalize_director_pages(
-            director,
-            sorted(slides),
-        )
-    except ValueError as exc:
-        errors.append(f"Director contract: {exc}")
-        director_pages = page_map(
-            director.get("pages"),
-            "director.pages",
-            errors,
-        )
-    else:
-        director_pages = {
-            row["page"]: row for row in normalized_director
+    director_pages: dict[int, dict[str, Any]] = {}
+    if needs_narration:
+        policy = manifest.get("narration_policy", {})
+        if policy.get("visual_sync") != "independent":
+            errors.append(
+                "manifest narration_policy.visual_sync must be independent"
+            )
+        director = load_object(required["director"])
+        director_policy = director.get("policy", {})
+        if director_policy.get("visual_sync") != "independent":
+            errors.append("director.policy.visual_sync must be independent")
+        try:
+            normalized_director = normalize_director_pages(
+                director,
+                sorted(slides),
+            )
+        except ValueError as exc:
+            errors.append(f"Director contract: {exc}")
+            director_pages = page_map(
+                director.get("pages"),
+                "director.pages",
+                errors,
+            )
+        else:
+            director_pages = {
+                row["page"]: row for row in normalized_director
+            }
+        try:
+            voice_profile = load_voice_profile(paths["voice_profile"])
+        except (FileNotFoundError, ValueError) as exc:
+            errors.append(f"Voice profile: {exc}")
+            voice_profile = {}
+        manifest_voice = manifest.get("voice")
+        expected_voice = {
+            "provider": voice_profile.get("provider"),
+            "name": voice_profile.get("voice"),
+            "style": voice_profile.get("style"),
+            "rate": voice_profile.get("rate"),
+            "pitch": voice_profile.get("pitch"),
         }
-    try:
-        voice_profile = load_voice_profile(
-            project_paths(project)["voice_profile"],
-            director=director,
-        )
-    except (FileNotFoundError, ValueError) as exc:
-        errors.append(f"Voice profile: {exc}")
-        voice_profile = {}
-    manifest_voice = manifest.get("voice")
-    expected_voice = {
-        "provider": voice_profile.get("provider"),
-        "name": voice_profile.get("voice"),
-        "style": voice_profile.get("style"),
-        "rate": voice_profile.get("rate"),
-        "pitch": voice_profile.get("pitch"),
-    }
-    if isinstance(manifest_voice, dict):
-        for field, value in expected_voice.items():
-            if manifest_voice.get(field) != value:
-                errors.append(
-                    f"Manifest voice {field} differs from voice profile"
-                )
-        if manifest_voice.get("profile_sha256") != canonical_hash(voice_profile):
-            errors.append("Manifest voice profile_sha256 is stale")
-    else:
-        errors.append("Manifest voice is missing")
+        if isinstance(manifest_voice, dict):
+            for field, value in expected_voice.items():
+                if manifest_voice.get(field) != value:
+                    errors.append(
+                        f"Manifest voice {field} differs from voice profile"
+                    )
+            if manifest_voice.get("profile_sha256") != canonical_hash(
+                voice_profile
+            ):
+                errors.append("Manifest voice profile_sha256 is stale")
+        else:
+            errors.append("Manifest voice is missing")
 
-    layer_plan = load_object(required["layers"])
-    if layer_plan.get("canvas") != {"width": 1600, "height": 900}:
-        errors.append("svg_layer_plan.json canvas must be 1600x900")
-    raw_layer_pages = layer_plan.get("pages")
-    if not isinstance(raw_layer_pages, dict):
-        errors.append("svg_layer_plan.pages must be an object")
-        raw_layer_pages = {}
+    raw_layer_pages: dict[str, Any] = {}
+    if needs_animation:
+        layer_plan = load_object(required["layers"])
+        if layer_plan.get("canvas") != {"width": 1600, "height": 900}:
+            errors.append("svg_layer_plan.json canvas must be 1600x900")
+        raw_layer_pages = layer_plan.get("pages")
+        if not isinstance(raw_layer_pages, dict):
+            errors.append("svg_layer_plan.pages must be an object")
+            raw_layer_pages = {}
 
     for page, slide in slides.items():
         source_value = slide.get("source_svg")
@@ -223,8 +266,11 @@ def validate(project: Path) -> tuple[list[str], list[str]]:
         else:
             validate_svg(source, errors)
 
-        beats = slide.get("beats")
-        if not isinstance(beats, list) or not beats:
+        beats = slide.get("beats", [])
+        if not isinstance(beats, list):
+            errors.append(f"Page {page} beats must be an array")
+            continue
+        if needs_animation and not beats:
             errors.append(f"Page {page} is missing beats[]")
             continue
         if len(beats) > 6:
@@ -248,9 +294,9 @@ def validate(project: Path) -> tuple[list[str], list[str]]:
             errors.append(f"Page {page} first animated group must be title")
 
         layer_row = raw_layer_pages.get(f"{page:02d}")
-        if not isinstance(layer_row, dict):
+        if needs_animation and not isinstance(layer_row, dict):
             errors.append(f"Page {page} is missing from svg_layer_plan.pages")
-        else:
+        elif needs_animation and isinstance(layer_row, dict):
             layers = layer_row.get("layers")
             layer_names = [
                 row.get("name") for row in layers if isinstance(row, dict)
@@ -292,49 +338,68 @@ def validate(project: Path) -> tuple[list[str], list[str]]:
             else:
                 warnings.append(f"Page {page} has no source SVG SHA-256")
 
-        narration = director_pages.get(page, {})
-        for field in ("role", "direction"):
-            if not isinstance(narration.get(field), str) or not narration[field].strip():
-                errors.append(f"Director page {page} is missing {field}")
-        segments = narration.get("segments")
-        if not isinstance(segments, list) or not segments:
-            errors.append(f"Director page {page} is missing segments[]")
-        else:
-            for index, segment in enumerate(segments, 1):
-                if not isinstance(segment, dict):
-                    errors.append(f"Director page {page} segment {index} is invalid")
-                    continue
-                if not isinstance(segment.get("text"), str) or not segment["text"].strip():
-                    errors.append(f"Director page {page} segment {index} has no text")
-                if not isinstance(segment.get("rate"), str) or not RATE_RE.fullmatch(
-                    segment["rate"]
-                ):
-                    errors.append(f"Director page {page} segment {index} rate is invalid")
-                pause = segment.get("pause_after_ms")
+        if needs_narration:
+            narration = director_pages.get(page, {})
+            for field in ("role", "direction"):
                 if (
-                    isinstance(pause, bool)
-                    or not isinstance(pause, int)
-                    or not 0 <= pause <= 300
+                    not isinstance(narration.get(field), str)
+                    or not narration[field].strip()
                 ):
-                    errors.append(f"Director page {page} segment {index} pause is invalid")
-        merged_narration = slide.get("narration")
-        if isinstance(merged_narration, dict) and isinstance(segments, list):
-            expected_text = "".join(
-                segment.get("text", "")
-                for segment in segments
-                if isinstance(segment, dict)
-            )
-            if merged_narration.get("text") != expected_text:
-                errors.append(f"Manifest page {page} narration is stale")
-            for field in ("chapter", "role", "direction", "segments"):
-                if merged_narration.get(field) != narration.get(field):
-                    errors.append(
-                        f"Manifest page {page} narration {field} "
-                        "differs from director"
-                    )
+                    errors.append(f"Director page {page} is missing {field}")
+            segments = narration.get("segments")
+            if not isinstance(segments, list) or not segments:
+                errors.append(f"Director page {page} is missing segments[]")
+            else:
+                for index, segment in enumerate(segments, 1):
+                    if not isinstance(segment, dict):
+                        errors.append(
+                            f"Director page {page} segment {index} is invalid"
+                        )
+                        continue
+                    if (
+                        not isinstance(segment.get("text"), str)
+                        or not segment["text"].strip()
+                    ):
+                        errors.append(
+                            f"Director page {page} segment {index} has no text"
+                        )
+                    if (
+                        not isinstance(segment.get("rate"), str)
+                        or not RATE_RE.fullmatch(segment["rate"])
+                    ):
+                        errors.append(
+                            f"Director page {page} segment {index} rate is invalid"
+                        )
+                    pause = segment.get("pause_after_ms")
+                    if (
+                        isinstance(pause, bool)
+                        or not isinstance(pause, int)
+                        or not 0 <= pause <= 300
+                    ):
+                        errors.append(
+                            f"Director page {page} segment {index} pause is invalid"
+                        )
+            merged_narration = slide.get("narration")
+            if isinstance(merged_narration, dict) and isinstance(
+                segments,
+                list,
+            ):
+                expected_text = "".join(
+                    segment.get("text", "")
+                    for segment in segments
+                    if isinstance(segment, dict)
+                )
+                if merged_narration.get("text") != expected_text:
+                    errors.append(f"Manifest page {page} narration is stale")
+                for field in ("chapter", "role", "direction", "segments"):
+                    if merged_narration.get(field) != narration.get(field):
+                        errors.append(
+                            f"Manifest page {page} narration {field} "
+                            "differs from director"
+                        )
 
     timing_path = project / "video" / "fast_animation_timing.json"
-    if timing_path.is_file():
+    if needs_animation and timing_path.is_file():
         timing = load_object(timing_path)
         timing_pages = page_map(timing.get("slides"), "timing.slides", errors)
         if sorted(timing_pages) != sorted(slides):
@@ -388,11 +453,11 @@ def validate(project: Path) -> tuple[list[str], list[str]]:
                         f"Timing page {page} beat {beat.get('id')} "
                         "falls outside the first second"
                     )
-    else:
+    elif needs_animation:
         warnings.append("fast_animation_timing.json has not been generated")
 
     audio_path = project / "video" / "audio_timeline.json"
-    if audio_path.is_file():
+    if needs_narration and audio_path.is_file():
         audio = load_object(audio_path)
         safety_ms = audio.get("advance_safety_ms", 150)
         if (
@@ -442,8 +507,16 @@ def validate(project: Path) -> tuple[list[str], list[str]]:
                         errors.append(
                             f"Audio timeline page {page} duration differs from MP3"
                         )
-    else:
+    elif needs_narration:
         warnings.append("audio_timeline.json is missing; final timing is not verified")
+
+    required_approvals = ["content", "visual"]
+    if needs_narration:
+        required_approvals.append("narration")
+    for approval in required_approvals:
+        passed, message = approval_status(project, approval)
+        if not passed:
+            warnings.append(message)
     return errors, warnings
 
 

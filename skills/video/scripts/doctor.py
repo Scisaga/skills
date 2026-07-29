@@ -64,6 +64,7 @@ def main(argv: list[str]) -> int:
     if not transcribe_script.exists():
         raise RuntimeError(f"找不到 speech skill 转写脚本: {transcribe_script}")
     print(f"OK  speech 转写脚本存在: {transcribe_script}")
+    print("INFO  未检查可选 ASR 服务；生成字幕前运行 speech doctor --mode transcribe")
     return 0
 
 

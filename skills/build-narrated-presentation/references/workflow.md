@@ -1,177 +1,141 @@
 # 制作流程
 
-## 目录
+## 交付目标先行
 
-- [目标与边界](#目标与边界)
-- [数据流](#数据流)
-- [唯一事实来源](#唯一事实来源)
-- [标准构建](#标准构建)
-- [变更影响分析](#变更影响分析)
-- [只改音频模式](#只改音频模式)
-- [构建状态与缓存](#构建状态与缓存)
-- [样板优先](#样板优先)
-- [来源基线](#来源基线)
+`project.json.deliverable` 决定生产链的停止点：
 
-## 目标与边界
+| 目标 | 必做链路 | 停止点 |
+|---|---|---|
+| `static_pptx` | 内容、模板、SVG、静态装配、静态 QA | 静态 PPTX |
+| `animated_pptx` | 静态链路、SVG 分层、首秒动画 | 动画 PPTX |
+| `narrated_pptx` | 动画链路、旁白、逐页音频、自动换页 | 自动旁白 PPTX |
+| `video` | 旁白链路、PowerPoint 导出、视频验收 | MP4 |
 
-使用 SVG 完成页面设计，使用 PPTX 承载动画、逐页音频和换页时间轴，使用 Windows PowerPoint 导出 MP4。不要用动画修复静态页面，不要用 Python 模拟 PowerPoint 最终视频渲染，也不要把某个来源项目的产品叙事复制到新项目。
+静态制作不得因为缺少 TTS 或视频依赖而失败。动画 PPTX 默认由演讲者手动换页；没有旁白时不虚构统一自动停留时长。
 
-把以下内容当作独立依赖：
+## 标准流程
 
 ```text
-内容：输入文档、逐页映射、旁白文字、章节归属
-声音：音色、语速、音高、发音词典、页间停顿
-视觉：静态 SVG、分层、动画
-装配：内嵌媒体、自动播放、换页时间
-导出：PowerPoint 版本、MP4
-验收：audio、standard、release、人工完整观看
+确认交付目标
+→ 输入 Markdown 质量门禁
+→ 整理并批准 page-script.md
+→ 创建或适配 template.pptx
+→ 制作并批准代表性 SVG
+→ 批量生成静态 SVG 与静态 PPTX
+→ 按交付目标决定是否停止
+→ 按需制作动画
+→ 按需生成导演稿、试听声音并批准旁白
+→ 按章节连续合成、按 bookmark 切成逐页 MP3
+→ 生成自动旁白 PPTX
+→ 按需由 Windows PowerPoint 导出 MP4
 ```
 
-更换声音参数不是内容修改，不得因此要求重新做输入语义复核。旁白文字或章节归属发生变化则属于内容修改，必须重新检查其与已通过输入文档的一致性。
+### 内容
 
-## 数据流
+输入文档通过门禁后，`init` 创建 `page-script.md` 工作副本。逐页文字稿至少说明页码、页面作用、核心结论、正文、视觉需求、事实来源和页面间关系。执行内容审批前不制作正式模板或批量 SVG。
+
+### 模板与样稿
+
+用户模板原件保存在 `inputs/template-source.pptx`，适配结果保存为 `template.pptx`。没有模板时，根据项目风格创建 `template.pptx`。模板负责背景、标题、Logo、页脚、页码和安全区；透明全页 SVG 只绘制主体。
+
+从复杂流程、高密度逻辑、截图、数据图表等高风险页面中选择 1–4 页作为代表性样稿。使用：
+
+```bash
+run.sh approve --project PROJECT --stage visual \
+  --pages 3,7,10 --approved-by REVIEWER
+```
+
+样稿未通过时只返工模板、样稿和受影响文字，不批量制作全稿。
+
+### 旁白
+
+只有 `narrated_pptx` 和 `video` 才启动声音链路。先确认讲述方式、章节范围、目标时长、音色、语速和术语读法，再运行 `manifest` 生成 `narration_review.md`，试听候选音色，最后批准旁白。
+
+明确禁止一个 MP3 跨多页播放。连续章节采用：
 
 ```text
-输入 Markdown
-  → 自动预检 + 语义复核
-  → 输入质量门禁
-  → 逐页演示映射
-  → 静态 SVG 页面
-  → SVG 语义分层计划
-  → 全画布 SVG 图层 ┐
-                     ├→ PPTX OOXML 装配 → 自动播放 PPTX
-视觉 manifest       │                         │
-  → 首秒动画时间轴 ──┤                         ├→ PowerPoint 导出 MP4
-旁白导演稿           │                         │
-声音配置             │                         └→ 人工完整观看
-  → 章节连续 SSML    │
-  → bookmark 切页    │
-  → 逐页 MP3         │
-  → 真实音频时间轴 ──┘
+整章一次 TTS
+→ 页面起点插入 bookmark
+→ 按 bookmark 切成逐页 MP3
+→ 每页内嵌一个 MP3
 ```
 
-## 唯一事实来源
+章节是连续合成和缓存单位，逐页 MP3 是 PowerPoint 播放、换页和局部替换单位。
+
+## 人工源与派生产物
 
 人工维护：
 
-| 文件 | 所有内容 |
-|---|---|
-| 输入 Markdown | 受众、主张、事实边界、内容结构和逐页演示映射 |
-| `input-review.json` | 与输入 SHA-256 绑定的语义复核证据与结论 |
-| `assets/*.svg` | 完整静态页面与视觉事实 |
-| `video/svg_layer_plan.json` | `base`、`title`、`beat_*` 的拆分 |
-| `video/animation_manifest.json` 的视觉字段 | 页序、源 SVG、动画组和效果 |
-| `video/narration_director.json` | 页面章节、讲述目的、语气、文本、局部语速和停顿 |
-| `video/voice_profile.json` | TTS 提供方、音色、全局语速、音高、发音词典、试听文案 |
+- 输入 Markdown 与 `page-script.md`
+- `template.pptx`
+- `assets/*.svg`
+- `video/svg_layer_plan.json`
+- `video/animation_manifest.json` 的视觉字段
+- `video/narration_director.json`
+- `video/voice_profile.json`
 
 自动生成：
 
-| 文件或目录 | 来源 |
-|---|---|
-| `video/layers/<页码>/*.svg` | SVG 分层器 |
-| `video/narration_review.md` | manifest 合并器 |
-| `video/scripts/<chapter>.ssml` | 旁白导演稿 + 声音配置 |
-| `video/audio/<chapter>.bookmarks.json` | 连续合成返回的 bookmark 与切分边界 |
-| `video/audio/<页码>.mp3`、`*.sha256` | 章节连续合成与按页切分 |
-| `video/audio_timeline.json` | 逐页 MP3 真实时长 |
-| `video/fast_animation_timing.json` | 首秒动画生成器 |
-| `video/build_state.json` | 输入摘要、产物摘要、QA 缓存和 PowerPoint 证据 |
-| `deliverables/*.pptx` | 项目装配器与音频替换器 |
-| `deliverables/*.mp4` | Windows PowerPoint |
+- `video/narration_review.md`
+- `video/layers/`
+- `video/scripts/<chapter>.ssml`
+- `video/audio/<page>.mp3`
+- `video/audio/<chapter>.bookmarks.json`
+- 动画和音频时间轴
+- `video/build_state.json`
+- PPTX 与 MP4 交付物
 
-只在 `narration_director.json` 修改旁白内容和章节归属，只在 `voice_profile.json` 修改声音。manifest 中的 `narration` 和 `voice` 都是派生结果。
+不要直接编辑 manifest 中派生的 `voice`、`narration` 和 `narration_chapters`。
 
-## 标准构建
+## 变更影响
 
-视觉首次建立或发生变化时：
-
-1. 输入文档通过自动预检和语义复核；不通过时返工文档并停止。
-2. 从通过门禁的文档建立逐页映射。
-3. 完成静态 SVG。
-4. 更新 SVG 分层计划并校验源文件摘要。
-5. 生成全画布图层，叠加后与源图做像素比较。
-6. 合并视觉 manifest、旁白导演稿和声音配置。
-7. 用 10–15 秒固定文案生成候选音色，人工确认音色和专有名词发音。
-8. 按章节连续合成，在每页开头插入 bookmark，再切成逐页 MP3。
-9. 读取逐页 MP3 的真实时长，生成换页和首秒动画时间轴。
-10. 先生成三类样板页并实机检查。
-11. 生成完整 PPTX，执行 `qa --level standard`。
-12. 用 Windows PowerPoint 导出 MP4，执行自动检查并由人工完整观看。
-13. 人工确认后执行 `qa --level release --human-confirmed`，形成可供后续增量重建使用的基线。
-
-## 变更影响分析
-
-先识别真正变化的依赖，再选择最小链路：
-
-| 变化 | 必须重建 | 不重复执行 |
+| 变化 | 失效与重建 | 保留 |
 |---|---|---|
-| 输入文档 | 输入门禁、受影响内容、视觉/旁白及其下游 | 无条件跳过既有语义复核 |
-| 旁白文字或章节归属 | 内容一致性复核、受影响章节音频、时间轴、PPTX、视频 | 未受影响章节的 TTS |
-| 音色、全局语速、音高、发音词典 | 全部章节音频、时间轴、PPTX 音频与换页、视频 | 输入门禁、SVG、分层、动画、像素比较 |
-| 某页局部停顿、语速或音高 | 该页所在完整章节及其下游 | 输入门禁、其他章节、视觉验收 |
-| 动画 | 首秒动画时间轴、PPTX、视频 | 音频合成 |
-| 某页 SVG | 该页图层、视觉验证、PPTX、视频 | 音频；除非页面判断也变了 |
+| 输入或逐页文字稿 | 内容审批、视觉审批、旁白审批及下游 | 无 |
+| 模板、安全区或代表性样稿 | 视觉审批、相关 SVG/PPTX/视频 | 内容、旁白文字、音频 |
+| 其他某页 SVG | 该页视觉检查、PPTX、视频 | 内容、音频 |
+| 动画 | 动画时间轴、动画 PPTX 及下游 | 静态 QA、音频 |
+| 导演稿文字或章节 | 旁白审批、受影响章节音频及下游 | 内容审批、视觉审批 |
+| 音色、全局声音参数或词典 | 旁白审批、全部章节音频及下游 | 内容审批、视觉审批 |
+| 局部声音参数 | 旁白审批、该页所在章节及下游 | 其他章节和视觉 |
 | 输出分辨率 | PowerPoint 视频导出和 MP4 检查 | PPTX、音频、视觉 |
 
-章节是音频缓存的最小单位。选择章节中的任意一页都会重新合成整个章节，避免相邻页面出现声线、语气或切分漂移。
+修改章节中任意一页时重做完整章节。QA 只在自己的依赖或检查工具变化后重跑。
 
-## 只改音频模式
+## 只改音频
 
-已有视觉和 release 基线时：
+只改音频要求当前内容、视觉和旁白审批有效，并具有可信构建基线。声音参数变化后先试听并重新批准旁白，再执行：
 
 ```bash
-bash skills/build-narrated-presentation/scripts/run.sh rebuild \
-  --project /path/to/project \
-  --scope audio \
-  --voice zh-CN-XiaochenNeural \
-  --qa standard
+run.sh rebuild --project PROJECT --scope audio --qa standard
 ```
 
-执行链固定为：
+固定链路为：
 
 ```text
-检查 source / narration / visual 基线
-→ 更新 voice_profile.json
-→ 按章节合成与切页
-→ 重建真实音频时间轴
+验证内容/视觉基线与旁白审批
+→ 按章节重建逐页音频
+→ 更新真实音频时间轴
 → audio QA
-→ 只替换 PPTX 内嵌 MP3 和 advTm
+→ 从动画基线生成新的自动旁白 PPTX
 → standard QA
-→ PowerPoint 导出视频
-→ 人工观看待办
+→ video 项目按需导出 MP4
 ```
 
-如果 source、旁白文字、章节映射、SVG 或动画摘要与基线不同，命令必须阻断。老项目尚无 `build_state.json` 时，只能由操作者明确确认现有内容和视觉可信后使用一次 `--allow-unverified-baseline`；该选项不会产生 release 结论。
+`narrated_pptx` 项目在标准 QA 后停止；只有 `video` 项目才调用 PowerPoint 视频导出。
 
-用 `--dry-run` 查看将受影响的章节。使用 `--pages 8,9` 只重做这些页面所在的完整章节。`--voice`、`--rate`、`--pitch` 是全局配置，不能与 `--pages` 同时使用。使用 `--skip-export` 只适合中间编辑，不能用于 release。
+## 构建状态
 
-## 构建状态与缓存
+`video/build_state.json` 只保存：
 
-`video/build_state.json` 分开保存：
+- `approvals`：内容、视觉、旁白审批及摘要；
+- `inputs`：source、narration、voice、visual 基线；
+- `artifacts`：音频、PPTX 和视频摘要；
+- `qa`：各等级的 fingerprint 与报告；
+- `powerpoint`：打开、导出和人工完整观看证据。
 
-- `inputs`：source、narration、voice、visual 摘要；
-- `artifacts`：逐页音频、PPTX、MP4 摘要；
-- `qa`：各等级的 fingerprint、状态、时间和报告路径；
-- `powerpoint.opened`：当前 PPTX 确实被 PowerPoint 打开的证据；
-- `powerpoint.video_exported`：当前 MP4 由 PowerPoint 导出的证据；
-- `powerpoint.human_watch`：人工完整观看当前 MP4 的显式确认。
-
-每次 QA 先计算依赖和检查脚本的 fingerprint。只有此前状态为 `passed` 且 fingerprint 完全一致时才打印 `SKIP`。使用 `--force` 可以主动重跑。
-
-替换 PPTX 音频后，旧 MP4 和所有 PowerPoint 证据立即失效；重新导出 MP4 后，人工观看证据仍保持待办。人工确认必须与当前 MP4 SHA-256 绑定。
-
-## 样板优先
-
-新项目先选：
-
-1. 一页普通图文页；
-2. 一页截图复杂页；
-3. 一页流程或架构页。
-
-验证 SVG 清晰度、截图可读性、首秒动画、音频图标、自动播放和自动换页后，再批量装配全部页面。样板通过不等于人工完整观看整套 MP4。
+审批和 QA 都必须与当前文件摘要一致。失败结果不能作为缓存；修改检查脚本也会使相应 QA 缓存失效。
 
 ## 来源基线
 
-本方法提炼自 Scisaga `md-quiz` 仓库的 [SVG → PPTX → 自动旁白视频制作方法论](https://github.com/Scisaga/md-quiz/blob/main/docs/biz/goodwen_2026/SVG_PPTX_%E8%87%AA%E5%8A%A8%E6%97%81%E7%99%BD%E8%A7%86%E9%A2%91%E5%88%B6%E4%BD%9C%E6%96%B9%E6%B3%95%E8%AE%BA.md)，成功基线位于 [`docs/biz/goodwen_2026/video`](https://github.com/Scisaga/md-quiz/tree/main/docs/biz/goodwen_2026/video)，参考提交为 `eda2b2410c8ee36eb4daac2ab180513e342a58ec`。
-
-来源基线验证了 19 页、19 段内嵌旁白、首秒动画和基于真实 MP3 的自动换页。复用时只保留通用契约，不复制 Goodwen 的文案、事实、路径或版本后缀。
+方法基线来自 Scisaga `md-quiz` 的 [SVG → PPTX → 自动旁白视频制作方法论](https://github.com/Scisaga/md-quiz/blob/main/docs/biz/goodwen_2026/SVG_PPTX_%E8%87%AA%E5%8A%A8%E6%97%81%E7%99%BD%E8%A7%86%E9%A2%91%E5%88%B6%E4%BD%9C%E6%96%B9%E6%B3%95%E8%AE%BA.md)。只复用通用契约，不复制项目事实、文案或品牌视觉。

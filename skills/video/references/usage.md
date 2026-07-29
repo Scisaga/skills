@@ -9,6 +9,18 @@ bash skills/video/scripts/bootstrap.sh --check-only
 
 `bootstrap.sh` 会优先创建 `skills/video/.venv`，安装 Python 依赖，并在需要时安装 `ffmpeg`。
 
+它不会部署 ASR 服务或下载 ASR 模型。只有执行 `subtitles` / `asr-subtitles` 生成字幕时，才需要使用者按需自行部署并配置 [`Scisaga/qwen3-asr-openai`](https://github.com/Scisaga/qwen3-asr-openai)；其他视频处理能力不依赖该服务。
+
+## ASR 字幕依赖
+
+`video` 复用 `skills/speech/scripts/transcribe.py`，通过 `QWEN_ASR_API_BASE` 或 `--api-base` 访问 qwen3-asr-openai。部署与接入边界见 [`qwen3-asr-openai.md`](../../speech/references/qwen3-asr-openai.md)。
+
+在生成字幕前检查服务：
+
+```bash
+bash skills/speech/scripts/run.sh doctor --mode transcribe
+```
+
 ## `ffmpeg` 安装与查找
 
 - 优先复用系统包管理器
@@ -41,4 +53,5 @@ bash skills/video/scripts/run.sh check-sync --input-file demo.mp4 --subtitle-fil
 
 - `ffmpeg` 缺失：运行 `bash skills/video/scripts/bootstrap.sh` 或 `bash skills/video/scripts/run.sh install-ffmpeg`
 - 搜不到字幕：直接回退到 `bash skills/video/scripts/run.sh subtitles`
+- ASR 服务不可达：确认使用者已部署 qwen3-asr-openai，并检查 `QWEN_ASR_API_BASE` 或 `--api-base`
 - 同步检查提示整体偏移：重新封装时加 `--sub-offset`

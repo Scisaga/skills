@@ -18,11 +18,13 @@ from production_common import (
     chapter_groups,
     file_hash,
     load_object,
+    load_project_config,
     load_state,
     load_voice_profile,
     normalize_director_pages,
     normalize_voice_profile,
     project_paths,
+    require_approvals,
     render_chapter_ssml,
     write_object,
 )
@@ -268,6 +270,11 @@ def split_chapter(
 
 def synthesize_command(args: argparse.Namespace) -> int:
     project = args.project.expanduser().resolve()
+    config = load_project_config(project)
+    if config["deliverable"] not in {"narrated_pptx", "video"}:
+        raise RuntimeError(
+            "Synthesis is allowed only for narrated_pptx or video projects"
+        )
     paths = project_paths(project)
     director = load_object(paths["director"])
     manifest = load_object(paths["manifest"])
@@ -277,7 +284,8 @@ def synthesize_command(args: argparse.Namespace) -> int:
         if isinstance(row, dict)
     ]
     pages = normalize_director_pages(director, expected_pages)
-    profile = load_voice_profile(paths["voice_profile"], director=director)
+    profile = load_voice_profile(paths["voice_profile"])
+    original_profile = profile
     profile = apply_voice_overrides(
         paths["voice_profile"],
         profile,
@@ -286,6 +294,18 @@ def synthesize_command(args: argparse.Namespace) -> int:
         pitch=args.pitch,
         persist=not args.dry_run,
     )
+    if profile != original_profile:
+        if args.dry_run:
+            print(
+                "PLAN voice profile would change; audition and narration "
+                "approval are required before synthesis"
+            )
+            return 0
+        raise RuntimeError(
+            "Voice profile updated. Audition the new voice, then run "
+            "approve --stage narration before synthesizing."
+        )
+    require_approvals(project, ("content", "narration"))
     merged_manifest = build_manifest(manifest, director, profile)
     if not args.dry_run:
         write_object(paths["manifest"], merged_manifest)
@@ -391,9 +411,13 @@ def synthesize_command(args: argparse.Namespace) -> int:
 
 def audition_command(args: argparse.Namespace) -> int:
     project = args.project.expanduser().resolve()
+    config = load_project_config(project)
+    if config["deliverable"] not in {"narrated_pptx", "video"}:
+        raise RuntimeError(
+            "Voice audition is allowed only for narrated_pptx or video projects"
+        )
     paths = project_paths(project)
-    director = load_object(paths["director"])
-    base_profile = load_voice_profile(paths["voice_profile"], director=director)
+    base_profile = load_voice_profile(paths["voice_profile"])
     text = args.text or base_profile["audition"]["text"]
     if not text.strip():
         raise ValueError("Audition text is empty")

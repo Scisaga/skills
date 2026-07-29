@@ -1,0 +1,7 @@
+interface:
+  display_name: "GitLab Issue"
+  short_description: "安全管理当前自托管 GitLab 仓库的 issue 与评论"
+  icon_small: "./assets/logo.svg"
+  icon_large: "./assets/logo.svg"
+  brand_color: "#FC6D26"
+  default_prompt: "Use $gitlab-issue to safely manage issues for the current self-hosted GitLab repository after validating its origin."

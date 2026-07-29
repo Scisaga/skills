@@ -17,8 +17,10 @@ from typing import Any, Sequence
 from production_common import (
     file_hash,
     load_object,
+    load_project_config,
     load_state,
     project_paths,
+    require_approvals,
     write_object,
 )
 
@@ -219,7 +221,7 @@ def replace_audio(
     report_path = project / "video" / "replace_audio_report.json"
     write_object(report_path, report)
     state = load_state(paths["build_state"])
-    state["artifacts"]["pptx"] = report["output_sha256"]
+    state["artifacts"]["narrated_pptx"] = report["output_sha256"]
     state["artifacts"].pop("video", None)
     state["powerpoint"]["opened"] = None
     state["powerpoint"]["video_exported"] = None
@@ -230,6 +232,12 @@ def replace_audio(
 
 def replace_command(args: argparse.Namespace) -> int:
     project = args.project.expanduser().resolve()
+    config = load_project_config(project)
+    if config["deliverable"] not in {"narrated_pptx", "video"}:
+        raise RuntimeError(
+            "Audio replacement is allowed only for narrated_pptx or video projects"
+        )
+    require_approvals(project, ("content", "visual", "narration"))
     paths = project_paths(project)
     input_pptx = (
         args.input_pptx.expanduser().resolve()
@@ -239,8 +247,16 @@ def replace_command(args: argparse.Namespace) -> int:
     output_pptx = (
         args.output_pptx.expanduser().resolve()
         if args.output_pptx
-        else paths["animated_pptx"]
+        else paths["narrated_pptx"]
     )
+    if input_pptx != paths["animated_pptx"].resolve():
+        raise ValueError(
+            "--input-pptx must be the configured animated PPTX baseline"
+        )
+    if output_pptx != paths["narrated_pptx"].resolve():
+        raise ValueError(
+            "--output-pptx must be the configured narrated PPTX output"
+        )
     report = replace_audio(
         project,
         input_pptx=input_pptx,
@@ -267,8 +283,13 @@ def run_adapter(adapter: str, project: Path) -> None:
 
 def assemble_command(args: argparse.Namespace) -> int:
     project = args.project.expanduser().resolve()
+    config = load_project_config(project)
     paths = project_paths(project)
-    config = load_object(paths["project"])
+    deliverable = config["deliverable"]
+    required_approvals = ("content", "visual")
+    if deliverable in {"narrated_pptx", "video"}:
+        required_approvals += ("narration",)
+    require_approvals(project, required_approvals)
     production = config.get("production")
     configured_adapter = (
         production.get("assemble_command")
@@ -278,21 +299,43 @@ def assemble_command(args: argparse.Namespace) -> int:
     adapter = args.adapter or configured_adapter
     if adapter:
         run_adapter(adapter, project)
-    elif not paths["animated_pptx"].is_file():
+    expected_visual = (
+        paths["static_pptx"]
+        if deliverable == "static_pptx"
+        else paths["animated_pptx"]
+    )
+    if not expected_visual.is_file():
         raise RuntimeError(
             "Initial visual PPTX assembly requires --adapter or "
-            "project.production.assemble_command. The built-in path updates "
-            "audio and timing in an existing validated PPTX."
+            "project.production.assemble_command, and the adapter must create "
+            f"{expected_visual}."
         )
-    report = replace_audio(
-        project,
-        input_pptx=paths["animated_pptx"],
-        output_pptx=paths["animated_pptx"],
+    if deliverable in {"narrated_pptx", "video"}:
+        report = replace_audio(
+            project,
+            input_pptx=paths["animated_pptx"],
+            output_pptx=paths["narrated_pptx"],
+        )
+        print(
+            f"OK  assembled {paths['narrated_pptx']}: "
+            f"{report['slides']} slides updated"
+        )
+        return 0
+
+    state = load_state(paths["build_state"])
+    artifact_key = (
+        "static_pptx"
+        if deliverable == "static_pptx"
+        else "animated_pptx"
     )
-    print(
-        f"OK  assembled {paths['animated_pptx']}: "
-        f"{report['slides']} slides updated"
-    )
+    state["artifacts"][artifact_key] = file_hash(expected_visual)
+    state["artifacts"].pop("narrated_pptx", None)
+    state["artifacts"].pop("video", None)
+    state["powerpoint"]["opened"] = None
+    state["powerpoint"]["video_exported"] = None
+    state["powerpoint"]["human_watch"] = None
+    write_object(paths["build_state"], state)
+    print(f"OK  assembled {expected_visual}: deliverable={deliverable}")
     return 0
 
 

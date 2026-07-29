@@ -12,13 +12,16 @@ description: 处理本地视频文件并结合联网搜索完成关键帧抽取�
 1. 本地确定性步骤：抽帧、抽音频、生成字幕、封装字幕、同步检查
 2. 联网判断步骤：优先搜索现成字幕和影片信息，找不到再回退到音频转字幕
 
+生成 ASR 字幕时，本 skill 复用 `skills/speech/scripts/transcribe.py`，因此需要使用者按需自行部署并配置可访问的 qwen3-asr-openai 服务。只做抽帧、抽音频、字幕封装或同步检查时不需要 ASR 服务；`video` 不负责部署它。
+
 ## 工作流
 
 1. 首次使用先运行 `bash skills/video/scripts/bootstrap.sh`
 2. 默认优先通过 `bash skills/video/scripts/run.sh` 调用所有能力
 3. `ffmpeg` 自动安装只在 `bootstrap` 或 `run.sh install-ffmpeg` 里触发
-4. 系统包不可用时，回退到 `skills/video/.cache/ffmpeg/<platform>` 缓存目录
-5. 运行时查找顺序是：
+4. 需要生成 ASR 字幕时，先按 [`qwen3-asr-openai.md`](../speech/references/qwen3-asr-openai.md) 准备外部服务，再运行 `speech` 的 `doctor --mode transcribe`
+5. 系统包不可用时，回退到 `skills/video/.cache/ffmpeg/<platform>` 缓存目录
+6. 运行时查找顺序是：
    - `VIDEO_FFMPEG_BIN` / `VIDEO_FFPROBE_BIN`
    - `FFMPEG_BIN` / `FFPROBE_BIN`
    - `skills/video/.cache/ffmpeg/<platform>/bin`
@@ -42,6 +45,7 @@ bash skills/video/scripts/run.sh check-sync --input-file movie.mkv --subtitle-fi
 - 安装脚本：`scripts/install-linux.sh`、`scripts/install-macos.sh`、`scripts/install-windows.ps1`
 - 统一入口：`scripts/run.sh`
 - 参数与排障：`references/usage.md`
+- ASR 依赖与部署入口：[`qwen3-asr-openai.md`](../speech/references/qwen3-asr-openai.md)
 
 ## 输出规则
 

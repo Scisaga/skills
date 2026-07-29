@@ -26,7 +26,7 @@ TTS 会调用 Azure 云服务并可能产生 Azure 用量费用。不要把 key 
 
 ### ASR：qwen3-asr-openai
 
-ASR 不是本地 Python 包内置推理。运行转写前，必须已有一台可访问的 `qwen3-asr-openai` 服务，并提供：
+ASR 不是本地 Python 包内置推理，而是一个可选的外部服务依赖。运行转写前，使用者必须按需自行部署或取得一台可访问的开源 [`Scisaga/qwen3-asr-openai`](https://github.com/Scisaga/qwen3-asr-openai) 服务，并提供：
 
 ```text
 POST /v1/audio/transcriptions
@@ -41,7 +41,7 @@ GET /health
 
 当前 `transcribe.py` 不发送 API Key 或 `Authorization` header，项目默认的转写接口也不要求 key。服务端的 `ADMIN_TOKEN` 只用于保护 `POST /admin/reload`，不是转写凭证。若远程部署通过反向代理增加了认证，当前客户端不能直接携带该认证信息，需要先扩展客户端或通过受信网络访问。
 
-部署 ASR 服务通常还需要 Docker、NVIDIA GPU/容器运行时、模型缓存空间，以及首次下载 HuggingFace 模型所需的网络。具体部署与资源信息见 `qwen3-asr-openai.md`。
+`speech` 的 `bootstrap.sh`、`doctor.py` 和转写脚本都不会部署、启动或升级该服务，也不会下载 ASR 模型。部署可能涉及 Docker、NVIDIA GPU/容器运行时、模型缓存和模型下载网络；具体命令、资源要求、模型选择及运维参数以上游仓库 README 为准。本地的 `qwen3-asr-openai.md` 只记录 skill 需要的依赖边界和客户端契约。
 
 ### 本地软件
 
@@ -104,7 +104,7 @@ TTS configuration:
 ASR endpoint:
 
 - `QWEN_ASR_API_BASE`, default `http://127.0.0.1:12301`
-- 该地址默认指向自托管项目 `qwen3-asr-openai`；需要接口、部署与运维细节时，读取 `references/qwen3-asr-openai.md`
+- 该地址默认指向使用者自行部署的 `qwen3-asr-openai`；依赖边界与兼容接口见 `references/qwen3-asr-openai.md`，实际部署以上游仓库 README 为准
 
 Optional environment file locations:
 
@@ -163,7 +163,8 @@ bash skills/speech/scripts/run.sh transcribe --input-file meeting.wav --output-j
 - 健康检查优先看 `GET /health`
 - 服务自带 Web UI、Swagger 和 MCP；但本 skill 默认走 HTTP 上传接口，而不是 MCP
 - 对大文件或长音频，优先继续走 HTTP 上传接口，不要改成 MCP base64 传输
-- 需要部署、模型切换、MCP 限制或环境变量细节时，读取 `references/qwen3-asr-openai.md`
+- 本 skill 不自动部署或管理 ASR 服务；部署、模型切换、资源和运维细节以[上游仓库](https://github.com/Scisaga/qwen3-asr-openai)为准
+- 需要确认 skill 实际依赖的接口、认证和传输边界时，读取 `references/qwen3-asr-openai.md`
 
 ## 统一入口
 

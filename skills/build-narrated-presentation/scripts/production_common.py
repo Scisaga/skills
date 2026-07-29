@@ -8,6 +8,7 @@ import json
 import os
 import re
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape, quoteattr
@@ -16,6 +17,14 @@ from xml.sax.saxutils import escape, quoteattr
 RATE_RE = re.compile(r"^[+-]\d+%$")
 PITCH_RE = re.compile(r"^[+-]\d+(?:\.\d+)?st$")
 STATE_SCHEMA_VERSION = 1
+PROJECT_SCHEMA_VERSION = 2
+DELIVERABLES = {
+    "static_pptx",
+    "animated_pptx",
+    "narrated_pptx",
+    "video",
+}
+APPROVAL_STAGES = {"content", "visual", "narration"}
 
 
 def load_object(path: Path) -> dict[str, Any]:
@@ -66,16 +75,129 @@ def resolve_path(project: Path, value: str | Path) -> Path:
     return project / path
 
 
-def project_paths(project: Path) -> dict[str, Path]:
-    config = load_object(project / "project.json")
+def load_project_config(project: Path) -> dict[str, Any]:
+    path = project / "project.json"
+    config = load_object(path)
+    version = config.get("schema_version")
+    if version != PROJECT_SCHEMA_VERSION:
+        raise ValueError(
+            "Unsupported project.json schema_version "
+            f"{version!r}; expected {PROJECT_SCHEMA_VERSION}. "
+            "This skill supports only the current schema."
+        )
+    deliverable = config.get("deliverable")
+    if deliverable not in DELIVERABLES:
+        raise ValueError(
+            "project.json deliverable must be one of "
+            + ", ".join(sorted(DELIVERABLES))
+        )
+    if config.get("canvas") != {"width": 1600, "height": 900}:
+        raise ValueError("project.json canvas must be 1600x900")
+    for key in ("source", "content", "template", "visual", "paths", "outputs"):
+        if not isinstance(config.get(key), dict):
+            raise ValueError(f"project.json {key} must be an object")
+
+    content = config["content"]
+    if not isinstance(content.get("page_script"), str) or not content[
+        "page_script"
+    ]:
+        raise ValueError("project.json content.page_script is required")
+
+    template = config["template"]
+    if template.get("mode") not in {"provided", "generated"}:
+        raise ValueError(
+            "project.json template.mode must be provided or generated"
+        )
+    source = template.get("source")
+    if template["mode"] == "provided" and (
+        not isinstance(source, str) or not source
+    ):
+        raise ValueError(
+            "project.json template.source is required for provided mode"
+        )
+    if template["mode"] == "generated" and source is not None:
+        raise ValueError(
+            "project.json template.source must be null for generated mode"
+        )
+    if not isinstance(template.get("working"), str) or not template["working"]:
+        raise ValueError("project.json template.working is required")
+    safe_area = template.get("safe_area")
+    if not isinstance(safe_area, dict):
+        raise ValueError("project.json template.safe_area must be an object")
+    expected_safe_fields = {"x", "y", "width", "height"}
+    if set(safe_area) != expected_safe_fields:
+        raise ValueError(
+            "project.json template.safe_area must contain x, y, width, height"
+        )
+    values = [safe_area[field] for field in ("x", "y", "width", "height")]
+    if any(
+        isinstance(value, bool) or not isinstance(value, int)
+        for value in values
+    ):
+        raise ValueError(
+            "project.json template.safe_area values must be integers"
+        )
+    x, y, width, height = values
+    if (
+        x < 0
+        or y < 0
+        or width <= 0
+        or height <= 0
+        or x + width > 1600
+        or y + height > 900
+    ):
+        raise ValueError(
+            "project.json template.safe_area must fit inside 1600x900"
+        )
+
+    outputs = config["outputs"]
+    for key in (
+        "static_pptx",
+        "animated_pptx",
+        "narrated_pptx",
+        "video",
+    ):
+        if not isinstance(outputs.get(key), str) or not outputs[key]:
+            raise ValueError(f"project.json outputs.{key} is required")
+    paths = config["paths"]
+    for key in ("voice_profile", "build_state"):
+        if not isinstance(paths.get(key), str) or not paths[key]:
+            raise ValueError(f"project.json paths.{key} is required")
+    visual = config["visual"]
+    if visual.get("style_preset") not in {
+        "project-default",
+        "technical-infographic",
+    }:
+        raise ValueError("project.json visual.style_preset is invalid")
+    if visual.get("theme") not in {"light", "dark"}:
+        raise ValueError("project.json visual.theme is invalid")
+    if visual.get("density") != "presentation":
+        raise ValueError(
+            "project.json visual.density must be presentation"
+        )
+    return config
+
+
+def project_paths(
+    project: Path,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Path]:
+    config = config or load_project_config(project)
     paths = config.get("paths")
-    if not isinstance(paths, dict):
-        paths = {}
+    assert isinstance(paths, dict)
     outputs = config.get("outputs")
-    if not isinstance(outputs, dict):
-        outputs = {}
+    assert isinstance(outputs, dict)
+    content = config["content"]
+    template = config["template"]
     return {
         "project": project / "project.json",
+        "page_script": resolve_path(project, content["page_script"]),
+        "template_source": (
+            resolve_path(project, template["source"])
+            if isinstance(template.get("source"), str)
+            else project / "inputs" / "template-source.pptx"
+        ),
+        "template_working": resolve_path(project, template["working"]),
         "director": project / "video" / "narration_director.json",
         "manifest": project / "video" / "animation_manifest.json",
         "timing": project / "video" / "fast_animation_timing.json",
@@ -84,21 +206,40 @@ def project_paths(project: Path) -> dict[str, Path]:
         "scripts_dir": project / "video" / "scripts",
         "voice_profile": resolve_path(
             project,
-            paths.get("voice_profile", "video/voice_profile.json"),
+            paths["voice_profile"],
         ),
         "build_state": resolve_path(
             project,
-            paths.get("build_state", "video/build_state.json"),
+            paths["build_state"],
+        ),
+        "static_pptx": resolve_path(
+            project,
+            outputs["static_pptx"],
         ),
         "animated_pptx": resolve_path(
             project,
-            outputs.get("animated_pptx", "deliverables/animated.pptx"),
+            outputs["animated_pptx"],
+        ),
+        "narrated_pptx": resolve_path(
+            project,
+            outputs["narrated_pptx"],
         ),
         "video": resolve_path(
             project,
-            outputs.get("video", "deliverables/video.mp4"),
+            outputs["video"],
         ),
     }
+
+
+def deliverable_pptx(project: Path) -> Path:
+    config = load_project_config(project)
+    paths = project_paths(project, config)
+    deliverable = config["deliverable"]
+    if deliverable == "static_pptx":
+        return paths["static_pptx"]
+    if deliverable == "animated_pptx":
+        return paths["animated_pptx"]
+    return paths["narrated_pptx"]
 
 
 def normalize_voice_profile(profile: dict[str, Any]) -> dict[str, Any]:
@@ -182,39 +323,10 @@ def normalize_voice_profile(profile: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def voice_profile_from_legacy_director(
-    director: dict[str, Any],
-) -> dict[str, Any] | None:
-    voice = director.get("voice")
-    if not isinstance(voice, dict):
-        return None
-    return normalize_voice_profile(
-        {
-            "provider": voice.get("provider", "azure-speech"),
-            "voice": voice.get("name"),
-            "style": voice.get("style"),
-            # Legacy directors already store the effective rate on every
-            # segment. Keep the new global adjustment neutral on migration.
-            "rate": "+0%",
-            "pitch": voice.get("pitch", "+0st"),
-            "pronunciations": {},
-            "audition": {"text": ""},
-        }
-    )
-
-
-def load_voice_profile(
-    profile_path: Path,
-    *,
-    director: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    if profile_path.is_file():
-        return normalize_voice_profile(load_object(profile_path))
-    if director is not None:
-        legacy = voice_profile_from_legacy_director(director)
-        if legacy is not None:
-            return legacy
-    raise FileNotFoundError(profile_path)
+def load_voice_profile(profile_path: Path) -> dict[str, Any]:
+    if not profile_path.is_file():
+        raise FileNotFoundError(profile_path)
+    return normalize_voice_profile(load_object(profile_path))
 
 
 def validate_segments(page: int, segments: object) -> list[dict[str, Any]]:
@@ -423,6 +535,7 @@ def load_state(path: Path) -> dict[str, Any]:
             "schema_version": STATE_SCHEMA_VERSION,
             "inputs": {},
             "artifacts": {},
+            "approvals": {},
             "qa": {},
             "powerpoint": {
                 "opened": None,
@@ -434,6 +547,7 @@ def load_state(path: Path) -> dict[str, Any]:
     state.setdefault("schema_version", STATE_SCHEMA_VERSION)
     state.setdefault("inputs", {})
     state.setdefault("artifacts", {})
+    state.setdefault("approvals", {})
     state.setdefault("qa", {})
     state.setdefault(
         "powerpoint",
@@ -444,17 +558,35 @@ def load_state(path: Path) -> dict[str, Any]:
 
 def source_fingerprint(project: Path, project_config: dict[str, Any]) -> str:
     source = project_config.get("source")
-    if not isinstance(source, dict):
-        return canonical_hash({"source": None})
+    assert isinstance(source, dict)
     document_value = source.get("document")
+    document_hash = None
     if isinstance(document_value, str) and document_value:
         document = resolve_path(project, document_value)
         if document.is_file():
-            return file_hash(document)
-    return canonical_hash(source)
+            document_hash = file_hash(document)
+    page_script = resolve_path(
+        project,
+        project_config["content"]["page_script"],
+    )
+    return canonical_hash(
+        {
+            "source": source,
+            "document_sha256": document_hash,
+            "page_script_sha256": (
+                file_hash(page_script) if page_script.is_file() else None
+            ),
+        }
+    )
 
 
-def visual_fingerprint(project: Path, manifest: dict[str, Any]) -> str:
+def visual_fingerprint(
+    project: Path,
+    project_config: dict[str, Any],
+    manifest: dict[str, Any],
+    *,
+    include_timing: bool = True,
+) -> str:
     visual_manifest = {
         key: value
         for key, value in manifest.items()
@@ -480,21 +612,37 @@ def visual_fingerprint(project: Path, manifest: dict[str, Any]) -> str:
             if path.is_file():
                 svg_hashes[source] = file_hash(path)
     timing = project / "video" / "fast_animation_timing.json"
+    template = project_config["template"]
+    template_working = resolve_path(project, template["working"])
     return canonical_hash(
         {
+            "preset": project_config["visual"],
+            "template": {
+                "mode": template["mode"],
+                "working_sha256": (
+                    file_hash(template_working)
+                    if template_working.is_file()
+                    else None
+                ),
+                "safe_area": template["safe_area"],
+            },
             "manifest": visual_manifest,
             "svg": svg_hashes,
-            "timing": file_hash(timing) if timing.is_file() else None,
+            "timing": (
+                file_hash(timing)
+                if include_timing and timing.is_file()
+                else None
+            ),
         }
     )
 
 
 def current_input_fingerprints(project: Path) -> dict[str, str]:
     paths = project_paths(project)
-    project_config = load_object(paths["project"])
+    project_config = load_project_config(project)
     director = load_object(paths["director"])
     manifest = load_object(paths["manifest"])
-    voice = load_voice_profile(paths["voice_profile"], director=director)
+    voice = load_voice_profile(paths["voice_profile"])
     pages = normalize_director_pages(director)
     narration_content = [
         {
@@ -528,5 +676,174 @@ def current_input_fingerprints(project: Path) -> dict[str, str]:
                 "local_performance": performance,
             }
         ),
-        "visual": visual_fingerprint(project, manifest),
+        "visual": visual_fingerprint(project, project_config, manifest),
     }
+
+
+def parse_page_list(value: str | None) -> list[int]:
+    if value is None:
+        return []
+    pages: set[int] = set()
+    for token in value.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        if "-" in token:
+            start_text, end_text = token.split("-", 1)
+            start, end = int(start_text), int(end_text)
+            if start <= 0 or end < start:
+                raise ValueError(f"Invalid page range: {token}")
+            pages.update(range(start, end + 1))
+        else:
+            page = int(token)
+            if page <= 0:
+                raise ValueError(f"Invalid page: {token}")
+            pages.add(page)
+    return sorted(pages)
+
+
+def approval_fingerprint(
+    project: Path,
+    stage: str,
+    *,
+    pages: list[int] | None = None,
+) -> tuple[str, dict[str, Any]]:
+    if stage not in APPROVAL_STAGES:
+        raise ValueError(f"Unsupported approval stage: {stage}")
+    config = load_project_config(project)
+    paths = project_paths(project, config)
+    content_payload = {
+        "source_and_script": source_fingerprint(project, config),
+        "page_script": str(paths["page_script"].relative_to(project)),
+    }
+    if not paths["page_script"].is_file():
+        raise FileNotFoundError(paths["page_script"])
+    if stage == "content":
+        return canonical_hash(content_payload), content_payload
+
+    if stage == "visual":
+        selected_pages = sorted(set(pages or []))
+        if not selected_pages:
+            raise ValueError(
+                "Visual approval requires representative --pages"
+            )
+        if not paths["template_working"].is_file():
+            raise FileNotFoundError(paths["template_working"])
+        manifest = load_object(paths["manifest"])
+        slide_map = {
+            row.get("page"): row
+            for row in manifest.get("slides", [])
+            if isinstance(row, dict)
+        }
+        samples: dict[str, str] = {}
+        for page in selected_pages:
+            slide = slide_map.get(page)
+            if not isinstance(slide, dict):
+                raise ValueError(
+                    f"Visual approval page {page} is absent from the manifest"
+                )
+            source = slide.get("source_svg")
+            if not isinstance(source, str) or not source:
+                raise ValueError(
+                    f"Visual approval page {page} has no source_svg"
+                )
+            source_path = resolve_path(project, source)
+            if not source_path.is_file():
+                raise FileNotFoundError(source_path)
+            samples[str(page)] = file_hash(source_path)
+        payload = {
+            "content": canonical_hash(content_payload),
+            "template_sha256": file_hash(paths["template_working"]),
+            "safe_area": config["template"]["safe_area"],
+            "visual": config["visual"],
+            "samples": samples,
+        }
+        return canonical_hash(payload), payload
+
+    if not paths["director"].is_file():
+        raise FileNotFoundError(paths["director"])
+    director = load_object(paths["director"])
+    voice = load_voice_profile(paths["voice_profile"])
+    payload = {
+        "content": canonical_hash(content_payload),
+        "director_sha256": file_hash(paths["director"]),
+        "voice_profile": voice,
+    }
+    return canonical_hash(payload), payload
+
+
+def approval_status(
+    project: Path,
+    stage: str,
+    state: dict[str, Any] | None = None,
+) -> tuple[bool, str]:
+    paths = project_paths(project)
+    state = state or load_state(paths["build_state"])
+    approvals = state.get("approvals")
+    record = approvals.get(stage) if isinstance(approvals, dict) else None
+    if not isinstance(record, dict) or record.get("status") != "approved":
+        return False, f"{stage} approval is missing"
+    pages = record.get("pages")
+    selected = (
+        [int(page) for page in pages]
+        if isinstance(pages, list)
+        else None
+    )
+    try:
+        current, _ = approval_fingerprint(
+            project,
+            stage,
+            pages=selected,
+        )
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        return False, f"{stage} approval cannot be verified: {exc}"
+    if record.get("fingerprint") != current:
+        return False, f"{stage} approval is stale"
+    return True, f"{stage} approval is current"
+
+
+def require_approvals(project: Path, stages: tuple[str, ...]) -> None:
+    paths = project_paths(project)
+    state = load_state(paths["build_state"])
+    failures = [
+        message
+        for stage in stages
+        for passed, message in [approval_status(project, stage, state)]
+        if not passed
+    ]
+    if failures:
+        raise RuntimeError(
+            "Production blocked: "
+            + "; ".join(failures)
+            + ". Run approve after reviewing the current artifacts."
+        )
+
+
+def record_approval(
+    project: Path,
+    stage: str,
+    *,
+    approved_by: str,
+    pages: list[int] | None = None,
+) -> dict[str, Any]:
+    if not approved_by.strip():
+        raise ValueError("--approved-by must be non-empty")
+    paths = project_paths(project)
+    fingerprint, evidence = approval_fingerprint(
+        project,
+        stage,
+        pages=pages,
+    )
+    state = load_state(paths["build_state"])
+    record = {
+        "status": "approved",
+        "fingerprint": fingerprint,
+        "approved_at": datetime.now(timezone.utc).isoformat(),
+        "approved_by": approved_by.strip(),
+        "evidence": evidence,
+    }
+    if stage == "visual":
+        record["pages"] = sorted(set(pages or []))
+    state["approvals"][stage] = record
+    write_object(paths["build_state"], state)
+    return record

@@ -1,9 +1,32 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "{{PROJECT_NAME}}",
+  "deliverable": "static_pptx",
   "canvas": {
     "width": 1600,
     "height": 900
+  },
+  "source": {
+    "mode": "uninitialized"
+  },
+  "content": {
+    "page_script": "page-script.md"
+  },
+  "template": {
+    "mode": "generated",
+    "source": null,
+    "working": "template.pptx",
+    "safe_area": {
+      "x": 120,
+      "y": 150,
+      "width": 1360,
+      "height": 620
+    }
+  },
+  "visual": {
+    "style_preset": "project-default",
+    "theme": "light",
+    "density": "presentation"
   },
   "paths": {
     "assets": "assets",
@@ -12,12 +35,10 @@
     "voice_profile": "video/voice_profile.json",
     "build_state": "video/build_state.json"
   },
-  "source": {
-    "mode": "uninitialized"
-  },
   "outputs": {
-    "static_pptx": "deliverables/{{PROJECT_NAME}}_静态.pptx",
+    "static_pptx": "deliverables/{{PROJECT_FILE_STEM}}_静态.pptx",
     "animated_pptx": "deliverables/{{DECK_FILE}}",
-    "video": "deliverables/{{PROJECT_NAME}}_自动旁白.mp4"
+    "narrated_pptx": "deliverables/{{PROJECT_FILE_STEM}}_自动旁白.pptx",
+    "video": "deliverables/{{PROJECT_FILE_STEM}}_自动旁白.mp4"
   }
 }
