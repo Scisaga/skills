@@ -10,24 +10,31 @@ import json
 import re
 import subprocess
 import sys
-from collections import Counter
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Sequence
 from urllib.parse import unquote, urlsplit
 import xml.etree.ElementTree as ET
 
+from contract_versions import INPUT_CONTRACT_VERSION
+from page_script_contract import PAGE_HEADING_RE, RENDER_MARKER_RE, audit_page_script
 
-PROFILES = ("auto", "narrative-plan", "execution-plan", "presentation-source")
-REVIEW_ATTESTATION = (
-    "I reviewed the entire current document and the cited evidence supports "
-    "each assigned category."
+
+PROFILES = (
+    "auto",
+    "narrative-plan",
+    "execution-plan",
+    "page-narration",
+    "presentation-source",
 )
 FRONTMATTER_RE = re.compile(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|$)", re.S)
 HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$", re.M)
 LINK_RE = re.compile(r"!?\[[^\]]*]\(([^)\r\n]+)\)")
 IMAGE_RE = re.compile(r"!\[[^\]]*]\(([^)\r\n]+)\)")
-PAGE_RE = re.compile(r"^##[ \t]+PAGE[ \t]+(\d+)/(\d+)[｜|][ \t]*(.+?)[ \t]*$", re.M)
+PAGE_RE = re.compile(
+    r"^##[ \t]+PAGE[ \t]+(\d+)/(\d+)[ \t]*[｜|][ \t]*(.+?)[ \t]*$",
+    re.M,
+)
 PLACEHOLDER_RE = re.compile(
     r"\b(?:TODO|TBD|FIXME)\b|\?{3,}|\{\{[^{}\r\n]+\}\}",
     re.I,
@@ -35,26 +42,27 @@ PLACEHOLDER_RE = re.compile(
 
 SEMANTIC_CATEGORIES = {
     "narrative-plan": [
-        "purpose_audience",
-        "narrative_coherence",
-        "fact_evidence_integrity",
-        "content_completeness",
-        "presentation_readiness",
-        "language_clarity",
+        "audience_and_goal",
+        "narrative_and_completeness",
+        "fact_and_evidence",
+        "presentation_fit",
     ],
     "execution-plan": [
-        "purpose_scope",
-        "fact_status_integrity",
-        "deliverables_ownership",
-        "acceptance_readiness",
-        "risk_feasibility",
-        "presentation_readiness",
+        "scope_and_ownership",
+        "acceptance_and_risk",
+        "fact_and_status",
+        "presentation_fit",
     ],
     "presentation-source": [
+        "page_narrative_quality",
+        "fact_and_evidence",
+        "visual_communication_quality",
+        "narration_quality",
+    ],
+    "page-narration": [
         "page_narrative",
         "fact_evidence_integrity",
         "page_completeness",
-        "visual_readiness",
         "narration_readiness",
         "language_clarity",
     ],
@@ -286,6 +294,28 @@ def check_local_links(
 
 
 def detect_profile(document: Path, text: str, frontmatter: dict[str, Any]) -> str:
+    declared = str(
+        frontmatter.get("document_type")
+        or frontmatter.get("profile")
+        or ""
+    ).strip().lower()
+    declared_profiles = {
+        "page-narration": "page-narration",
+        "presentation-source": "presentation-source",
+        "narrative-plan": "narrative-plan",
+        "execution-plan": "execution-plan",
+    }
+    if declared in declared_profiles:
+        return declared_profiles[declared]
+    presentation_metadata = (
+        any(key in frontmatter for key in ("target_pages", "page_target"))
+        and "canvas" in frontmatter
+    )
+    render_signal = RENDER_MARKER_RE.search(text)
+    if PAGE_RE.search(text) and (render_signal or presentation_metadata):
+        return "presentation-source"
+    if PAGE_HEADING_RE.search(text):
+        return "page-narration"
     if PAGE_RE.search(text):
         return "presentation-source"
     identity = " ".join(
@@ -306,41 +336,32 @@ def check_common(
     profile: str,
     findings: list[dict[str, str]],
 ) -> dict[str, Any]:
-    if not frontmatter:
-        findings.append(
-            finding(
-                "DOC001",
-                "blocking",
-                "缺少 Markdown frontmatter。",
-                "在文档开头补充 title、status 及对应类型要求的元数据。",
-                location="document start",
-            )
-        )
-    add_missing_field(findings, frontmatter, "DOC002", "title")
-
     headings = [
         {"level": len(marker), "title": title.strip()}
         for marker, title in HEADING_RE.findall(body)
     ]
-    if profile != "presentation-source":
-        h1_count = sum(row["level"] == 1 for row in headings)
-        if h1_count != 1:
-            findings.append(
-                finding(
-                    "DOC003",
-                    "blocking",
-                    f"正文必须恰好有一个 H1，当前为 {h1_count} 个。",
-                    "保留一个与文档身份一致的一级标题。",
-                    location="headings",
-                )
-            )
-    if len(body.strip()) < (2000 if profile != "presentation-source" else 200):
+    if profile in {"page-narration", "presentation-source"}:
+        # A prepared page script has its own small, deterministic contract.
+        # Product-plan frontmatter, minimum document length, link crawling, and
+        # heading-style opinions are intentionally outside that contract.
+        return {
+            "characters": len(body),
+            "headings": len(headings),
+            "h2_sections": sum(row["level"] == 2 for row in headings),
+            "local_links": 0,
+            "external_links": 0,
+            "images": len(IMAGE_RE.findall(body)),
+            "placeholders": 0,
+        }
+    if profile in {"narrative-plan", "execution-plan"} and len(
+        body.strip()
+    ) < 200:
         findings.append(
             finding(
                 "DOC004",
                 "blocking",
-                "正文内容过少，无法支撑演示制作。",
-                "补齐问题、判断、证据、行动或逐页内容后重新检查。",
+                "正文少于 200 字符，无法进行可靠的全文语义复核。",
+                "补充实际计划内容；逐页口述稿请使用 page-narration profile。",
                 location="body",
             )
         )
@@ -351,7 +372,7 @@ def check_common(
         findings.append(
             finding(
                 f"DOC005-{index:02d}",
-                "blocking",
+                "warning",
                 f"存在未关闭占位符：{match.group(0)}",
                 "替换为真实内容，或改成有 owner、状态与处理条件的显式待办。",
                 location=f"line {line}",
@@ -389,55 +410,6 @@ def check_common(
                     )
                 )
 
-    last_level = 0
-    for row in headings:
-        if last_level and row["level"] > last_level + 1:
-            findings.append(
-                finding(
-                    "DOC007",
-                    "warning",
-                    f"标题层级从 H{last_level} 跳到 H{row['level']}：{row['title']}",
-                    "检查标题层级，确保阅读结构没有断层。",
-                    location=row["title"],
-                )
-            )
-        last_level = row["level"]
-    duplicates = [
-        title
-        for title, count in Counter(row["title"] for row in headings).items()
-        if count > 1
-    ]
-    for title in duplicates:
-        findings.append(
-            finding(
-                "DOC008",
-                "warning",
-                f"标题重复：{title}",
-                "确认重复章节是否应合并或改名。",
-                location=title,
-            )
-        )
-
-    long_paragraphs = [
-        paragraph
-        for paragraph in re.split(r"\n[ \t]*\n", body)
-        if len(paragraph.strip()) > 900
-        and not all(
-            not line.strip() or line.lstrip().startswith("|")
-            for line in paragraph.splitlines()
-        )
-    ]
-    if long_paragraphs:
-        findings.append(
-            finding(
-                "DOC009",
-                "warning",
-                f"有 {len(long_paragraphs)} 个段落超过 900 字符。",
-                "拆分论点并增加可用于分页的层次或小结。",
-                location="body",
-            )
-        )
-
     return {
         "characters": len(body),
         "headings": len(headings),
@@ -449,294 +421,27 @@ def check_common(
     }
 
 
-def require_pattern(
-    findings: list[dict[str, str]],
-    body: str,
-    code: str,
-    label: str,
-    pattern: str,
-    required_change: str,
-    *,
-    severity: str = "blocking",
-) -> None:
-    if not re.search(pattern, body, re.I | re.M):
-        findings.append(
-            finding(
-                code,
-                severity,
-                f"未识别到{label}。",
-                required_change,
-                location="body",
-            )
-        )
-
-
-def check_narrative(
-    body: str,
-    frontmatter: dict[str, Any],
+def check_page_narration(
+    document: Path,
     metrics: dict[str, Any],
     findings: list[dict[str, str]],
 ) -> None:
-    add_missing_field(findings, frontmatter, "NAR001", "status")
-    add_missing_field(findings, frontmatter, "NAR002", "audience")
-    add_missing_field(
-        findings,
-        frontmatter,
-        "NAR003",
-        "evidence_policy",
-        "fact_policy",
+    audit = audit_page_script(document)
+    metrics["pages"] = audit["page_count"]
+    metrics["pages_with_target_seconds"] = sum(
+        row.get("target_seconds") is not None for row in audit["pages"]
     )
-    if metrics["h2_sections"] < 5:
+    metrics["engineering_numeric_items"] = sum(
+        len(row.get("engineering_numbers", [])) for row in audit["pages"]
+    )
+    for index, message in enumerate(audit["errors"], 1):
         findings.append(
             finding(
-                "NAR004",
+                f"PGN{index:03d}",
                 "blocking",
-                f"二级章节只有 {metrics['h2_sections']} 个，叙事结构不足。",
-                "至少形成问题、对象、方案、证据/边界、行动或路线等稳定章节。",
-                location="headings",
-            )
-        )
-    if not re.search(r"^>[ \t]+\S", body[:6000], re.M):
-        findings.append(
-            finding(
-                "NAR005",
-                "warning",
-                "文档前部没有可识别的核心判断或一句话主张。",
-                "在开头明确受众应记住的核心判断，避免从背景材料开始堆叠。",
-                location="opening",
-            )
-        )
-    required_patterns = [
-        ("NAR006", "目标受众或首批用户", r"目标用户|首批用户|谁会先使用|客户|受众"),
-        ("NAR007", "具体问题或痛点", r"问题|痛点|卡在哪里|为什么.*难|断点"),
-        ("NAR008", "产品答案或解决路径", r"产品答案|解决方案|产品路径|如何解决|工作流"),
-        ("NAR009", "具体案例、任务或使用场景", r"具体任务|案例|场景|用户旅程|体验路径"),
-        ("NAR010", "事实、证据或待验证边界", r"证据|事实|已具备|仍需证明|待验证|假设"),
-    ]
-    for code, label, pattern in required_patterns:
-        require_pattern(
-            findings,
-            body,
-            code,
-            label,
-            pattern,
-            f"新增明确的{label}章节，并区分已证实内容与假设。",
-        )
-    require_pattern(
-        findings,
-        body,
-        "NAR011",
-        "演示分页映射",
-        r"^#{2,4}[ \t]+.*(?:PPT|演示).*(?:页|映射|结构)|^#{2,4}[ \t]+.*(?:逐页|页映射)",
-        "增加逐页演示映射，说明每页标题、主判断、证据和视觉意图。",
-    )
-    mapping_heading = re.search(
-        r"^#{2,4}[ \t]+.*(?:PPT|演示).*(?:页|映射|结构)|"
-        r"^#{2,4}[ \t]+.*(?:逐页|页映射)",
-        body,
-        re.I | re.M,
-    )
-    if mapping_heading:
-        next_heading = re.search(
-            r"^#{1,2}[ \t]+",
-            body[mapping_heading.end():],
-            re.M,
-        )
-        mapping_end = (
-            mapping_heading.end() + next_heading.start()
-            if next_heading
-            else len(body)
-        )
-        mapping_body = body[mapping_heading.end():mapping_end]
-        table_rows = [
-            [cell.strip() for cell in line.strip().strip("|").split("|")]
-            for line in mapping_body.splitlines()
-            if line.strip().startswith("|")
-        ]
-        header_index = next(
-            (
-                index
-                for index, row in enumerate(table_rows)
-                if len(row) >= 3
-                and "页码" in row[0]
-                and "标题" in row[1]
-                and re.search(r"核心结论|主判断", row[2])
-            ),
-            None,
-        )
-        page_rows: list[tuple[int, str, str]] = []
-        if header_index is not None:
-            for row in table_rows[header_index + 1:]:
-                if len(row) < 3 or re.fullmatch(r":?-+:?", row[0]):
-                    continue
-                page_match = re.fullmatch(r"(?:第[ \t]*)?(\d+)(?:[ \t]*页)?", row[0])
-                if not page_match:
-                    continue
-                page_rows.append((int(page_match.group(1)), row[1], row[2]))
-        mapped_pages = len(page_rows)
-        metrics["mapped_pages"] = mapped_pages
-        if header_index is None:
-            findings.append(
-                finding(
-                    "NAR011A",
-                    "blocking",
-                    "逐页映射缺少“页码 / 标题 / 核心结论（或主判断）”表头。",
-                    "使用明确表头建立逐页映射表。",
-                    location="presentation mapping",
-                )
-            )
-        elif mapped_pages < 5:
-            findings.append(
-                finding(
-                    "NAR011B",
-                    "blocking",
-                    f"逐页映射只有 {mapped_pages} 个可识别页面。",
-                    "至少给出 5 页，并为每页填写标题和核心结论。",
-                    location="presentation mapping",
-                )
-            )
-        else:
-            page_numbers = [row[0] for row in page_rows]
-            expected_pages = list(range(1, mapped_pages + 1))
-            if page_numbers != expected_pages:
-                findings.append(
-                    finding(
-                        "NAR011C",
-                        "blocking",
-                        f"逐页映射页码不连续：{page_numbers}",
-                        f"把页码整理为 {expected_pages}。",
-                        location="presentation mapping",
-                    )
-                )
-            weak_rows = [
-                page
-                for page, title, conclusion in page_rows
-                if len(title.strip()) < 4 or len(conclusion.strip()) < 8
-            ]
-            if weak_rows:
-                findings.append(
-                    finding(
-                        "NAR011D",
-                        "blocking",
-                        f"以下页面的标题或核心结论过于空洞：{weak_rows}",
-                        "为每页写出可独立理解的标题和具体核心结论。",
-                        location="presentation mapping",
-                    )
-                )
-    require_pattern(
-        findings,
-        body,
-        "NAR012",
-        "价值、商业或采用逻辑",
-        r"商业|付费|价值|收入|购买|采用",
-        "补充目标受众为什么会采用、付费或采取行动。",
-        severity="warning",
-    )
-    require_pattern(
-        findings,
-        body,
-        "NAR013",
-        "风险、边界或下一步",
-        r"风险|边界|路线图|下一步|阶段目标|结语|行动",
-        "补充风险边界和演示结束后的明确行动。",
-        severity="warning",
-    )
-    numeric_pattern = re.compile(
-        r"(?<!\w)\d+(?:\.\d+)?\s*(?:%|万|亿|元|美元|人|家|个月|年)"
-    )
-    numeric_claims = len(numeric_pattern.findall(body))
-    metrics["numeric_claims"] = numeric_claims
-    unsupported_numeric_claims = 0
-    for match in numeric_pattern.finditer(body):
-        current_start = body.rfind("\n", 0, match.start())
-        previous_start = body.rfind("\n", 0, max(current_start, 0))
-        current_end = body.find("\n", match.end())
-        next_end = body.find("\n", current_end + 1) if current_end >= 0 else -1
-        window_start = previous_start + 1 if previous_start >= 0 else 0
-        window_end = next_end if next_end >= 0 else len(body)
-        window = body[window_start:window_end]
-        if not re.search(
-            r"https?://|\]\(|来源|证据|假设|目标|待验证|待补齐|路线|计划|样本|"
-            r"不是.{0,20}结论|数据决定",
-            window,
-            re.I,
-        ):
-            unsupported_numeric_claims += 1
-    metrics["unsupported_numeric_claims"] = unsupported_numeric_claims
-    if unsupported_numeric_claims:
-        findings.append(
-            finding(
-                "NAR014",
-                "warning",
-                f"有 {unsupported_numeric_claims} 个数量性表述附近未识别到来源或假设标签。",
-                "为关键数字补直接来源，或显式标成内部假设/目标。",
-                location="evidence",
-            )
-        )
-
-
-def check_execution(
-    body: str,
-    frontmatter: dict[str, Any],
-    metrics: dict[str, Any],
-    findings: list[dict[str, str]],
-) -> None:
-    add_missing_field(findings, frontmatter, "EXE001", "status")
-    if metrics["h2_sections"] < 5:
-        findings.append(
-            finding(
-                "EXE002",
-                "blocking",
-                f"二级章节只有 {metrics['h2_sections']} 个，执行闭环不足。",
-                "补齐范围、交付、责任、验收、风险和来源等章节。",
-                location="headings",
-            )
-        )
-    requirements = [
-        ("EXE003", "范围或文档边界", r"范围|边界|不负责|不等于"),
-        (
-            "EXE004",
-            "事实或状态标签",
-            r"官方要求|内部建议|待团队填写|现有|待实现|验收|事实口径|状态标签",
-        ),
-        (
-            "EXE005",
-            "交付物或执行动作",
-            r"交付|执行动作|工作包|WBS|资料总清单|提交|任务",
-        ),
-        ("EXE006", "责任人与时间安排", r"Owner|责任人|负责人|日期|排期|日历|阶段"),
-        ("EXE007", "验收或完成定义", r"验收|完成定义|DoD|检查清单|Checklist"),
-        ("EXE008", "风险或阻断条件", r"风险|阻断条件|失败条件|回滚"),
-        ("EXE009", "来源或依据", r"参考资料|官方来源|来源|证据"),
-    ]
-    for code, label, pattern in requirements:
-        require_pattern(
-            findings,
-            body,
-            code,
-            label,
-            pattern,
-            f"补充可执行的{label}，避免把愿望当成计划。",
-        )
-    require_pattern(
-        findings,
-        body,
-        "EXE010",
-        "演示或汇报结构",
-        r"PPT|演示|路演|汇报|视频",
-        "如果该文档将生成演示，补充演示受众、页数和逐页结构。",
-        severity="warning",
-    )
-    labelled_blanks = len(re.findall(r"待团队填写|待补充|待确认", body))
-    metrics["labelled_open_items"] = labelled_blanks
-    if labelled_blanks:
-        findings.append(
-            finding(
-                "EXE011",
-                "warning",
-                f"存在 {labelled_blanks} 个显式开放项。",
-                "语义复核时确认每项有 owner、截止条件，且不会阻断当前演示。",
-                location="open items",
+                message,
+                "直接修复对应页面的页码、标题或完整口述正文；不要另建摘要文件。",
+                location="page narration",
             )
         )
 
@@ -892,7 +597,17 @@ def check_presentation_source(
             target_value = normalize_target(images[0])
             parsed = urlsplit(target_value)
             svg_path = (document.parent / unquote(parsed.path)).resolve()
-            if svg_path.is_file():
+            if parsed.scheme or not svg_path.is_file():
+                findings.append(
+                    finding(
+                        f"PRS011A-{page:02d}",
+                        "blocking",
+                        f"第 {page} 页 SVG 不存在或不是本地文件：{target_value}",
+                        "修复 SVG 本地路径并确保文件实际存在。",
+                        location=target_value,
+                    )
+                )
+            else:
                 try:
                     root = ET.parse(svg_path).getroot()
                 except (ET.ParseError, OSError) as exc:
@@ -973,7 +688,7 @@ def inspect_document(document: Path, requested_profile: str = "auto") -> dict[st
     visible_text = strip_html_comments(contract_text)
     frontmatter, body = parse_frontmatter(visible_text)
     profile = (
-        detect_profile(document, visible_text, frontmatter)
+        detect_profile(document, contract_text, frontmatter)
         if requested_profile == "auto"
         else requested_profile
     )
@@ -986,10 +701,10 @@ def inspect_document(document: Path, requested_profile: str = "auto") -> dict[st
         profile,
         findings,
     )
-    if profile == "narrative-plan":
-        check_narrative(body, frontmatter, metrics, findings)
-    elif profile == "execution-plan":
-        check_execution(body, frontmatter, metrics, findings)
+    if profile in {"narrative-plan", "execution-plan"}:
+        metrics["plan_semantics_deferred_to_review"] = True
+    elif profile == "page-narration":
+        check_page_narration(document, metrics, findings)
     elif profile == "presentation-source":
         check_presentation_source(
             document,
@@ -1001,6 +716,7 @@ def inspect_document(document: Path, requested_profile: str = "auto") -> dict[st
     blockers = [row for row in findings if row["severity"] == "blocking"]
     return {
         "schema_version": 1,
+        "contract_version": INPUT_CONTRACT_VERSION,
         "kind": "input-preflight",
         "document": str(document),
         "document_sha256": sha256(document),
@@ -1008,6 +724,7 @@ def inspect_document(document: Path, requested_profile: str = "auto") -> dict[st
         "passed": not blockers,
         "metrics": metrics,
         "required_semantic_categories": SEMANTIC_CATEGORIES[profile],
+        "semantic_review_required": profile != "page-narration",
         "findings": findings,
     }
 
@@ -1022,8 +739,8 @@ def validate_evidence(
     heading = evidence.get("heading")
     line = evidence.get("line")
     quote = evidence.get("quote")
-    if not isinstance(heading, str) or not heading.strip():
-        return False, "证据 heading 不能为空。", None
+    if heading is not None and not isinstance(heading, str):
+        return False, "证据 heading 必须是字符串或 null。", None
     if isinstance(line, bool) or not isinstance(line, int):
         return False, "证据 line 必须是整数。", None
     if not 1 <= line <= len(document_lines):
@@ -1031,17 +748,21 @@ def validate_evidence(
     if not isinstance(quote, str) or len(quote.strip()) < 8:
         return False, "证据 quote 至少包含 8 个非空字符。", line
 
-    normalized_heading = re.sub(r"^#{1,6}[ \t]+", "", heading.strip())
-    preceding = [row for row in headings if row[0] <= line]
-    if not preceding:
-        return False, f"第 {line} 行之前没有可核验标题。", line
-    actual_heading = preceding[-1][1]
-    if normalized_heading not in actual_heading and actual_heading not in normalized_heading:
-        return (
-            False,
-            f"heading 与第 {line} 行所属章节不一致：{actual_heading!r}。",
-            line,
-        )
+    if isinstance(heading, str) and heading.strip():
+        normalized_heading = re.sub(r"^#{1,6}[ \t]+", "", heading.strip())
+        preceding = [row for row in headings if row[0] <= line]
+        if not preceding:
+            return False, f"第 {line} 行之前没有可核验标题。", line
+        actual_heading = preceding[-1][1]
+        if (
+            normalized_heading not in actual_heading
+            and actual_heading not in normalized_heading
+        ):
+            return (
+                False,
+                f"heading 与第 {line} 行所属章节不一致：{actual_heading!r}。",
+                line,
+            )
 
     window_start = max(0, line - 3)
     window_end = min(len(document_lines), line + 2)
@@ -1099,6 +820,17 @@ def semantic_findings(
                 location=str(review_path),
             )
         )
+    if review.get("contract_version") != INPUT_CONTRACT_VERSION:
+        findings.append(
+            finding(
+                "SEM003C",
+                "blocking",
+                f"语义复核 contract_version 不是当前版本 "
+                f"{INPUT_CONTRACT_VERSION}。",
+                "使用当前 prepare-input-review 命令重新生成并完成复核。",
+                location=str(review_path),
+            )
+        )
     reviewer = review.get("reviewer")
     reviewer_valid = (
         isinstance(reviewer, dict)
@@ -1106,7 +838,7 @@ def semantic_findings(
         and bool(reviewer["name"].strip())
         and reviewer.get("kind") in {"ai-agent", "human", "hybrid"}
         and reviewer.get("method") == "full-document-review"
-        and reviewer.get("attestation") == REVIEW_ATTESTATION
+        and reviewer.get("attestation") is True
     )
     if not reviewer_valid:
         findings.append(
@@ -1160,7 +892,6 @@ def semantic_findings(
         )
         for match in HEADING_RE.finditer(visible_document)
     ]
-    valid_evidence_lines: set[int] = set()
     for category in preflight["required_semantic_categories"]:
         row = categories.get(category)
         if not isinstance(row, dict):
@@ -1228,7 +959,7 @@ def semantic_findings(
             else:
                 category_has_valid_evidence = False
                 for evidence_index, item in enumerate(evidence, 1):
-                    valid, reason, evidence_line = validate_evidence(
+                    valid, reason, _ = validate_evidence(
                         item,
                         document_lines,
                         headings,
@@ -1239,14 +970,12 @@ def semantic_findings(
                                 f"SEM010-{category}-{evidence_index:02d}",
                                 "blocking",
                                 f"{category} 的证据无效：{reason}",
-                                "重新定位当前文档中的真实章节、行号和短摘录。",
+                                "重新定位当前文档中的真实行号和短摘录；heading 可选。",
                                 location=category,
                             )
                         )
                     else:
                         category_has_valid_evidence = True
-                        if evidence_line is not None:
-                            valid_evidence_lines.add(evidence_line)
                 if not category_has_valid_evidence:
                     findings.append(
                         finding(
@@ -1273,16 +1002,6 @@ def semantic_findings(
                         location=category,
                     )
                 )
-    if review.get("decision") == "pass" and len(valid_evidence_lines) < 4:
-        findings.append(
-            finding(
-                "SEM010C",
-                "blocking",
-                f"六个复核维度只覆盖 {len(valid_evidence_lines)} 个不同证据位置。",
-                "至少使用 4 个不同文档位置覆盖受众、叙事、事实和演示可制作性。",
-                location="categories.*.evidence",
-            )
-        )
     if review.get("decision") != "pass":
         findings.append(
             finding(
@@ -1291,75 +1010,6 @@ def semantic_findings(
                 f"语义复核总决策不是 pass：{review.get('decision')!r}",
                 "完成返工并重新复核；不得手工绕过总决策。",
                 location="decision",
-            )
-        )
-    blocking_findings = review.get("blocking_findings")
-    if isinstance(blocking_findings, list):
-        for index, row in enumerate(blocking_findings, 1):
-            if isinstance(row, dict):
-                message = str(
-                    row.get("problem")
-                    or row.get("message")
-                    or "语义复核仍包含阻断项。"
-                )
-                required_change = str(
-                    row.get("required_change")
-                    or row.get("required_changes")
-                    or "关闭该阻断项并在文档中留下可核验修改。"
-                )
-                location = str(row.get("location") or "blocking_findings")
-            else:
-                message = str(row)
-                required_change = "关闭该阻断项并在文档中留下可核验修改。"
-                location = "blocking_findings"
-            findings.append(
-                finding(
-                    f"SEM012-{index:02d}",
-                    "blocking",
-                    message,
-                    required_change,
-                    location=location,
-                )
-            )
-    else:
-        findings.append(
-            finding(
-                "SEM012",
-                "blocking",
-                "blocking_findings 必须是数组。",
-                "按复核模板修复字段格式。",
-                location="blocking_findings",
-            )
-        )
-    revision_plan = review.get("revision_plan")
-    if not isinstance(revision_plan, list):
-        findings.append(
-            finding(
-                "SEM013",
-                "blocking",
-                "revision_plan 必须是数组。",
-                "按复核模板修复字段格式。",
-                location="revision_plan",
-            )
-        )
-    elif review.get("decision") != "pass" and not revision_plan:
-        findings.append(
-            finding(
-                "SEM013",
-                "blocking",
-                "复核未通过，但 revision_plan 为空。",
-                "按优先级、位置、问题、所需修改和验收标准形成返工计划。",
-                location="revision_plan",
-            )
-        )
-    elif review.get("decision") == "pass" and revision_plan:
-        findings.append(
-            finding(
-                "SEM013A",
-                "blocking",
-                "总决策为 pass，但 revision_plan 仍包含返工项。",
-                "完成并清空返工项，或把总决策改为 revise。",
-                location="revision_plan",
             )
         )
     return review, findings
@@ -1371,8 +1021,25 @@ def gate_document(
     review_path: Path | None,
 ) -> dict[str, Any]:
     preflight = inspect_document(document, requested_profile)
+    semantic_review_required = preflight["profile"] != "page-narration"
     if preflight["passed"]:
-        review, review_findings = semantic_findings(preflight, review_path)
+        if not semantic_review_required:
+            review = None
+            review_findings = (
+                [
+                    finding(
+                        "SEM012",
+                        "info",
+                        "page-narration 不使用计划类语义复核；已忽略传入的 review。",
+                        "直接审阅逐页正文，并在项目内执行 content 审批。",
+                        location="review",
+                    )
+                ]
+                if review_path is not None
+                else []
+            )
+        else:
+            review, review_findings = semantic_findings(preflight, review_path)
     else:
         review = None
         review_findings = [
@@ -1388,16 +1055,24 @@ def gate_document(
     blockers = [row for row in findings if row["severity"] == "blocking"]
     return {
         "schema_version": 1,
+        "contract_version": INPUT_CONTRACT_VERSION,
         "kind": "input-quality-gate",
         "document": preflight["document"],
         "document_sha256": preflight["document_sha256"],
         "profile": preflight["profile"],
         "passed": not blockers,
         "preflight_passed": preflight["passed"],
-        "semantic_review_passed": not review_findings,
+        "semantic_review_passed": (
+            None if not semantic_review_required else not review_findings
+        ),
+        "semantic_review_required": semantic_review_required,
         "metrics": preflight["metrics"],
         "required_semantic_categories": preflight["required_semantic_categories"],
-        "review": str(review_path.expanduser().resolve()) if review_path else None,
+        "review": (
+            str(review_path.expanduser().resolve())
+            if semantic_review_required and review_path
+            else None
+        ),
         "reviewer": review.get("reviewer") if review else None,
         "findings": findings,
     }
@@ -1406,6 +1081,7 @@ def gate_document(
 def review_template(preflight: dict[str, Any]) -> dict[str, Any]:
     return {
         "schema_version": 1,
+        "contract_version": INPUT_CONTRACT_VERSION,
         "document": preflight["document"],
         "document_sha256": preflight["document_sha256"],
         "profile": preflight["profile"],
@@ -1413,7 +1089,7 @@ def review_template(preflight: dict[str, Any]) -> dict[str, Any]:
             "name": "",
             "kind": "ai-agent",
             "method": "full-document-review",
-            "attestation": REVIEW_ATTESTATION,
+            "attestation": False,
         },
         "decision": "revise",
         "categories": {
@@ -1431,8 +1107,6 @@ def review_template(preflight: dict[str, Any]) -> dict[str, Any]:
             }
             for category in preflight["required_semantic_categories"]
         },
-        "blocking_findings": [],
-        "revision_plan": [],
     }
 
 
@@ -1483,8 +1157,21 @@ def render_markdown(report: dict[str, Any]) -> str:
                 "",
                 "## 门禁动作",
                 "",
-                "停止生成 SVG、PPTX、动画、旁白和视频。先修改输入文档，"
-                "然后重新执行自动预检和语义复核。",
+                (
+                    "停止生成 SVG、PPTX、动画、旁白和视频。先修复当前报告中的"
+                    "机械阻断项；需要语义复核的 profile 再重新完成复核。"
+                ),
+                "",
+            ]
+        )
+    elif preflight_only and not report.get("semantic_review_required", True):
+        lines.extend(
+            [
+                "",
+                "## 下一步",
+                "",
+                "该输入满足逐页稿的机械契约，不需要产品计划式语义门禁。"
+                "可直接初始化，并在内容审批时确认讲述质量。",
                 "",
             ]
         )
@@ -1494,8 +1181,8 @@ def render_markdown(report: dict[str, Any]) -> str:
                 "",
                 "## 下一步",
                 "",
-                "自动预检通过不等于完整门禁通过。仍须完成全文语义复核，"
-                "再运行 `validate-input`。",
+                "自动预检通过不等于完整门禁通过。填写全文语义复核后，"
+                "正常流程直接运行 `init`；只有项目外诊断才单独运行 `validate-input`。",
                 "",
             ]
         )
@@ -1544,7 +1231,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     gate_parser = commands.add_parser("gate", help="Enforce the complete input gate")
     add_document_args(gate_parser)
-    gate_parser.add_argument("--review", type=Path, required=True)
+    gate_parser.add_argument(
+        "--review",
+        type=Path,
+        help="Required only for profiles whose semantic review is required",
+    )
     gate_parser.add_argument("--json-output", type=Path)
     gate_parser.add_argument("--markdown-output", type=Path)
     return parser
@@ -1575,6 +1266,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                         f"{row['message']} 返工要求：{row['required_change']}"
                     )
                 return 1
+            if not report["semantic_review_required"]:
+                print(
+                    "SKIP semantic review template: page-narration uses "
+                    "content approval instead; no file was written"
+                )
+                return 0
             template = review_template(report)
             write_json(args.output, template)
             print(

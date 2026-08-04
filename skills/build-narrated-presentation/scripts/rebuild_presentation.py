@@ -11,11 +11,11 @@ from typing import Sequence
 
 from production_common import (
     current_input_fingerprints,
+    file_hash,
     load_project_config,
-    load_state,
     project_paths,
-    write_object,
 )
+from pptx_production import require_current_visual_baseline
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -31,77 +31,50 @@ def run_script(name: str, arguments: list[str]) -> None:
         )
 
 
-def ensure_audio_scope(
-    project: Path,
-    *,
-    allow_unverified_baseline: bool,
-    record_unverified_baseline: bool = True,
-) -> tuple[dict, dict[str, str]]:
-    paths = project_paths(project)
-    state = load_state(paths["build_state"])
-    current = current_input_fingerprints(project)
-    baseline = state.get("inputs")
-    if not isinstance(baseline, dict):
-        baseline = {}
-    required = ("source", "narration", "visual")
-    missing = [name for name in required if not baseline.get(name)]
-    if missing and not allow_unverified_baseline:
-        raise RuntimeError(
-            "Audio-only rebuild needs a verified release baseline; missing "
-            f"{missing}. Run release QA after a complete build, or explicitly "
-            "use --allow-unverified-baseline for an existing trusted project."
-        )
-    for name in ("source", "visual"):
-        recorded = baseline.get(name)
-        if recorded and recorded != current[name]:
-            raise RuntimeError(
-                f"Audio-only rebuild blocked: {name} changed since the "
-                "verified baseline"
-            )
-    narration = baseline.get("narration")
-    if narration and narration != current["narration"]:
-        raise RuntimeError(
-            "Audio-only rebuild blocked: narration text, role, direction, or "
-            "chapter mapping changed. Revalidate content consistency before "
-            "rebuilding."
-        )
-    if missing:
-        print(
-            "WARN proceeding from an explicitly accepted unverified baseline; "
-            "this does not count as release QA"
-        )
-        if record_unverified_baseline:
-            state["inputs"].update(
-                {
-                    "source": current["source"],
-                    "narration": current["narration"],
-                    "visual": current["visual"],
-                }
-            )
-            write_object(paths["build_state"], state)
-    return state, current
-
-
 def rebuild_audio(args: argparse.Namespace) -> int:
     project = args.project.expanduser().resolve()
     config = load_project_config(project)
     deliverable = config["deliverable"]
-    if deliverable not in {"narrated_pptx", "video"}:
+    if deliverable not in {"narration_audio", "narrated_pptx", "video"}:
         raise RuntimeError(
-            "Audio rebuild requires narrated_pptx or video deliverable"
+            "Audio rebuild requires narration_audio, narrated_pptx, or video"
         )
-    if args.qa == "release" and deliverable != "video":
-        raise RuntimeError("Release QA requires deliverable=video")
     paths = project_paths(project)
     if (args.voice or args.rate or args.pitch) and args.pages:
         raise ValueError(
             "Global voice, rate, or pitch changes affect every chapter; "
             "omit --pages"
         )
-    _, before = ensure_audio_scope(
-        project,
-        allow_unverified_baseline=args.allow_unverified_baseline,
-        record_unverified_baseline=not args.dry_run,
+    if args.voice or args.rate or args.pitch:
+        before_voice = file_hash(paths["voice_profile"])
+        configure_args = ["configure-voice", "--project", str(project)]
+        if args.voice:
+            configure_args.extend(["--voice", args.voice])
+        if args.rate:
+            configure_args.extend(["--rate", args.rate])
+        if args.pitch:
+            configure_args.extend(["--pitch", args.pitch])
+        if args.dry_run:
+            configure_args.append("--dry-run")
+        run_script("audio_production.py", configure_args)
+        if file_hash(paths["voice_profile"]) == before_voice:
+            print("INFO voice profile unchanged; no production audio was requested")
+        else:
+            print(
+                "INFO voice changed; approve narration before rebuilding; "
+                "audition is recommended"
+            )
+        return 0
+
+    if deliverable == "narration_audio" and args.qa != "audio":
+        raise RuntimeError("narration_audio stops at --qa audio")
+    if deliverable != "narration_audio" and not args.dry_run:
+        require_current_visual_baseline(project, paths["animated_pptx"])
+
+    before = (
+        current_input_fingerprints(project)
+        if deliverable != "narration_audio"
+        else None
     )
 
     synth_args = [
@@ -109,12 +82,6 @@ def rebuild_audio(args: argparse.Namespace) -> int:
         "--project",
         str(project),
     ]
-    if args.voice:
-        synth_args.extend(["--voice", args.voice])
-    if args.rate:
-        synth_args.extend(["--rate", args.rate])
-    if args.pitch:
-        synth_args.extend(["--pitch", args.pitch])
     if args.pages:
         synth_args.extend(["--pages", args.pages])
     if args.force:
@@ -123,10 +90,13 @@ def rebuild_audio(args: argparse.Namespace) -> int:
         synth_args.append("--dry-run")
     run_script("audio_production.py", synth_args)
     if args.dry_run:
-        print(
-            "PLAN audio timeline → audio QA → PPTX media/timing replacement "
-            "→ standard QA → PowerPoint video export"
-        )
+        if deliverable == "narration_audio":
+            print("PLAN audio timeline → audio QA → stop at per-page MP3")
+        else:
+            print(
+                "PLAN audio timeline → audio QA → PPTX media/timing replacement "
+                "→ standard QA → optional PowerPoint video export"
+            )
         return 0
 
     run_script(
@@ -150,11 +120,14 @@ def rebuild_audio(args: argparse.Namespace) -> int:
             *(["--force"] if args.force else []),
         ],
     )
+    if deliverable == "narration_audio":
+        print("OK  rebuild scope=audio qa=audio; stopping at per-page MP3")
+        return 0
     run_script(
         "pptx_production.py",
         ["replace-audio", "--project", str(project)],
     )
-    if args.qa in {"standard", "release"}:
+    if args.qa == "standard":
         run_script(
             "qa_presentation.py",
             [
@@ -165,6 +138,19 @@ def rebuild_audio(args: argparse.Namespace) -> int:
                 *(["--force"] if args.force else []),
             ],
         )
+    if args.qa == "audio":
+        assert before is not None
+        after_audio = current_input_fingerprints(project)
+        if (
+            after_audio["source"] != before["source"]
+            or after_audio["visual"] != before["visual"]
+        ):
+            raise RuntimeError("Source or visual inputs changed during audio rebuild")
+        print(
+            "OK  audio QA passed and narrated PPTX was rebuilt; "
+            "stopping before video export because standard QA was not requested"
+        )
+        return 0
     if deliverable == "video" and not args.skip_export:
         run_script(
             "powerpoint_production.py",
@@ -174,31 +160,16 @@ def rebuild_audio(args: argparse.Namespace) -> int:
         print("WARN PowerPoint video export was explicitly skipped")
     else:
         print("INFO deliverable=narrated_pptx; stopping before video export")
-    if args.qa == "release":
-        if args.skip_export:
-            raise RuntimeError("Release QA requires PowerPoint video export")
+    if deliverable == "video" and not args.skip_export:
         print(
-            "INFO release QA requires a later explicit human full-watch "
-            "confirmation; running the check now will report that boundary"
-        )
-        run_script(
-            "qa_presentation.py",
-            ["--project", str(project), "--level", "release"],
+            "INFO video exported; release QA is pending an explicit full-watch. "
+            "After watching, run qa --level release --human-confirmed"
         )
 
-    state = load_state(paths["build_state"])
+    assert before is not None
     after = current_input_fingerprints(project)
     if after["source"] != before["source"] or after["visual"] != before["visual"]:
         raise RuntimeError("Source or visual inputs changed during audio rebuild")
-    state["inputs"].update(
-        {
-            "source": after["source"],
-            "narration": after["narration"],
-            "voice": after["voice"],
-            "visual": after["visual"],
-        }
-    )
-    write_object(paths["build_state"], state)
     print(
         f"OK  rebuild scope=audio qa={args.qa}; "
         f"video_exported={deliverable == 'video' and not args.skip_export}"
@@ -212,7 +183,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scope", choices=("audio",), required=True)
     parser.add_argument(
         "--qa",
-        choices=("audio", "standard", "release"),
+        choices=("audio", "standard"),
         default="standard",
     )
     parser.add_argument("--voice")
@@ -222,7 +193,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--skip-export", action="store_true")
-    parser.add_argument("--allow-unverified-baseline", action="store_true")
     return parser
 
 

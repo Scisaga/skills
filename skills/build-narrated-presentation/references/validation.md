@@ -1,18 +1,30 @@
 # 验收与失败处理
 
-## 前置门禁
+## 目录
 
-任何生产命令都必须使用 schema v2 项目。审批要求：
+- [审批边界](#审批边界)
+- [依赖分级](#依赖分级)
+- [QA 等级](#qa-等级)
+- [来源与空状态检查](#来源与空状态检查)
+- [音频验收](#音频验收)
+- [视觉、PPTX 与视频验收](#视觉pptx-与视频验收)
+- [缓存与失败处理](#缓存与失败处理)
+- [完成定义](#完成定义)
+
+## 审批边界
+
+任何生产命令都使用 schema v2 项目。审批要求：
 
 | 动作 | 必须有效的审批 |
 |---|---|
-| 静态或动画装配 | `content`、`visual` |
-| 合成音频 | `content`、`narration` |
-| 生成旁白 PPTX、标准 QA、视频导出 | `content`、`visual`、`narration` |
+| 生成导演稿前的内容确认 | content |
+| 合成或验收逐页音频 | content、narration |
+| 静态或动画装配 | content、visual |
+| 生成旁白 PPTX、standard QA、视频导出 | content、visual、narration |
 
-摘要变化后旧审批自动失效。不得手工把审批或 QA 状态改成通过。
+`narration_audio` 永远不需要 visual。对应 fingerprint 变化后旧审批自动失效；不得手工把空状态、审批或 QA 改成通过。
 
-## 阶段依赖
+## 依赖分级
 
 ```bash
 run.sh doctor --stage static
@@ -20,94 +32,142 @@ run.sh doctor --stage audio
 run.sh doctor --stage video
 ```
 
-- `static`：SVG、PPTX、字体和静态渲染依赖。
-- `audio`：在静态依赖上增加 Azure Speech、MP3 编码、时长和 `.env` 读取。
-- `video`：再增加 PowerShell、ffprobe 和 Windows PowerPoint 边界。
+- `static`：检查代码可见的 SVG/PPTX Python 模块；
+- `audio`：只检查代码可见的 TTS、MP3 编码和时长模块，不继承静态依赖；
+- `video`：叠加 PowerShell/ffprobe 等可探测边界。
 
-静态阶段不得检查 Azure Speech、`lameenc`、`mutagen` 或视频导出环境。
+`doctor` 是依赖预检，不证明字体实际可用、Azure 凭据有效、服务可连通、`.env` 内容正确或桌面 PowerPoint 已可自动化；这些条件在对应生产命令和实机检查中验证。
+
+纯音频任务不得因缺少 PowerPoint、SVG 渲染器或视觉模板而失败；静态任务不得因缺少 TTS 或视频环境而失败。
 
 ## QA 等级
 
-| 等级 | 检查内容 |
-|---|---|
-| `static` | schema、输入、模板、完整 SVG、静态 PPTX ZIP、页数、内嵌 SVG 和外部媒体关系 |
-| `audio` | 逐页 MP3、真实时长、换页时长、章节 bookmark 和发音规则适用项 |
-| `standard` | `audio` 全部内容、旁白 PPTX、每页唯一内部 MP3、媒体字节、自动播放和 `advTm` |
-| `release` | `standard`、严格项目检查、PowerPoint 打开/导出证据、MP4、ffprobe 和人工完整观看 |
+| 等级 | 适用交付 | 检查内容 |
+|---|---|---|
+| `static` | static/animated/narrated PPTX、video | 来源绑定、模板、SVG、当前静态或动画基线、内部媒体关系和视觉 provenance |
+| `audio` | `narration_audio`、narrated PPTX、video | 导演稿、声音、逐页 MP3、bookmark 和真实时间轴 |
+| `standard` | narrated PPTX、video | 复用当前 audio 报告，检查动画基线血缘、旁白 PPTX、内部 MP3、自动播放和换页 |
+| `release` | video | 复用当前 standard 报告，检查 PowerPoint 导出证据、MP4、ffprobe 和人工完整观看 |
 
-`static` 不读取音频。`audio` 不重复静态画面验收。只有 `video` 项目允许 release。
+`narration_audio` 在 audio QA 后停止，不能进入 standard 或 release。`release` 只允许 `deliverable=video`。
 
-## QA 缓存
+## 来源与空状态检查
 
-QA 在深度检查前计算当前等级依赖和检查脚本的 fingerprint。仅当此前为 `passed`、fingerprint 完全一致且未指定 `--force` 时打印：
+项目验证不得重新运行完整输入语义门禁。它核对已保存证据：
 
-```text
-SKIP qa=static: inputs and tools unchanged
-```
+- `inputs/source.md` 存在，当前 SHA 与 `project.json.source.document_sha256` 一致；
+- `input-gate.json` 为 PASS，且 document SHA 和 profile 与项目一致；
+- input gate 的稳定 `contract_version` 当前，且报告 SHA 与 `project.json` 记录一致；
+- 需要语义复核的 profile 具有 SHA 一致的 `input-review.json`；
+- `page-script.md` 页码连续、标题和每页正文满足逐页契约；
+- `page-narration` 的当前逐页稿仍可与项目内源稿进行保真核对；
+- `page-script-binding.json` 的契约版本、来源、模式和 SHA 当前；
+- content acceptance fingerprint 与当前源稿、逐页稿、门禁、复核和绑定证据一致。
 
-失败结果不能缓存为通过。静态 fingerprint 不包含音频和动画时间轴；声音变化不会使静态 QA 失效。
+这里的逐页机械检查只证明每页达到可朗读字符阈值且没有渲染标记，不证明它在语义上已是完整口述。identity 依靠字节一致性防止原稿被摘要替换；adapted 的讲述完整性由 content 审批承担。
 
-## 静态验收
+`validate` 默认把缺失或失效审批报告为 warning，并以“contract valid with warnings”退出；这表示文件结构可继续审阅，不表示生产状态完成。`--strict` 会把 warning 作为失败。来源 SHA、gate、binding audit 等内容血缘错误是 hard error；任何生产和 QA 命令还会通过 `require_approvals` 硬阻断非 current 审批。
 
-自动检查：
+初始化产生的空派生容器不是错误，也不是完成：
 
-- 输入文档和 `page-script.md` 仍与审批摘要一致；
-- 工作模板存在且是有效 PPTX；
-- manifest 页码连续，所有源 SVG 存在且画布正确；
-- 静态 PPTX 是有效 ZIP，页数与 manifest 一致；
-- 每页主体 SVG 已内嵌；
-- 图片、音频或媒体关系没有指向外部路径。
+- 在运行 `prepare-narration` 前，空 `director.pages` 和 `manifest.slides` 表示尚未派生；
+- 在视觉制作前，视觉项目的空 `svg_layer_plan.pages` 表示尚未设计；纯音频项目没有该文件；
+- 空 `build_state.approvals` 与 `qa` 表示从未审批和验收；
+- 一旦进入相应生产或 QA 阶段，页面集合必须完整，不能用空数组通过。
 
-PowerPoint 实际渲染仍需检查字体替换、裁切、重叠、截图清晰度和模板安全区。结构检查不能冒充实机视觉验收。
+## 音频验收
 
-## 音频与标准验收
+audio QA 自动检查：
 
-音频自动检查：
-
-- director、manifest、声音配置和音频时间轴页码一致；
-- `video/audio/NN.mp3` 恰好覆盖所有页面；
+- director、旁白 manifest、声音配置和音频时间轴页码一致；
+- performance audit 确认表现契约当前、书面语气不是统一模板，并且实际 SSML 参数包含足够的可听 profile；
+- `video/audio/NN.mp3` 恰好覆盖全部页面；
 - 每个 MP3 可解析且非空；
+- 同一连续章节的 bookmark 元数据、digest、页面集合和逐页 MP3 SHA 一致；自动检查不能证明偏移听感一定正确；
+- manifest 的声音摘要对应当前 `voice_profile.json`；
+- 旁白审阅稿和 QA 证据列出当前正文已命中的发音规则，以及尚未配置的拉丁技术代号；未覆盖项产生明确 warning，不因正则候选自动阻断生产；
 - `advance_ms = 真实 MP3 毫秒 + advance_safety_ms`；
-- 多页章节具有正确 bookmark 元数据。
+- 时间轴保留目标时长、真实偏差和仅供审阅的 rate 修正建议；偏差过大的页面产生 warning，不自动覆盖导演稿；
+- 没有部分章节使用旧 fingerprint、部分章节使用新配置。
 
-人工试听确认音色、专有名词、数字、中英混读和跨页切分。自动 QA 不能声称发音已经人工通过。
+人工试听至少确认：
 
-标准 PPTX 检查：
+- 专有名词、缩写、工程数字和单位；
+- 材料成分牌号是否按元素语义口播，例如 `AlSi10Mg` 读“铝硅十镁”，而不是让中文 TTS 猜测混合字符；
+- 中文、英文及中英混读；
+- 页边界没有吞字、重复、突兀静音或错误切分；
+- 音色、语速和音高符合受众与场景。
 
-- 使用独立的 `outputs.narrated_pptx`；
+自动 QA 不能声称实际发音已经人工通过。
+
+## 视觉、PPTX 与视频验收
+
+### Static
+
+- 工作模板存在且是有效 PPTX；
+- manifest 页码连续，源 SVG 存在且画布正确；
+- 当前静态或动画 PPTX 页数与 manifest 一致，并具有匹配内容字节与视觉输入的 provenance；
+- PPTX 包中内嵌 SVG 数量不低于页数；该结构检查不能单独证明每页视觉与对应源 SVG 像素一致；
+- 动画输出逐页具有非空 OOXML `timing/tnLst`；每个 beat 以 `sNN_<beat_id>` 唯一稳定对象名映射到一个真实 shape，并具有匹配 manifest 的 entrance `fade`/`wipe(direction)`，时长为 1–1000ms 且匹配 timing sidecar；onClick、畸形 filter、只有 sidecar 或空 `p:timing` 不能通过；
+- 图片、音频和媒体关系没有外部绝对路径。
+
+交付前建议在 PowerPoint 中检查字体替换、裁切、重叠、截图清晰度和安全区。当前状态机不记录静态/动画实机观看证据，因此结构 QA 不能冒充这项人工质量确认。
+
+### Standard
+
+- 当前动画基线已有 current static QA PASS；standard fingerprint 同时绑定 static fingerprint、状态记录与报告文件实际 SHA，删除、篡改或跳过该报告都会阻断；
+- 当前动画基线的 PPTX SHA、内容字节 fingerprint 和 visual fingerprint 都与记录一致；
+- 使用独立的 `outputs.narrated_pptx`，不覆盖动画基线；
 - 每页恰好一个内部 MP3，页面之间不共享媒体成员；
 - 内嵌字节与逐页 MP3 一致；
-- 每页自动播放且 `advTm` 来自真实时长；
+- 每页自动播放，`advTm` 来自真实时长；
 - 演示启用 timings、narration 和 animation。
 
-## 视频与人工观看
+### Release
 
-`export-video` 只允许 `deliverable=video`，并要求当前标准 QA 已通过。视频导出完成不等于已经观看。
+`export-video` 只允许 `deliverable=video`，并要求当前 standard QA 有效。视频导出完成不等于已经观看。
 
-人工完整观看当前 MP4 后才能执行：
+导出证据保存 PowerPoint 报告 SHA，并绑定旁白 PPTX SHA 与输出 MP4 SHA。release 要求 ffprobe 实际执行成功并返回有效时长；工具缺失、探测失败或时长无效都会阻断。
+
+人工完整观看当前 MP4 后执行：
 
 ```bash
 run.sh qa --project PROJECT --level release \
   --human-confirmed --confirmed-by REVIEWER
 ```
 
-人工确认必须与当前 MP4 SHA-256 绑定，至少检查黑帧、跳变、音频截断、错误换页、重复或静音页、截图清晰度和结尾行为。
+人工确认绑定当前 MP4 SHA-256，至少检查黑帧、跳变、音频截断、错误换页、重复或静音页、截图清晰度和结尾行为。
 
-## 常见失败
+## 缓存与失败处理
+
+QA 在深度检查前计算当前等级依赖和检查脚本 fingerprint。只有此前状态为 `passed`、报告文件存在，报告摘要、等级、状态、fingerprint、errors、证据结构及相应产物 provenance 都一致且未使用 `--force` 时，才允许缓存命中：
+
+```text
+SKIP qa=audio: inputs and tools unchanged
+```
+
+失败结果不能缓存为通过。audio fingerprint 不包含模板和 SVG；static fingerprint 不包含声音和 MP3。standard 复用有效 audio 报告，release 复用有效 standard 报告，不重复执行整套低层检查。
 
 | 表现 | 处理 |
 |---|---|
-| schema 不是 v2 | 停止；按当前契约重建配置，不运行兼容或迁移逻辑 |
-| 静态任务被 TTS 依赖阻断 | 使用 `doctor --stage static`，检查是否误进入声音链 |
-| 审批突然失效 | 查看报错指出的 content、visual 或 narration 摘要，返工并重新批准该阶段 |
-| 改声音后仍能直接合成 | 错误；应先试听并重新批准 narration |
-| 一个音频跨多页 | 错误；整章合成后按 bookmark 切成逐页 MP3 |
+| `page-narration` 被要求产品计划字段 | 检查 profile；不得改写演讲稿迎合 narrative-plan |
+| identity 项目出现摘要型 `page-script.md` | 恢复项目内源稿的逐页正文，重新内容审批 |
+| identity 项目确需改写 | 由用户明确授权，使用 `--allow-substantial-rewrite` 在同一次 content 审批中切换为 adapted 并写入新审计 |
+| input gate 契约升级但源稿字节未变 | 运行 `refresh-input-gate`，再重新 content 审批；保留内容字节未变的下游产物 |
+| adapted 输入没有显式逐页稿 | 停止；使用 `--page-script-source` 提供实际口述正文 |
+| 初始化后显示“第 1 页已完成” | 错误；空派生状态不得当成示例页或完成状态 |
+| 改声音后仍能直接合成 | 错误；刷新审阅稿并重新批准 narration；试听是推荐的人工质量步骤 |
+| `narration_audio` 被视觉依赖阻断 | 使用 audio 阶段与 audio QA，检查是否误走 PPTX 链 |
+| 一个音频跨多页 | 整章合成后按 bookmark 切成逐页 MP3 |
 | 页面过早切换 | 重新读取真实 MP3 时长并加安全余量 |
-| 误称已经完整观看 | 分开报告 PowerPoint 打开、导出、自动检查和人工观看 |
+| 误称已经完整观看 | 分开报告导出、自动检查和人工观看证据 |
 
-## 完成定义
+## 自动化完成定义
 
-- `static_pptx`：内容与视觉审批有效，静态 QA 通过。
-- `animated_pptx`：静态基线有效，首秒动画实机检查通过。
-- `narrated_pptx`：逐页 MP3、真实时间轴和 standard QA 通过。
+以下定义描述状态机可证明的机器链路；除 video 的显式 full-watch 外，静态视觉、动画播放和自然听感的人工确认属于推荐的最终交付签核，不伪装成已记录状态。
+
+- `narration_audio`：content 与 narration 审批有效，全部逐页 MP3、bookmark、真实时间轴和 audio QA 通过。
+- `static_pptx`：content 与 visual 审批有效，静态 PPTX 和 static QA 通过。
+- `animated_pptx`：当前动画基线 provenance、首秒动画结构和针对动画输出的 static QA 有效。
+- `narrated_pptx`：逐页 MP3、真实时间轴、独立旁白 PPTX 和 standard QA 通过。
 - `video`：PowerPoint 导出成功，MP4 自动检查和人工完整观看完成，release QA 通过。

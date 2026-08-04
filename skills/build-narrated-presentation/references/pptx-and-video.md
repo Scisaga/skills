@@ -32,6 +32,8 @@ s01_narration
 
 稳定名称用于关联 shape id、动画、测试和 PowerPoint 选择窗格。
 
+动画装配器必须把 manifest 的 beat `id` 写成 `sNN_<beat_id>`，例如第 1 页 `title` 对应 `s01_title`。static QA 不信任 sidecar 声明：它只从 `p:timing/p:tnLst` 回读 entrance `p:animEffect`，filter 必须精确为 `fade` 或 `wipe(left|right|up|down)`，目标 `spid` 必须指向唯一 `cNvPr` 稳定名，时长必须为 1–1000ms 并匹配 timing sidecar。`onClick`、`p:transition`、空 `p:timing`、裸时间容器、畸形 filter、重复对象名或不存在的 shape target 都不算动画证据。
+
 ## 原生音频对象
 
 每页 MP3 必须内嵌到 `ppt/media/`，并具有：

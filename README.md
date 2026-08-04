@@ -6,7 +6,7 @@
 
 | Logo | 技能名称 | 描述 |
 |---|---|---|
-| <img src="skills/build-narrated-presentation/assets/logo.svg" alt="Build Narrated Presentation logo" width="44"> | [`build-narrated-presentation`](skills/build-narrated-presentation/) | 验证 Markdown 输入质量，按目标生成静态、动画、逐页旁白 PPTX 或视频；支持模板复用、原创技术信息图、章节连续合成后逐页音频、增量重建和分级验收。 |
+| <img src="skills/build-narrated-presentation/assets/logo.svg" alt="Build Narrated Presentation logo" width="44"> | [`build-narrated-presentation`](skills/build-narrated-presentation/) | 保真绑定逐页演讲稿，将页面作用编译为可执行语速、音高和停顿，按目标生成每页 MP3、静态/动画/旁白 PPTX 或视频；其他输入显式提供逐页稿，并支持模板复用、章节连续合成、增量重建和分级验收。 |
 | <img src="skills/dev-ops/assets/logo.svg" alt="Dev Ops logo" width="44"> | [`dev-ops`](skills/dev-ops/) | 维护部署脚本、服务资产、Compose、远程发布和主机级安装流程。 |
 | <img src="skills/gitlab-issue/assets/logo.svg" alt="GitLab Issue logo" width="44"> | [`gitlab-issue`](skills/gitlab-issue/) | 通过统一入口管理当前自托管 GitLab 仓库的 issue，并强制校验 origin 与实例一致。 |
 | <img src="skills/pdf/assets/logo.svg" alt="PDF logo" width="44"> | [`pdf`](skills/pdf/) | 本地处理 PDF 水印、骑缝章、页面重排、批量操作以及 PDF/图片转换。 |

@@ -1,7 +1,7 @@
 interface:
   display_name: "Build Narrated Presentation"
-  short_description: "从文档分阶段制作静态、动画、旁白 PPTX 与视频"
+  short_description: "保真绑定逐页演讲稿，编排语气与专业发音并生成音频或演示"
   icon_small: "./assets/logo.svg"
   icon_large: "./assets/logo.svg"
   brand_color: "#A78BFA"
-  default_prompt: "使用 $build-narrated-presentation 先验证输入文档并确认交付目标，再依次确认逐页文字稿、PPT 模板和代表性 SVG。按需制作静态、动画、逐页旁白 PPTX 或视频；跨页语气用章节连续合成后切成逐页 MP3，禁止一个 MP3 跨多页，并按 static、audio、standard、release 分级验收。"
+  default_prompt: "使用 $build-narrated-presentation 保真绑定我的逐页演讲稿，逐页编排实际进入 SSML 的语速、音高、停顿和专业术语读法；按需只生成每页 MP3，或继续制作静态、动画、旁白 PPTX 与视频。"

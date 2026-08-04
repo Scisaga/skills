@@ -79,15 +79,15 @@ def export_video_command(args: argparse.Namespace) -> int:
     require_approvals(project, ("content", "visual", "narration"))
     paths = project_paths(project)
     state = load_state(paths["build_state"])
-    from qa_presentation import cache_fingerprint
+    from qa_presentation import cache_fingerprint, current_cached_report
 
-    standard = state["qa"].get("standard")
     current_standard = cache_fingerprint(project, "standard", state)
-    if (
-        not isinstance(standard, dict)
-        or standard.get("status") != "passed"
-        or standard.get("fingerprint") != current_standard
-    ):
+    if current_cached_report(
+        project,
+        "standard",
+        state,
+        current_standard,
+    ) is None:
         raise RuntimeError(
             "Current standard QA has not passed; run qa --level standard "
             "before exporting video"
@@ -107,6 +107,11 @@ def export_video_command(args: argparse.Namespace) -> int:
         if args.output_mp4
         else paths["video"]
     )
+    if output_mp4 != paths["video"].resolve():
+        raise ValueError(
+            "--output-mp4 must be the configured project video output so "
+            "release QA validates the same file"
+        )
     report_path = project / "video" / "powerpoint_export.json"
     run_powershell(
         SCRIPT_DIR / "export_video.ps1",
@@ -142,8 +147,10 @@ def export_video_command(args: argparse.Namespace) -> int:
     state["powerpoint"]["video_exported"] = {
         "status": "passed",
         "video_sha256": output_sha,
+        "pptx_sha256": file_hash(input_pptx),
         "powerpoint_version": report.get("powerpoint_version"),
         "report": str(report_path.relative_to(project)),
+        "report_sha256": file_hash(report_path),
     }
     state["powerpoint"]["human_watch"] = None
     write_object(paths["build_state"], state)

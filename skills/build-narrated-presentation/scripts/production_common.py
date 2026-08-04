@@ -13,12 +13,33 @@ from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape, quoteattr
 
+from contract_versions import (
+    INPUT_CONTRACT_VERSION,
+    NARRATION_PERFORMANCE_CONTRACT_VERSION,
+    PAGE_SCRIPT_CONTRACT_VERSION,
+)
+from narration_performance import INTENTS, PERFORMANCE_CONTRACT
+
 
 RATE_RE = re.compile(r"^[+-]\d+%$")
 PITCH_RE = re.compile(r"^[+-]\d+(?:\.\d+)?st$")
+TECHNICAL_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z0-9]+(?![A-Za-z0-9])")
+PURE_GRADE_RE = re.compile(r"(?<![A-Za-z0-9])\d{3,4}(?![A-Za-z0-9])")
+MATERIAL_LIST_CONTEXT_RE = re.compile(
+    r"(?:合金|不锈钢)[^。！？\n]{0,16}(?:包括|牌号)"
+)
+SAY_AS_TYPES = {
+    "characters",
+    "spell-out",
+    "alphanumeric",
+    "number_digit",
+    "cardinal",
+    "number",
+}
 STATE_SCHEMA_VERSION = 1
 PROJECT_SCHEMA_VERSION = 2
 DELIVERABLES = {
+    "narration_audio",
     "static_pptx",
     "animated_pptx",
     "narrated_pptx",
@@ -102,6 +123,33 @@ def load_project_config(project: Path) -> dict[str, Any]:
         "page_script"
     ]:
         raise ValueError("project.json content.page_script is required")
+    if content.get("binding_mode") is not None and content.get(
+        "binding_mode"
+    ) not in {"identity", "adapted"}:
+        raise ValueError(
+            "project.json content.binding_mode must be identity or adapted"
+        )
+    if content.get("binding_audit") is not None and (
+        not isinstance(content.get("binding_audit"), str)
+        or not content["binding_audit"]
+    ):
+        raise ValueError("project.json content.binding_audit is required")
+    page_count_at_init = content.get("page_count_at_init")
+    if page_count_at_init is not None and (
+        isinstance(page_count_at_init, bool)
+        or not isinstance(page_count_at_init, int)
+        or page_count_at_init <= 0
+    ):
+        raise ValueError(
+            "project.json content.page_count_at_init must be a positive integer"
+        )
+    page_script_origin = content.get("page_script_origin_document")
+    if page_script_origin is not None and (
+        not isinstance(page_script_origin, str) or not page_script_origin
+    ):
+        raise ValueError(
+            "project.json content.page_script_origin_document must be a path"
+        )
 
     template = config["template"]
     if template.get("mode") not in {"provided", "generated"}:
@@ -192,6 +240,13 @@ def project_paths(
     return {
         "project": project / "project.json",
         "page_script": resolve_path(project, content["page_script"]),
+        "binding_audit": resolve_path(
+            project,
+            content.get(
+                "binding_audit",
+                "inputs/page-script-binding.json",
+            ),
+        ),
         "template_source": (
             resolve_path(project, template["source"])
             if isinstance(template.get("source"), str)
@@ -235,6 +290,8 @@ def deliverable_pptx(project: Path) -> Path:
     config = load_project_config(project)
     paths = project_paths(project, config)
     deliverable = config["deliverable"]
+    if deliverable == "narration_audio":
+        raise ValueError("narration_audio has no PPTX deliverable")
     if deliverable == "static_pptx":
         return paths["static_pptx"]
     if deliverable == "animated_pptx":
@@ -282,6 +339,8 @@ def normalize_voice_profile(profile: dict[str, Any]) -> dict[str, Any]:
         alias = rule.get("alias")
         phoneme = rule.get("phoneme", rule.get("ph"))
         alphabet = rule.get("alphabet", "ipa")
+        say_as = rule.get("say_as", rule.get("interpret_as"))
+        say_as_format = rule.get("format")
         if alias is not None:
             if not isinstance(alias, str) or not alias:
                 raise ValueError(f"Pronunciation alias for {term!r} is invalid")
@@ -298,9 +357,25 @@ def normalize_voice_profile(profile: dict[str, Any]) -> dict[str, Any]:
                 "alphabet": alphabet,
                 "phoneme": phoneme,
             }
+        elif say_as is not None:
+            if not isinstance(say_as, str) or say_as not in SAY_AS_TYPES:
+                raise ValueError(
+                    f"Pronunciation say_as for {term!r} must be one of "
+                    + ", ".join(sorted(SAY_AS_TYPES))
+                )
+            if say_as_format is not None and (
+                not isinstance(say_as_format, str) or not say_as_format
+            ):
+                raise ValueError(
+                    f"Pronunciation say_as format for {term!r} is invalid"
+                )
+            normalized_rule = {"say_as": say_as}
+            if say_as_format is not None:
+                normalized_rule["format"] = say_as_format
+            normalized_pronunciations[term] = normalized_rule
         else:
             raise ValueError(
-                f"Pronunciation rule for {term!r} needs alias or phoneme"
+                f"Pronunciation rule for {term!r} needs alias, phoneme, or say_as"
             )
 
     audition = profile.get("audition", {})
@@ -327,6 +402,22 @@ def load_voice_profile(profile_path: Path) -> dict[str, Any]:
     if not profile_path.is_file():
         raise FileNotFoundError(profile_path)
     return normalize_voice_profile(load_object(profile_path))
+
+
+def voice_synthesis_projection(profile: dict[str, Any]) -> dict[str, Any]:
+    """Return only voice fields that can change production SSML or audio."""
+    return {
+        key: profile[key]
+        for key in (
+            "provider",
+            "voice",
+            "style",
+            "rate",
+            "pitch",
+            "page_break_ms",
+            "pronunciations",
+        )
+    }
 
 
 def validate_segments(page: int, segments: object) -> list[dict[str, Any]]:
@@ -374,6 +465,11 @@ def normalize_director_pages(
     policy = director.get("policy")
     if not isinstance(policy, dict) or policy.get("visual_sync") != "independent":
         raise ValueError("director.policy.visual_sync must be independent")
+    if policy.get("performance_contract") != PERFORMANCE_CONTRACT:
+        raise ValueError(
+            "director.policy.performance_contract must be "
+            f"{PERFORMANCE_CONTRACT}; rerun prepare-narration"
+        )
     raw_pages = director.get("pages")
     if not isinstance(raw_pages, list) or not raw_pages:
         raise ValueError("director.pages must be a non-empty array")
@@ -389,12 +485,25 @@ def normalize_director_pages(
             raise ValueError(f"Duplicate director page: {page}")
         seen.add(page)
         role = raw_page.get("role")
+        intent = raw_page.get("intent")
         direction = raw_page.get("direction")
+        rationale = raw_page.get("rationale")
+        target_seconds = raw_page.get("target_seconds")
         chapter = raw_page.get("chapter", f"page-{page:02d}")
         if not isinstance(role, str) or not role.strip():
             raise ValueError(f"Page {page} is missing role")
         if not isinstance(direction, str) or not direction.strip():
             raise ValueError(f"Page {page} is missing direction")
+        if intent not in INTENTS:
+            raise ValueError(f"Page {page} has invalid intent {intent!r}")
+        if not isinstance(rationale, str) or not rationale.strip():
+            raise ValueError(f"Page {page} is missing performance rationale")
+        if target_seconds is not None and (
+            isinstance(target_seconds, bool)
+            or not isinstance(target_seconds, int)
+            or not 1 <= target_seconds <= 3600
+        ):
+            raise ValueError(f"Page {page} target_seconds must be 1-3600 or null")
         if not isinstance(chapter, str) or not re.fullmatch(
             r"[a-z0-9][a-z0-9-]{0,62}",
             chapter,
@@ -407,7 +516,10 @@ def normalize_director_pages(
                 "page": page,
                 "chapter": chapter,
                 "role": role.strip(),
+                "intent": intent,
                 "direction": direction.strip(),
+                "rationale": rationale.strip(),
+                "target_seconds": target_seconds,
                 "segments": validate_segments(page, raw_page.get("segments")),
             }
         )
@@ -444,7 +556,7 @@ def pronunciation_fragment(
     if not pronunciations:
         return escape(text)
     terms = sorted(pronunciations, key=len, reverse=True)
-    matcher = re.compile("|".join(re.escape(term) for term in terms))
+    matcher = re.compile("|".join(pronunciation_term_expression(term) for term in terms))
     parts: list[str] = []
     cursor = 0
     for match in matcher.finditer(text):
@@ -455,14 +567,133 @@ def pronunciation_fragment(
             parts.append(
                 f"<sub alias={quoteattr(rule['alias'])}>{escape(term)}</sub>"
             )
-        else:
+        elif "phoneme" in rule:
             parts.append(
                 f"<phoneme alphabet={quoteattr(rule['alphabet'])} "
                 f"ph={quoteattr(rule['phoneme'])}>{escape(term)}</phoneme>"
             )
+        else:
+            format_attribute = (
+                f" format={quoteattr(rule['format'])}"
+                if "format" in rule
+                else ""
+            )
+            parts.append(
+                f"<say-as interpret-as={quoteattr(rule['say_as'])}"
+                f"{format_attribute}>{escape(term)}</say-as>"
+            )
         cursor = match.end()
     parts.append(escape(text[cursor:]))
     return "".join(parts)
+
+
+def _ascii_alnum(character: str) -> bool:
+    return bool(character) and character.isascii() and character.isalnum()
+
+
+def pronunciation_term_expression(term: str) -> str:
+    """Return an exact expression that cannot split a larger ASCII code."""
+    prefix = r"(?<![A-Za-z0-9])" if _ascii_alnum(term[0]) else ""
+    suffix = r"(?![A-Za-z0-9])" if _ascii_alnum(term[-1]) else ""
+    return prefix + re.escape(term) + suffix
+
+
+def pronunciation_term_matches(term: str, text: str) -> bool:
+    return re.search(pronunciation_term_expression(term), text) is not None
+
+
+def pronunciation_candidate_terms(text: str) -> list[str]:
+    """Find Latin technical tokens that merit contextual pronunciation review.
+
+    This intentionally produces a review inventory rather than an automatic
+    pronunciation decision. Alloy designations, acronyms, units, and product
+    names can share the same surface pattern while requiring different speech.
+    """
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for match in TECHNICAL_TOKEN_RE.finditer(text):
+        token = match.group(0)
+        letters = [character for character in token if character.isalpha()]
+        if not letters:
+            continue
+        uppercase_count = sum(character.isupper() for character in letters)
+        has_digit = any(character.isdigit() for character in token)
+        is_acronym = len(letters) >= 2 and all(
+            character.isupper() for character in letters
+        )
+        is_element_chain = uppercase_count >= 2 and any(
+            character.islower() for character in letters
+        )
+        if not (has_digit or is_acronym or is_element_chain):
+            continue
+        if token not in seen:
+            seen.add(token)
+            candidates.append(token)
+    for clause in re.split(r"[。！？\n]", text):
+        if not MATERIAL_LIST_CONTEXT_RE.search(clause):
+            continue
+        for match in PURE_GRADE_RE.finditer(clause):
+            token = match.group(0)
+            if token not in seen:
+                seen.add(token)
+                candidates.append(token)
+    return candidates
+
+
+def pronunciation_audit(
+    pages: list[dict[str, Any]],
+    pronunciations: dict[str, dict[str, str]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Summarize configured and uncovered pronunciation terms by page."""
+    page_texts: dict[int, str] = {
+        int(page["page"]): "\n".join(
+            segment["text"]
+            for segment in page.get("segments", [])
+            if isinstance(segment, dict) and isinstance(segment.get("text"), str)
+        )
+        for page in pages
+    }
+    configured: list[dict[str, Any]] = []
+    matched_terms: set[str] = set()
+    for term, rule in pronunciations.items():
+        matched_pages = [
+            page
+            for page, text in page_texts.items()
+            if pronunciation_term_matches(term, text)
+        ]
+        if not matched_pages:
+            continue
+        matched_terms.add(term)
+        if "alias" in rule:
+            rule_type = "alias"
+            spoken_as = rule["alias"]
+        elif "phoneme" in rule:
+            rule_type = "phoneme"
+            spoken_as = rule["phoneme"]
+        else:
+            rule_type = "say-as"
+            spoken_as = rule["say_as"]
+            if rule.get("format"):
+                spoken_as += f"/{rule['format']}"
+        configured.append(
+            {
+                "term": term,
+                "pages": matched_pages,
+                "rule_type": rule_type,
+                "spoken_as": spoken_as,
+            }
+        )
+
+    candidate_pages: dict[str, list[int]] = {}
+    for page, text in page_texts.items():
+        for term in pronunciation_candidate_terms(text):
+            candidate_pages.setdefault(term, []).append(page)
+    uncovered = [
+        {"term": term, "pages": pages_for_term}
+        for term, pages_for_term in candidate_pages.items()
+        if term not in matched_terms
+    ]
+    return {"configured": configured, "uncovered": uncovered}
 
 
 def combine_rate(global_rate: str, local_rate: str) -> str:
@@ -529,6 +760,48 @@ def render_chapter_ssml(
     )
 
 
+def chapter_audio_fingerprint(
+    chapter: dict[str, Any],
+    voice_profile: dict[str, Any],
+) -> tuple[str, str]:
+    voice_projection = voice_synthesis_projection(voice_profile)
+    chapter_text = "\n".join(
+        segment["text"]
+        for page in chapter.get("pages", [])
+        for segment in page.get("segments", [])
+        if isinstance(segment, dict) and isinstance(segment.get("text"), str)
+    )
+    voice_projection["pronunciations"] = {
+        term: rule
+        for term, rule in voice_projection["pronunciations"].items()
+        if pronunciation_term_matches(term, chapter_text)
+    }
+    chapter_projection = {
+        "id": chapter.get("id"),
+        "pages": [
+            {
+                "page": page.get("page"),
+                "chapter": page.get("chapter"),
+                "segments": page.get("segments"),
+            }
+            for page in chapter.get("pages", [])
+            if isinstance(page, dict)
+        ],
+    }
+    ssml = render_chapter_ssml(chapter, voice_profile)
+    return (
+        canonical_hash(
+            {
+                "chapter": chapter_projection,
+                "voice_profile": voice_projection,
+                "ssml": ssml,
+                "pipeline": 2,
+            }
+        ),
+        ssml,
+    )
+
+
 def load_state(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {
@@ -544,19 +817,28 @@ def load_state(path: Path) -> dict[str, Any]:
             },
         }
     state = load_object(path)
-    state.setdefault("schema_version", STATE_SCHEMA_VERSION)
-    state.setdefault("inputs", {})
-    state.setdefault("artifacts", {})
-    state.setdefault("approvals", {})
-    state.setdefault("qa", {})
+    if state.get("schema_version") != STATE_SCHEMA_VERSION:
+        raise ValueError(
+            "Unsupported build_state schema_version "
+            f"{state.get('schema_version')!r}; expected {STATE_SCHEMA_VERSION}"
+        )
+    for key in ("inputs", "artifacts", "approvals", "qa"):
+        value = state.setdefault(key, {})
+        if not isinstance(value, dict):
+            raise ValueError(f"build_state.{key} must be an object")
     state.setdefault(
         "powerpoint",
         {"opened": None, "video_exported": None, "human_watch": None},
     )
+    if not isinstance(state["powerpoint"], dict):
+        raise ValueError("build_state.powerpoint must be an object")
+    for key in ("opened", "video_exported", "human_watch"):
+        state["powerpoint"].setdefault(key, None)
     return state
 
 
 def source_fingerprint(project: Path, project_config: dict[str, Any]) -> str:
+    """Fingerprint content bytes only, without gate or approval evidence."""
     source = project_config.get("source")
     assert isinstance(source, dict)
     document_value = source.get("document")
@@ -571,11 +853,96 @@ def source_fingerprint(project: Path, project_config: dict[str, Any]) -> str:
     )
     return canonical_hash(
         {
-            "source": source,
             "document_sha256": document_hash,
             "page_script_sha256": (
                 file_hash(page_script) if page_script.is_file() else None
             ),
+        }
+    )
+
+
+def content_acceptance_fingerprint(
+    project: Path,
+    project_config: dict[str, Any],
+) -> str:
+    """Fingerprint the current content plus its gate and binding evidence."""
+    source = project_config.get("source")
+    assert isinstance(source, dict)
+    gate_value = source.get("gate_report")
+    gate_path = (
+        resolve_path(project, gate_value)
+        if isinstance(gate_value, str) and gate_value
+        else None
+    )
+    review_value = source.get("review")
+    review_path = (
+        resolve_path(project, review_value)
+        if isinstance(review_value, str) and review_value
+        else None
+    )
+    binding_value = project_config["content"].get(
+        "binding_audit",
+        "inputs/page-script-binding.json",
+    )
+    binding_path = resolve_path(project, binding_value)
+    gate_contract_version = (
+        load_object(gate_path).get("contract_version")
+        if gate_path is not None and gate_path.is_file()
+        else None
+    )
+    review_contract_version = (
+        load_object(review_path).get("contract_version")
+        if review_path is not None and review_path.is_file()
+        else None
+    )
+    binding_contract_version = (
+        load_object(binding_path).get("contract_version")
+        if binding_path.is_file()
+        else None
+    )
+    return canonical_hash(
+        {
+            "material": source_fingerprint(project, project_config),
+            "source": source,
+            "content_binding": {
+                key: project_config["content"].get(key)
+                for key in (
+                    "page_script",
+                    "binding_mode",
+                    "binding_audit",
+                    "page_script_origin_document",
+                    "page_count_at_init",
+                )
+            },
+            "gate_report_sha256": (
+                file_hash(gate_path)
+                if gate_path is not None and gate_path.is_file()
+                else None
+            ),
+            "review_sha256": (
+                file_hash(review_path)
+                if review_path is not None and review_path.is_file()
+                else None
+            ),
+            "binding_audit_sha256": (
+                file_hash(binding_path) if binding_path.is_file() else None
+            ),
+            "contract_versions": {
+                "expected": {
+                    "input_gate": INPUT_CONTRACT_VERSION,
+                    "input_review": (
+                        INPUT_CONTRACT_VERSION
+                        if review_path is not None
+                        else None
+                    ),
+                    "page_script_binding": PAGE_SCRIPT_CONTRACT_VERSION,
+                },
+                "recorded": {
+                    "input_gate": gate_contract_version,
+                    "input_review": review_contract_version,
+                    "page_script_binding": binding_contract_version,
+                },
+            },
         }
     )
 
@@ -587,23 +954,21 @@ def visual_fingerprint(
     *,
     include_timing: bool = True,
 ) -> str:
-    visual_manifest = {
-        key: value
-        for key, value in manifest.items()
-        if key not in {"voice", "narration_policy"}
-    }
     normalized_slides: list[dict[str, Any]] = []
-    for slide in visual_manifest.get("slides", []):
+    for slide in manifest.get("slides", []):
         if not isinstance(slide, dict):
             continue
         normalized_slides.append(
             {
-                key: value
-                for key, value in slide.items()
-                if key != "narration"
+                key: slide.get(key)
+                for key in ("page", "source_svg", "beats")
+                if key in slide
             }
         )
-    visual_manifest["slides"] = normalized_slides
+    visual_manifest = {
+        "animation_defaults": manifest.get("animation_defaults"),
+        "slides": normalized_slides,
+    }
     svg_hashes: dict[str, str] = {}
     for slide in normalized_slides:
         source = slide.get("source_svg")
@@ -649,7 +1014,9 @@ def current_input_fingerprints(project: Path) -> dict[str, str]:
             "page": page["page"],
             "chapter": page["chapter"],
             "role": page["role"],
+            "intent": page["intent"],
             "direction": page["direction"],
+            "rationale": page["rationale"],
             "text": [segment["text"] for segment in page["segments"]],
         }
         for page in pages
@@ -672,7 +1039,7 @@ def current_input_fingerprints(project: Path) -> dict[str, str]:
         "narration": canonical_hash(narration_content),
         "voice": canonical_hash(
             {
-                "profile": voice,
+                "profile": voice_synthesis_projection(voice),
                 "local_performance": performance,
             }
         ),
@@ -712,13 +1079,17 @@ def approval_fingerprint(
         raise ValueError(f"Unsupported approval stage: {stage}")
     config = load_project_config(project)
     paths = project_paths(project, config)
-    content_payload = {
+    material_payload = {
         "source_and_script": source_fingerprint(project, config),
         "page_script": str(paths["page_script"].relative_to(project)),
     }
     if not paths["page_script"].is_file():
         raise FileNotFoundError(paths["page_script"])
     if stage == "content":
+        content_payload = {
+            "material": material_payload,
+            "acceptance": content_acceptance_fingerprint(project, config),
+        }
         return canonical_hash(content_payload), content_payload
 
     if stage == "visual":
@@ -752,7 +1123,7 @@ def approval_fingerprint(
                 raise FileNotFoundError(source_path)
             samples[str(page)] = file_hash(source_path)
         payload = {
-            "content": canonical_hash(content_payload),
+            "content": canonical_hash(material_payload),
             "template_sha256": file_hash(paths["template_working"]),
             "safe_area": config["template"]["safe_area"],
             "visual": config["visual"],
@@ -765,9 +1136,12 @@ def approval_fingerprint(
     director = load_object(paths["director"])
     voice = load_voice_profile(paths["voice_profile"])
     payload = {
-        "content": canonical_hash(content_payload),
+        "content": canonical_hash(material_payload),
         "director_sha256": file_hash(paths["director"]),
-        "voice_profile": voice,
+        "voice_profile": voice_synthesis_projection(voice),
+        "performance_contract_version": (
+            NARRATION_PERFORMANCE_CONTRACT_VERSION
+        ),
     }
     return canonical_hash(payload), payload
 
@@ -783,14 +1157,37 @@ def approval_status(
     record = approvals.get(stage) if isinstance(approvals, dict) else None
     if not isinstance(record, dict) or record.get("status") != "approved":
         return False, f"{stage} approval is missing"
-    pages = record.get("pages")
-    selected = (
-        [int(page) for page in pages]
-        if isinstance(pages, list)
-        else None
-    )
+    if (
+        not isinstance(record.get("approved_by"), str)
+        or not record["approved_by"].strip()
+        or not isinstance(record.get("approved_at"), str)
+        or not isinstance(record.get("evidence"), dict)
+    ):
+        return False, f"{stage} approval record is incomplete"
     try:
-        current, _ = approval_fingerprint(
+        approved_at = datetime.fromisoformat(record["approved_at"])
+    except ValueError:
+        return False, f"{stage} approval timestamp is invalid"
+    if approved_at.tzinfo is None:
+        return False, f"{stage} approval timestamp must include a timezone"
+    pages = record.get("pages")
+    if stage == "visual":
+        if (
+            not isinstance(pages, list)
+            or not pages
+            or any(
+                isinstance(page, bool)
+                or not isinstance(page, int)
+                or page <= 0
+                for page in pages
+            )
+        ):
+            return False, "visual approval pages are invalid"
+        selected = pages
+    else:
+        selected = None
+    try:
+        current, expected_evidence = approval_fingerprint(
             project,
             stage,
             pages=selected,
@@ -799,6 +1196,12 @@ def approval_status(
         return False, f"{stage} approval cannot be verified: {exc}"
     if record.get("fingerprint") != current:
         return False, f"{stage} approval is stale"
+    recorded_evidence = record["evidence"]
+    if any(
+        recorded_evidence.get(key) != value
+        for key, value in expected_evidence.items()
+    ):
+        return False, f"{stage} approval evidence is stale"
     return True, f"{stage} approval is current"
 
 
@@ -825,6 +1228,7 @@ def record_approval(
     *,
     approved_by: str,
     pages: list[int] | None = None,
+    extra_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not approved_by.strip():
         raise ValueError("--approved-by must be non-empty")
@@ -834,6 +1238,8 @@ def record_approval(
         stage,
         pages=pages,
     )
+    if extra_evidence:
+        evidence = {**evidence, **extra_evidence}
     state = load_state(paths["build_state"])
     record = {
         "status": "approved",

@@ -21,12 +21,79 @@ from production_common import (
     load_state,
     project_paths,
     require_approvals,
+    source_fingerprint,
+    visual_fingerprint,
     write_object,
 )
 
 
 REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
+
+
+def current_visual_provenance(
+    project: Path,
+    pptx: Path,
+    *,
+    include_timing: bool = True,
+) -> dict[str, Any]:
+    config = load_project_config(project)
+    paths = project_paths(project, config)
+    manifest = load_object(paths["manifest"])
+    return {
+        "sha256": file_hash(pptx),
+        "source_fingerprint": source_fingerprint(project, config),
+        "visual_fingerprint": visual_fingerprint(
+            project,
+            config,
+            manifest,
+            include_timing=include_timing,
+        ),
+    }
+
+
+def record_visual_baseline(
+    project: Path,
+    pptx: Path,
+    *,
+    artifact_key: str = "animated_pptx",
+    include_timing: bool = True,
+) -> dict[str, Any]:
+    paths = project_paths(project)
+    provenance = current_visual_provenance(
+        project,
+        pptx,
+        include_timing=include_timing,
+    )
+    state = load_state(paths["build_state"])
+    state["artifacts"][artifact_key] = provenance
+    write_object(paths["build_state"], state)
+    return provenance
+
+
+def require_current_visual_baseline(
+    project: Path,
+    pptx: Path,
+    *,
+    artifact_key: str = "animated_pptx",
+    include_timing: bool = True,
+) -> dict[str, Any]:
+    paths = project_paths(project)
+    state = load_state(paths["build_state"])
+    recorded = state.get("artifacts", {}).get(artifact_key)
+    current = current_visual_provenance(
+        project,
+        pptx,
+        include_timing=include_timing,
+    )
+    if not isinstance(recorded, dict) or any(
+        recorded.get(key) != value for key, value in current.items()
+    ):
+        raise RuntimeError(
+            f"{artifact_key} visual baseline is missing or stale; rerun the "
+            "visual assembler before replacing audio"
+        )
+    return current
 
 
 def slide_audio_target(archive: zipfile.ZipFile, page: int) -> str:
@@ -134,6 +201,7 @@ def replace_audio(
     rows = timeline_rows(timeline)
     if not input_pptx.is_file():
         raise FileNotFoundError(input_pptx)
+    visual_baseline = require_current_visual_baseline(project, input_pptx)
 
     replacements: dict[str, bytes] = {}
     changed_members: list[str] = []
@@ -221,7 +289,11 @@ def replace_audio(
     report_path = project / "video" / "replace_audio_report.json"
     write_object(report_path, report)
     state = load_state(paths["build_state"])
-    state["artifacts"]["narrated_pptx"] = report["output_sha256"]
+    state["artifacts"]["narrated_pptx"] = {
+        "sha256": report["output_sha256"],
+        "visual_baseline": visual_baseline,
+        "audio_timeline_sha256": file_hash(paths["audio_timeline"]),
+    }
     state["artifacts"].pop("video", None)
     state["powerpoint"]["opened"] = None
     state["powerpoint"]["video_exported"] = None
@@ -310,6 +382,24 @@ def assemble_command(args: argparse.Namespace) -> int:
             "project.production.assemble_command, and the adapter must create "
             f"{expected_visual}."
         )
+    baseline_key = (
+        "static_pptx" if deliverable == "static_pptx" else "animated_pptx"
+    )
+    baseline_uses_timing = deliverable != "static_pptx"
+    if adapter:
+        record_visual_baseline(
+            project,
+            expected_visual,
+            artifact_key=baseline_key,
+            include_timing=baseline_uses_timing,
+        )
+    else:
+        require_current_visual_baseline(
+            project,
+            expected_visual,
+            artifact_key=baseline_key,
+            include_timing=baseline_uses_timing,
+        )
     if deliverable in {"narrated_pptx", "video"}:
         report = replace_audio(
             project,
@@ -328,7 +418,11 @@ def assemble_command(args: argparse.Namespace) -> int:
         if deliverable == "static_pptx"
         else "animated_pptx"
     )
-    state["artifacts"][artifact_key] = file_hash(expected_visual)
+    state["artifacts"][artifact_key] = current_visual_provenance(
+        project,
+        expected_visual,
+        include_timing=artifact_key == "animated_pptx",
+    )
     state["artifacts"].pop("narrated_pptx", None)
     state["artifacts"].pop("video", None)
     state["powerpoint"]["opened"] = None

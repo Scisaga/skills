@@ -17,6 +17,7 @@ bash skills/build-narrated-presentation/scripts/run.sh init \
   --deliverable static_pptx \
   --input-document /path/to/source.md \
   --input-review /path/to/input-review.json \
+  --page-script-source /path/to/confirmed-page-script.md \
   --visual-style technical-infographic \
   --visual-theme light
 ```

@@ -58,8 +58,17 @@ case "${COMMAND}" in
   validate-input)
     exec "${PYTHON_BIN}" "${SCRIPT_DIR}/validate_input_document.py" gate "$@"
     ;;
+  refresh-input-gate)
+    exec "${PYTHON_BIN}" "${SCRIPT_DIR}/refresh_input_gate.py" "$@"
+    ;;
   manifest)
     exec "${PYTHON_BIN}" "${SCRIPT_DIR}/build_manifest.py" "$@"
+    ;;
+  prepare-narration)
+    exec "${PYTHON_BIN}" "${SCRIPT_DIR}/prepare_narration.py" "$@"
+    ;;
+  configure-voice)
+    exec "${PYTHON_BIN}" "${SCRIPT_DIR}/audio_production.py" configure-voice "$@"
     ;;
   timing)
     exec "${PYTHON_BIN}" "${SCRIPT_DIR}/generate_fast_animation_timing.py" "$@"
@@ -101,10 +110,13 @@ Usage:
   scripts/run.sh doctor [--stage static|audio|video]
   scripts/run.sh inspect-input --document source.md --markdown-output input-preflight.md
   scripts/run.sh prepare-input-review --document source.md --output input-review.json
-  scripts/run.sh validate-input --document source.md --review input-review.json --json-output input-gate.json --markdown-output input-gate.md
-  scripts/run.sh init --output /path/to/project --name "Project" --deliverable static_pptx|animated_pptx|narrated_pptx|video --input-document source.md --input-review input-review.json [--template-source template.pptx] [--visual-style technical-infographic] [--visual-theme light|dark]
-  scripts/run.sh approve --project /path/to/project --stage content|visual|narration --approved-by NAME [--pages 3,7,10]
-  scripts/run.sh manifest --visual animation_manifest.json --director narration_director.json --voice-profile voice_profile.json --output animation_manifest.json --review narration_review.md
+  scripts/run.sh validate-input --document source.md [--review input-review.json] --json-output input-gate.json --markdown-output input-gate.md
+  scripts/run.sh refresh-input-gate --project /path/to/project [--input-profile auto|page-narration|narrative-plan|execution-plan|presentation-source] [--input-review input-review.json]
+  scripts/run.sh init --output /path/to/project --name "Project" --deliverable narration_audio|static_pptx|animated_pptx|narrated_pptx|video --input-document source.md [--input-review input-review.json] [--page-script-source page-script.md] [--allow-substantial-rewrite]
+  scripts/run.sh approve --project /path/to/project --stage content|visual|narration --approved-by NAME [--pages 3,7,10] [--allow-substantial-rewrite]
+  scripts/run.sh prepare-narration --project /path/to/project [--chapter-max-seconds 240] [--performance-plan plan.json] [--force]
+  scripts/run.sh manifest [--visual animation_manifest.json] --director narration_director.json --voice-profile voice_profile.json --output animation_manifest.json --review narration_review.md
+  scripts/run.sh configure-voice --project /path/to/project [--voice voice-name] [--rate +0%] [--pitch +0st] [--pronunciation-file glossary.json] [--replace-pronunciations]
   scripts/run.sh timing --manifest animation_manifest.json --output fast_animation_timing.json
   scripts/run.sh timing --manifest animation_manifest.json --output fast_animation_timing.json --check
   scripts/run.sh audio-timeline --manifest animation_manifest.json --audio-dir audio --output audio_timeline.json
@@ -117,7 +129,7 @@ Usage:
   scripts/run.sh export-pages --project /path/to/project --pages 8,9,14 --format pdf --output selected.pdf
   scripts/run.sh qa --project /path/to/project --level static|audio|standard|release
   scripts/run.sh rebuild --project /path/to/project --scope audio --qa standard [--voice voice-name]
-  scripts/run.sh validate --project /path/to/project [--strict]
+  scripts/run.sh validate --project /path/to/project [--stage content|visual|animation|narration|audio] [--strict]
 USAGE
     ;;
   *)

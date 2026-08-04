@@ -42,6 +42,14 @@ def build_timeline(
         if not audio_path.is_file():
             raise FileNotFoundError(audio_path)
         duration = round(float(MP3(audio_path).info.length), 3)
+        target = float(slide.get("target_seconds", duration))
+        delta = round(duration - target, 3)
+        delta_ratio = round(delta / target, 4) if target > 0 else 0.0
+        needs_review = abs(delta) > max(3.0, target * 0.15)
+        suggested_rate_delta = max(
+            -10,
+            min(10, round(delta_ratio * 100)),
+        )
         rows.append(
             {
                 "page": page,
@@ -52,7 +60,13 @@ def build_timeline(
                 ),
                 "audio_duration_seconds": duration,
                 "advance_ms": round(duration * 1000) + safety_ms,
-                "target_seconds": float(slide.get("target_seconds", duration)),
+                "target_seconds": target,
+                "duration_delta_seconds": delta,
+                "duration_delta_ratio": delta_ratio,
+                "timing_status": "review" if needs_review else "within-range",
+                "suggested_rate_delta_percent": (
+                    suggested_rate_delta if needs_review else 0
+                ),
             }
         )
 
@@ -66,12 +80,19 @@ def build_timeline(
         + max(0, len(rows) - 1) * transition_ms / 1000,
         3,
     )
+    target_total = round(sum(row["target_seconds"] for row in rows), 3)
+    review_pages = [
+        row["page"] for row in rows if row["timing_status"] == "review"
+    ]
     return {
         "schema_version": 2,
         "profile": "chapter-continuous-page-split",
         "advance_safety_ms": safety_ms,
         "slide_transition_ms": transition_ms,
         "audio_total_seconds": audio_total,
+        "target_total_seconds": target_total,
+        "duration_delta_seconds": round(audio_total - target_total, 3),
+        "timing_review_pages": review_pages,
         "estimated_deck_seconds": estimated_deck,
         "chapter_count": len({row["chapter"] for row in rows}),
         "slides": rows,

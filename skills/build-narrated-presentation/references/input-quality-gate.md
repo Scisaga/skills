@@ -1,285 +1,182 @@
-# 输入文档质量门禁
+# 输入身份、门禁与逐页稿绑定
 
 ## 目录
 
-- [目的](#目的)
-- [为什么采用两层门禁](#为什么采用两层门禁)
-- [输入类型](#输入类型)
-- [自动预检](#自动预检)
-- [语义复核](#语义复核)
-- [通过与阻断规则](#通过与阻断规则)
-- [返工循环](#返工循环)
-- [复核文件契约](#复核文件契约)
-- [Goodwen 基线的启示](#goodwen-基线的启示)
+- [目标](#目标)
+- [输入 Profile](#输入-profile)
+- [正常入口只执行一次门禁](#正常入口只执行一次门禁)
+- [逐页演讲稿的 identity 绑定](#逐页演讲稿的-identity-绑定)
+- [其他输入的 adapted 绑定](#其他输入的-adapted-绑定)
+- [诊断命令](#诊断命令)
+- [失效与返工](#失效与返工)
 
-## 目的
+## 目标
 
-输入文档是页面叙事、事实边界和旁白的上游事实来源。文档质量不足时，直接制作 SVG、PPTX 或视频只会把缺口固化到更多产物中。
+门禁回答两个问题：
 
-门禁必须位于整个流程最前面：
+1. 当前文件属于哪种输入身份，是否满足该身份的确定性契约；
+2. 初始化后的 `page-script.md` 与用户指定内容源是什么关系。
+
+门禁不得把“结构不匹配”解释成“需要自动摘要”。尤其是已经逐页写好的演讲稿，必须保留完整口述正文；禁止另建 `normalized-input.md`、摘要表或项目说明来替换用户源稿。
+
+`init` 将原始输入原样复制为 `inputs/source.md`，把当前 SHA-256、profile、门禁报告和逐页稿绑定写入项目。后续验证使用项目内副本，不依赖外部文件继续存在。
+
+## 输入 Profile
+
+| Profile | 用途 | 确定性要求 | 语义复核 |
+|---|---|---|---|
+| `page-narration` | 已经整理好的逐页口述稿 | 连续的 `## 第 N 页｜标题` 或纯旁白 `## PAGE N/T｜标题`、每页至少 20 个实际可朗读字符 | 不要求 |
+| `narrative-plan` | 产品计划、课程大纲、方案说明 | UTF-8、基本可读、引用路径可解析；内容充分性留给一次语义复核 | 要求 |
+| `execution-plan` | 实施计划、执行方案、操作手册 | UTF-8、基本可读、引用路径可解析；执行闭环留给一次语义复核 | 要求 |
+| `presentation-source` | 已含 SVG 和 speaker notes 的渲染型 Markdown | `## PAGE N/T｜标题`、完整视觉资源和 notes | 要求 |
+
+`auto` 先区分带实际 SVG、`<!-- speaker-notes: ... -->`、`<!-- layout: visual -->` 或结构化 `source_svg:` 字段的渲染型 PAGE 契约，再把中文标题或不含这些结构标记的 PAGE 稿识别为逐页口述稿，最后才判断计划类型。正文中只是讨论 `speaker-notes`、`source_svg` 等术语不会触发渲染识别。识别不正确时显式传入 `--input-profile`；不要改写正文来伪装 profile。
+
+### `page-narration` 契约
+
+逐页标题采用：
+
+```markdown
+## 第 1 页｜开场 · 30 秒
+
+各位领导、各位同事，大家好……
+```
+
+阻断性硬检查只覆盖下游真正需要的机械条件：
+
+- 页码从 1 连续排列；
+- 标题至少 2 个字符；
+- 每页至少有 20 个从 Markdown 正文规范化得到的实际可朗读字符；图片路径、SVG、HTML 注释和排版标记不能充当正文；
+- 不得包含 SVG、`layout: visual`、speaker-notes 等渲染标记。
+
+审计还会从标题读取可选目标秒数，并记录正文摘要、字符保留率、覆盖率和工程数字遗漏。这些字段用于差异审阅，不单独阻断 identity；真正的默认阻断是非字节一致。
+
+这个机械阈值只证明页面确实有可朗读内容，不判断观点是否完整或讲述是否优质。对于已经整理好的逐页稿，防止“摘要替换原稿”的主要约束是字节级 identity 绑定；对于 adapted 稿，内容审批负责审阅差异证据。工程数字检查用于发现改写遗漏，不代表数字已经获得事实来源或工程验证。
+
+### 计划与渲染型输入
+
+这些输入不是逐页口述稿。计划类输入的确定性预检检查 UTF-8、至少 200 字符的基本正文和本地引用；占位符只提示 warning，不再强制标题、关键词、固定 H2 数量或映射表行数。`presentation-source` 走另一套专用契约：PAGE 连续性和总数、标题、单一 layout 标记、实际存在且为 1600×900 的本地 SVG，以及非空 speaker-notes。语义复核集中判断主张、证据边界、内容完整性、执行闭环和演示可制作性，并绑定当前输入 SHA-256。
+
+## 正常入口只执行一次门禁
+
+不要按 `inspect-input → prepare-input-review → validate-input → init` 连续执行四遍。正常入口如下。
+
+### 已整理逐页演讲稿
+
+直接初始化；`init` 内部执行一次完整门禁，并写入 `input-gate.json` 与 `input-gate.md`：
+
+```bash
+run.sh init \
+  --output PROJECT \
+  --name "项目名称" \
+  --deliverable narration_audio \
+  --input-document 演讲稿.md
+```
+
+`page-narration` 不需要 `input-review.json`。即使调用方误传 review，门禁也只记录“已忽略”的 info，不执行计划类语义复核，也不把该文件复制进项目。
+
+对 `page-narration` 误运行 `prepare-input-review` 时命令直接 SKIP 且不写文件，避免重新引入无用复核状态。
+
+### 计划或渲染型输入
+
+先生成一次 SHA 绑定的语义复核模板，完整阅读并填写；然后让 `init` 执行唯一一次完整 gate：
+
+```bash
+run.sh prepare-input-review \
+  --document source.md \
+  --profile auto \
+  --output input-review.json
+
+run.sh init \
+  --output PROJECT \
+  --name "项目名称" \
+  --deliverable narrated_pptx \
+  --input-document source.md \
+  --input-review input-review.json \
+  --page-script-source prepared-page-script.md
+```
+
+不要在这两个命令之间再运行 `validate-input`。`prepare-input-review` 已执行确定性预检，`init` 会验证当前文件、复核 SHA、profile 和结论，并保存门禁报告。
+
+语义复核只保留一层分类状态和一个总决策。每个必需维度使用 `pass`、`revise` 或 `block`，并提供当前文档中可定位的 `line`、`quote` 和可选 `heading`；未通过时直接在该维度填写 `issues` 与 `required_changes`。模板中的 `attestation` 初始为 `false`，只有实际读完全文后才改为 `true`。不再重复维护 `blocking_findings`、`revision_plan`、“至少四个证据位置”或为了门禁强制补 Markdown 标题等派生状态。
+
+## 逐页演讲稿的 identity 绑定
+
+当输入是 `page-narration` 且未提供 `--page-script-source` 时：
 
 ```text
-输入 Markdown
-  → 自动预检
-  → 语义复核
-  → 输入质量门禁
-      ├─ PASS：建立演示项目
-      └─ BLOCKED：只输出返工报告，停止后续制作
+用户输入 ──原样复制──> inputs/source.md
+    └──────原样复制──> page-script.md
 ```
 
-不得为了赶进度先做几页“占位设计”。文档发生任何修改后，原语义复核会因 SHA-256 不匹配而失效，必须重新检查。
+初始化记录：
 
-## 为什么采用两层门禁
+- `source.document_sha256`：项目内原始源稿摘要；
+- `source.gate_report_sha256` 与 `source.review_sha256`：入口门禁和可选语义复核的证据摘要；
+- `source.page_script_sha256_at_init`：初始化时逐页稿摘要；
+- `content.binding_mode: identity`：源稿与逐页稿逐字节一致；
+- `content.binding_audit`：指向源 SHA、逐页稿 SHA、字符覆盖和工程数字遗漏报告；
+- `content.page_script_origin_document`：初始化时实际逐页稿来源路径；
+- `content.page_count_at_init`：识别到的页数。
 
-自动预检适合检查确定性问题：
+内容审批再次检查页码、每页正文和源稿保真。不能用“核心结论、视觉意图、事实边界”表格替代实际口述内容。
 
-- frontmatter 和关键字段是否存在；
-- 标题、页码和章节结构是否完整；
-- 本地链接和图片是否存在；
-- 是否残留 `TODO`、`TBD`、`FIXME` 等未关闭占位符；
-- 逐页源稿是否满足渲染器的结构契约。
+## 其他输入的 adapted 绑定
 
-自动规则不能可靠判断：
+`narrative-plan`、`execution-plan` 和 `presentation-source` 初始化时必须显式传入 `--page-script-source`。逐页稿采用 `## 第 N 页｜标题` 或 `## PAGE N[/T]｜标题`（也接受 ASCII `|`），包含实际要讲的正文，且不得含渲染标记。
 
-- 核心主张是否真的成立；
-- 叙事是否前后连贯；
-- 证据能否支持结论；
-- 某个数字究竟是事实、目标还是假设；
-- 内容是否值得做成一页；
-- 旁白是否能自然讲述。
+```text
+事实源 source.md ──语义复核──> inputs/source.md
+人工整理的逐页稿 ────────────> page-script.md
+                                  binding_mode: adapted
+```
 
-因此第二层必须由智能体阅读完整文档并给出有文档内证据的语义复核。两层任一失败都阻断后续。
+脚本不负责从计划自动摘要出逐页稿。整理时保留事实边界，明确新增、删减和重写，不把派生文案反向当成原始事实。
 
-该门禁能阻止结构缺失、旧复核、空证据和无法定位的证据，但不是防恶意篡改的签名系统。真正的语义质量仍依赖被记录的智能体或人工复核者完成全文审查；不得让脚本自动把所有维度改成 `pass`。
+对于 `page-narration` 的显式改写稿，也必须使用 `--page-script-source`。只要不再与源稿逐字节一致，默认就以一个明确的 identity mismatch 阻断；页码集合不一致仍是独立的机械错误。正文保留率、覆盖率和工程数字遗漏写进差异证据并显示警告，不再为同一次非 identity 状态重复制造多个 blocker。
 
-## 输入类型
+只有用户明确同意改写时，才可使用 `--allow-substantial-rewrite`。参数名为兼容现有命令保留；它实际表示“允许脱离 identity”，不是只有删改达到某个比例才需要。初始化或 content 审批会把授权绑定到当前源稿 SHA、逐页稿 SHA 和 binding audit；只要这些字节未变，后续重批、gate refresh 后重批或审计 contract 升级后重审都不再重复要求该参数。逐页稿再次变化时必须重新授权。该选项只记录授权，不代表改写质量自动通过。
 
-### `narrative-plan`
+## 诊断命令
 
-适用于产品计划书、投资人材料、课程大纲、方案说明等“先形成完整论证，再映射为演示”的文档。
-
-最低结构包括：
-
-- 目标受众；
-- 具体问题；
-- 产品答案或解决路径；
-- 可感知的案例、任务或场景；
-- 事实、证据、假设和待验证边界；
-- 价值或采用逻辑；
-- 风险、边界或下一步；
-- 逐页演示映射。
-
-### `execution-plan`
-
-适用于实施计划、竞赛执行方案、迭代计划和交付操作手册。
-
-最低结构包括：
-
-- 范围和非目标；
-- 事实或状态标签；
-- 交付物和执行动作；
-- owner 与时间安排；
-- 验收或完成定义；
-- 风险与阻断条件；
-- 来源或依据；
-- 如果要制作演示，还应说明演示受众和汇报结构。
-
-### `presentation-source`
-
-适用于已经按页编排、由渲染器直接生成 PDF/PPTX 的 Markdown 源稿。
-
-最低结构包括：
-
-- frontmatter 中的页数、画布和事实政策；
-- 连续的 `## PAGE N/T｜标题`；
-- 每页一个 `layout: visual` 标记；
-- 每页恰好一张完整页 SVG；
-- 每页一段 `speaker-notes`；
-- 所有本地视觉资源真实存在。
-
-`auto` 根据 PAGE 标记、文件身份和标题自动选择 profile。自动判断错误时应显式传入 profile，而不是修改文档伪装类型。
-
-## 自动预检
-
-先运行：
+`inspect-input` 用于解释 profile 和自动阻断，不是正常入口的必做步骤：
 
 ```bash
-bash skills/build-narrated-presentation/scripts/run.sh inspect-input \
-  --document /path/to/source.md \
+run.sh inspect-input \
+  --document source.md \
   --profile auto \
-  --json-output /path/to/input-preflight.json \
-  --markdown-output /path/to/input-preflight.md
+  --markdown-output input-preflight.md
 ```
 
-自动预检的 `blocking` 必须全部清零。`warning` 不会单独使命令失败，但必须进入语义复核，不能被忽略。
-
-常见自动阻断包括：
-
-- 缺少 frontmatter、标题、状态、受众或事实政策；
-- 普通文档没有唯一 H1；
-- 内容短到不足以支撑演示；
-- 关键叙事模块缺失；
-- 没有逐页映射；
-- 未关闭占位符；
-- 本地链接或图片失效；
-- PAGE 页码不连续或总页数不一致；
-- 视觉页不是恰好一张 SVG；
-- 页面缺少 speaker notes。
-
-## 语义复核
-
-自动预检通过后，用当前文档生成 SHA-256 绑定的模板；预检未通过时该命令不会创建模板：
+`validate-input` 用于在项目外单独验证现成的复核文件：
 
 ```bash
-bash skills/build-narrated-presentation/scripts/run.sh prepare-input-review \
-  --document /path/to/source.md \
-  --profile auto \
-  --output /path/to/input-review.json
+run.sh validate-input \
+  --document source.md \
+  --review input-review.json \
+  --json-output input-gate.json \
+  --markdown-output input-gate.md
 ```
 
-智能体必须阅读完整文档，再逐项填写：
+它们不得与 `init` 机械串联并重复生成同一结论。
 
-- `status`：`pass`、`revise` 或 `block`；
-- `evidence`：结构化的 `heading`、`line`、`quote`，必须能在当前文档真实定位；
-- `issues`：当前缺口及其影响；
-- `required_changes`：可验收的返工要求。
-
-未通过时还必须填写 `revision_plan`，每项至少说明优先级、文档位置、问题、所需修改和验收标准。标记 `pass` 的维度不能同时保留未关闭的 `issues` 或 `required_changes`。
-
-`narrative-plan` 复核：
-
-- `purpose_audience`
-- `narrative_coherence`
-- `fact_evidence_integrity`
-- `content_completeness`
-- `presentation_readiness`
-- `language_clarity`
-
-`execution-plan` 复核：
-
-- `purpose_scope`
-- `fact_status_integrity`
-- `deliverables_ownership`
-- `acceptance_readiness`
-- `risk_feasibility`
-- `presentation_readiness`
-
-`presentation-source` 复核：
-
-- `page_narrative`
-- `fact_evidence_integrity`
-- `page_completeness`
-- `visual_readiness`
-- `narration_readiness`
-- `language_clarity`
-
-标记 `pass` 时必须至少提供一条文档内证据，六个维度合计至少覆盖四个不同位置。`reviewer` 必须记录复核者名称、类型、`full-document-review` 方法和完整复核声明。不能因为“看起来不错”而通过，也不能由自动脚本伪造语义复核或直接信任外部提供的 `pass` 文件。
-
-## 通过与阻断规则
-
-完整门禁命令：
+已存在项目遇到 input gate `contract_version` 升级、但 `inputs/source.md` 字节未变时，使用显式刷新入口：
 
 ```bash
-bash skills/build-narrated-presentation/scripts/run.sh validate-input \
-  --document /path/to/source.md \
-  --profile auto \
-  --review /path/to/input-review.json \
-  --json-output /path/to/input-gate.json \
-  --markdown-output /path/to/input-gate.md
+run.sh refresh-input-gate --project PROJECT --input-profile auto
+# 非 page-narration 先为 PROJECT/inputs/source.md 生成新版复核，再传入：
+run.sh refresh-input-gate --project PROJECT \
+  --input-review current-input-review.json
 ```
 
-只有以下条件同时满足才返回退出码 0：
+该命令只接受当前项目内源稿 SHA 未变的情况。默认 `auto` 重新识别项目内源稿，因此能纠正旧规则写入的错误 profile；确有歧义时才显式覆盖。gate/review 或 profile 证据发生变化时 content 审批失效，但内容字节 fingerprint 不变，因此视觉、旁白和二进制产物不被无意义重建；若刷新结果逐字节不变，content 审批保持 current，命令不会谎报 stale。源稿字节已经变化时不得使用刷新入口，应重新建立内容绑定。
 
-1. 自动预检没有 `blocking`；
-2. 复核文件的文档 SHA-256 与当前输入一致；
-3. 复核 profile 一致；
-4. 所有必需语义维度均为 `pass`；
-5. 每个 `pass` 都有可在当前 SHA 文档中核验的章节、行号和摘录；
-6. `blocking_findings` 与 `revision_plan` 均存在且为空；
-7. 总决策为 `pass`。
+## 失效与返工
 
-其他情况返回非零退出码。`init --input-document` 会再次执行同一门禁，不能用旧复核或手工修改 `project.json` 绕过。
+- 初始化前输入变化：旧语义复核因 SHA 不匹配失效。
+- 初始化后 `inputs/source.md` 变化：源稿绑定失效，重新门禁并明确更新项目。
+- input gate 契约版本变化但项目内源稿未变：运行 `refresh-input-gate`，再重新 content 审批。
+- `page-script.md` 变化：内容审批及其下游失效；`page-narration` 还要重新检查保真。
+- 只修改音色、全局语速、音高或发音词典：不重新运行输入门禁，只使旁白审批和音频下游失效。
 
-`init` 不提供空白绕过模式。没有输入文档时，先创建一份说明受众、目标、事实边界和演示映射的 Markdown 输入稿，再从自动预检开始。
-
-## 门禁失效边界
-
-输入文档内容变化会改变 SHA-256，旧语义复核立即失效。旁白文字、页面主张或章节归属变化虽然不一定修改输入文件，也必须重新核对其与通过门禁文档的一致性。
-
-下列声音生产参数不属于输入文档语义，不使门禁失效：
-
-- TTS 提供方和音色；
-- 全局语速与音高；
-- 导演稿中的局部语速、音高与停顿；
-- 风格参数；
-- 页面边界停顿；
-- 品牌别名、IPA/phoneme 和其他发音词典规则。
-
-这些参数只在 `video/voice_profile.json` 中维护，并按音频增量链路处理。
-
-## 返工循环
-
-门禁失败时：
-
-1. 停止生成 SVG、PPTX、动画、音频和视频；
-2. 按 Markdown 报告中的 `blocking` 排序返工；
-3. 优先修复主张、事实边界和结构，再处理措辞；
-4. 修改原输入文档，不在演示稿里偷偷补另一套事实；
-5. 重新运行自动预检；
-6. 重新生成 SHA-256 绑定的语义复核模板；
-7. 重新完整阅读和复核；
-8. 门禁通过后才初始化或继续演示项目。
-
-返工要求应写成可验收变化，例如：
-
-- 不写“补充市场数据”，而写“为市场规模数字增加直接来源，并标明数据年份和适用区域”；
-- 不写“逻辑更清晰”，而写“在产品定义前增加目标用户和具体任务，并让后续商业模式引用同一对象”；
-- 不写“丰富 PPT”，而写“补齐 12 页映射，每页给出标题、单一主判断、证据和视觉意图”。
-
-## 复核文件契约
-
-示意结构：
-
-```json
-{
-  "schema_version": 1,
-  "document": "/absolute/path/to/source.md",
-  "document_sha256": "<sha256>",
-  "profile": "narrative-plan",
-  "reviewer": {
-    "name": "Codex",
-    "kind": "ai-agent",
-    "method": "full-document-review",
-    "attestation": "I reviewed the entire current document and the cited evidence supports each assigned category."
-  },
-  "decision": "pass",
-  "categories": {
-    "purpose_audience": {
-      "status": "pass",
-      "evidence": [
-        {
-          "heading": "1. 第一批客群",
-          "line": 221,
-          "quote": "首批用户的共同点不是某个职业标签"
-        }
-      ],
-      "issues": [],
-      "required_changes": []
-    }
-  },
-  "blocking_findings": [],
-  "revision_plan": []
-}
-```
-
-模板资产 `assets/input-review-template.json` 只展示字段。实际使用必须通过 `prepare-input-review` 生成，以写入当前文档摘要和正确的 profile 维度。
-
-## Goodwen 基线的启示
-
-方法来源目录中的文档展示了三种不同质量契约：
-
-- [`01_Goodwen_Investor_Product_Plan.md`](https://github.com/Scisaga/md-quiz/blob/main/docs/biz/goodwen_2026/01_Goodwen_Investor_Product_Plan.md) 先明确受众、核心主张、具体任务、事实政策、商业路径、风险和 13 页映射，适合作为 `narrative-plan` 基线；
-- `02`、`03`、`04` 类执行文档使用“现有/待实现/验收”或“官方要求/内部建议/待团队填写”等显式状态，并把交付动作、owner、检查清单和风险放进同一闭环；
-- `Goodwen_SuperAgent_项目计划书.md` 与技术架构附录已经逐页化，每页绑定一张 SVG 和 speaker notes，适合作为 `presentation-source` 基线。
-
-这些共性应被复用，但 Goodwen 的产品事实、页数和业务叙事不能成为其他项目的默认内容。完整目录见 [`docs/biz/goodwen_2026`](https://github.com/Scisaga/md-quiz/tree/main/docs/biz/goodwen_2026)。
+门禁失败时只修改被点名的源稿或逐页稿，不生成替代摘要，不提前制作 SVG、PPTX 或音频。自动规则与用户明确指定的输入身份冲突时，先修正规则或显式 profile，而不是改写用户内容迎合检测器。

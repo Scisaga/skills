@@ -18,8 +18,15 @@ from production_common import (
     load_voice_profile,
     normalize_director_pages,
     project_paths,
+    voice_synthesis_projection,
 )
-from validate_input_document import gate_document
+from page_script_contract import (
+    PAGE_SCRIPT_CONTRACT_VERSION,
+    audit_director_text,
+    audit_page_script,
+)
+from narration_performance import audit_narration_performance
+from validate_input_document import INPUT_CONTRACT_VERSION
 
 
 SUPPORTED_EFFECTS = {
@@ -85,18 +92,50 @@ def validate(
         return [f"Project contract: {exc}"], warnings
     target = stage or project_config["deliverable"]
     if target not in {
+        "content",
+        "visual",
+        "animation",
+        "narration",
+        "audio",
+        "narration_audio",
         "static_pptx",
         "animated_pptx",
         "narrated_pptx",
         "video",
     }:
         return [f"Unsupported validation stage: {target}"], warnings
-    needs_animation = target != "static_pptx"
-    needs_narration = target in {"narrated_pptx", "video"}
+    needs_visual = target in {
+        "visual",
+        "animation",
+        "static_pptx",
+        "animated_pptx",
+        "narrated_pptx",
+        "video",
+    }
+    needs_animation = target in {
+        "animation",
+        "animated_pptx",
+        "narrated_pptx",
+        "video",
+    }
+    needs_narration = target in {
+        "narration",
+        "audio",
+        "narration_audio",
+        "narrated_pptx",
+        "video",
+    }
+    needs_audio = target in {
+        "audio",
+        "narration_audio",
+        "narrated_pptx",
+        "video",
+    }
     required = {
         "project": project_path,
-        "manifest": project / "video" / "animation_manifest.json",
     }
+    if needs_visual or needs_narration:
+        required["manifest"] = project / "video" / "animation_manifest.json"
     if needs_animation:
         required["layers"] = project / "video" / "svg_layer_plan.json"
     if needs_narration:
@@ -110,13 +149,14 @@ def validate(
         errors.append(f"Page script not found: {paths['page_script']}")
     elif not paths["page_script"].read_text(encoding="utf-8").strip():
         errors.append("page-script.md must not be empty")
-    if not paths["template_working"].is_file():
+    if needs_visual and not paths["template_working"].is_file():
         warnings.append(
             f"Working template has not been prepared: {paths['template_working']}"
         )
     template_config = project_config["template"]
     if (
-        template_config["mode"] == "provided"
+        needs_visual
+        and template_config["mode"] == "provided"
         and not paths["template_source"].is_file()
     ):
         errors.append(
@@ -132,16 +172,14 @@ def validate(
         profile = source_config.get("profile", "auto")
         if not isinstance(document_value, str) or not document_value:
             errors.append("project.json source.document is missing")
-        elif not isinstance(review_value, str) or not review_value:
-            errors.append("project.json source.review is missing")
         elif not isinstance(gate_report_value, str) or not gate_report_value:
             errors.append("project.json source.gate_report is missing")
         elif not isinstance(profile, str):
             errors.append("project.json source.profile is invalid")
         else:
-            review_path = Path(review_value)
-            if not review_path.is_absolute():
-                review_path = project / review_path
+            document_path = Path(document_value)
+            if not document_path.is_absolute():
+                document_path = project / document_path
             gate_report_path = Path(gate_report_value)
             if not gate_report_path.is_absolute():
                 gate_report_path = project / gate_report_path
@@ -151,8 +189,19 @@ def validate(
                 )
             else:
                 recorded_gate = load_object(gate_report_path)
+                expected_gate_sha = source_config.get("gate_report_sha256")
+                if not isinstance(expected_gate_sha, str) or not expected_gate_sha:
+                    errors.append(
+                        "Recorded input gate SHA is missing; run refresh-input-gate"
+                    )
+                elif hashlib.sha256(gate_report_path.read_bytes()).hexdigest() != expected_gate_sha:
+                    errors.append("Recorded input gate report file was modified")
                 if recorded_gate.get("passed") is not True:
                     errors.append("Recorded input gate report is not passing")
+                if recorded_gate.get("contract_version") != INPUT_CONTRACT_VERSION:
+                    errors.append(
+                        "Recorded input gate contract is obsolete; regenerate the gate"
+                    )
                 if (
                     recorded_gate.get("document_sha256")
                     != source_config.get("document_sha256")
@@ -160,32 +209,46 @@ def validate(
                     errors.append(
                         "Recorded input gate report SHA-256 differs from project.json"
                     )
-            try:
-                gate = gate_document(
-                    Path(document_value),
-                    profile,
-                    review_path,
+                if recorded_gate.get("profile") != profile:
+                    errors.append("Recorded input gate profile differs from project.json")
+                semantic_required = recorded_gate.get(
+                    "semantic_review_required", profile != "page-narration"
                 )
-            except (FileNotFoundError, OSError, ValueError) as exc:
-                errors.append(f"Cannot revalidate input document: {exc}")
+                if semantic_required and (
+                    not isinstance(review_value, str) or not review_value
+                ):
+                    errors.append("project.json source.review is required for this profile")
+                elif semantic_required:
+                    review_path = Path(review_value)
+                    if not review_path.is_absolute():
+                        review_path = project / review_path
+                    if not review_path.is_file():
+                        errors.append(f"Input review not found: {review_path}")
+                    else:
+                        expected_review_sha = source_config.get("review_sha256")
+                        if (
+                            not isinstance(expected_review_sha, str)
+                            or not expected_review_sha
+                        ):
+                            errors.append(
+                                "Input review SHA is missing; run refresh-input-gate"
+                            )
+                        elif hashlib.sha256(review_path.read_bytes()).hexdigest() != expected_review_sha:
+                            errors.append("Input review file was modified")
+            if not document_path.is_file():
+                errors.append(f"Input document not found: {document_path}")
             else:
-                if source_config.get("document_sha256") != gate["document_sha256"]:
-                    errors.append(
-                        "project.json source.document_sha256 differs from input document"
-                    )
-                for row in gate["findings"]:
-                    message = (
-                        f"Input gate {row['code']}: {row['message']} "
-                        f"Required change: {row['required_change']}"
-                    )
-                    if row["severity"] == "blocking":
-                        errors.append(message)
-                    elif row["severity"] == "warning":
-                        warnings.append(message)
+                actual_sha = hashlib.sha256(document_path.read_bytes()).hexdigest()
+                if source_config.get("document_sha256") != actual_sha:
+                    errors.append("Input document changed after the recorded gate")
     else:
         errors.append("project.json source.mode must be document")
 
-    manifest = load_object(required["manifest"])
+    manifest = (
+        load_object(required["manifest"])
+        if "manifest" in required
+        else {"slides": [], "slide_count": 0}
+    )
     slides = page_map(manifest.get("slides"), "manifest.slides", errors)
     expected_pages = list(range(1, len(slides) + 1))
     if sorted(slides) != expected_pages:
@@ -200,6 +263,15 @@ def validate(
                 "manifest narration_policy.visual_sync must be independent"
             )
         director = load_object(required["director"])
+        performance_audit = audit_narration_performance(director)
+        errors.extend(
+            f"Narration performance: {message}"
+            for message in performance_audit["errors"]
+        )
+        warnings.extend(
+            f"Narration performance: {message}"
+            for message in performance_audit["warnings"]
+        )
         director_policy = director.get("policy", {})
         if director_policy.get("visual_sync") != "independent":
             errors.append("director.policy.visual_sync must be independent")
@@ -239,11 +311,85 @@ def validate(
                         f"Manifest voice {field} differs from voice profile"
                     )
             if manifest_voice.get("profile_sha256") != canonical_hash(
-                voice_profile
+                voice_synthesis_projection(voice_profile)
             ):
                 errors.append("Manifest voice profile_sha256 is stale")
         else:
             errors.append("Manifest voice is missing")
+
+    source_for_fidelity: Path | None = None
+    if isinstance(source_config, dict):
+        raw_source = source_config.get("document")
+        if isinstance(raw_source, str):
+            source_for_fidelity = Path(raw_source)
+            if not source_for_fidelity.is_absolute():
+                source_for_fidelity = project / source_for_fidelity
+    if paths["page_script"].is_file():
+        page_script_audit = audit_page_script(
+            paths["page_script"],
+            source=source_for_fidelity,
+            allow_substantial_rewrite=True,
+            enforce_source_fidelity=(
+                isinstance(source_config, dict)
+                and source_config.get("profile") == "page-narration"
+            ),
+        )
+        errors.extend(
+            f"Page script: {message}" for message in page_script_audit["errors"]
+        )
+        page_script_pages = [
+            row["page"] for row in page_script_audit["pages"]
+        ]
+        if (needs_visual or needs_narration) and sorted(slides) != page_script_pages:
+            errors.append(
+                "Manifest pages must match page-script pages: "
+                f"manifest={sorted(slides)}, page_script={page_script_pages}"
+            )
+        fidelity = page_script_audit.get("fidelity")
+        if (
+            project_config["content"].get("binding_mode") == "identity"
+            and isinstance(fidelity, dict)
+            and fidelity.get("exact_byte_copy") is not True
+        ):
+            errors.append(
+                "Identity-bound page-script.md is no longer byte-identical "
+                "to inputs/source.md"
+            )
+        if needs_narration:
+            director_text_audit = audit_director_text(
+                paths["page_script"],
+                load_object(required["director"]),
+            )
+            errors.extend(
+                f"Director text: {message}"
+                for message in director_text_audit["errors"]
+            )
+
+    if not paths["binding_audit"].is_file():
+        errors.append(f"Page-script binding audit not found: {paths['binding_audit']}")
+    else:
+        binding_audit = load_object(paths["binding_audit"])
+        if binding_audit.get("contract_version") != PAGE_SCRIPT_CONTRACT_VERSION:
+            errors.append(
+                "Page-script binding audit contract is obsolete; reapprove content"
+            )
+        if binding_audit.get("source_document_sha256") != source_config.get(
+            "document_sha256"
+        ):
+            errors.append("Page-script binding audit refers to another source")
+        if binding_audit.get("source_profile") != source_config.get("profile"):
+            errors.append("Page-script binding audit profile is stale")
+        configured_binding = project_config["content"].get("binding_mode")
+        if configured_binding is not None and binding_audit.get(
+            "binding_mode"
+        ) != configured_binding:
+            errors.append("Page-script binding audit mode is stale")
+        if paths["page_script"].is_file() and binding_audit.get(
+            "page_script_sha256"
+        ) != hashlib.sha256(paths["page_script"].read_bytes()).hexdigest():
+            errors.append(
+                "Page-script binding audit is stale; review and approve content"
+            )
 
     raw_layer_pages: dict[str, Any] = {}
     if needs_animation:
@@ -256,6 +402,26 @@ def validate(
             raw_layer_pages = {}
 
     for page, slide in slides.items():
+        if not needs_visual:
+            narration = director_pages.get(page, {})
+            merged_narration = slide.get("narration")
+            if not isinstance(merged_narration, dict):
+                errors.append(f"Manifest page {page} narration is missing")
+            else:
+                for field in (
+                    "chapter",
+                    "role",
+                    "intent",
+                    "direction",
+                    "rationale",
+                    "target_seconds",
+                    "segments",
+                ):
+                    if merged_narration.get(field) != narration.get(field):
+                        errors.append(
+                            f"Manifest page {page} narration {field} differs from director"
+                        )
+            continue
         source_value = slide.get("source_svg")
         if not isinstance(source_value, str) or not source_value:
             errors.append(f"Page {page} is missing source_svg")
@@ -340,7 +506,7 @@ def validate(
 
         if needs_narration:
             narration = director_pages.get(page, {})
-            for field in ("role", "direction"):
+            for field in ("role", "intent", "direction", "rationale"):
                 if (
                     not isinstance(narration.get(field), str)
                     or not narration[field].strip()
@@ -391,7 +557,15 @@ def validate(
                 )
                 if merged_narration.get("text") != expected_text:
                     errors.append(f"Manifest page {page} narration is stale")
-                for field in ("chapter", "role", "direction", "segments"):
+                for field in (
+                    "chapter",
+                    "role",
+                    "intent",
+                    "direction",
+                    "rationale",
+                    "target_seconds",
+                    "segments",
+                ):
                     if merged_narration.get(field) != narration.get(field):
                         errors.append(
                             f"Manifest page {page} narration {field} "
@@ -457,7 +631,7 @@ def validate(
         warnings.append("fast_animation_timing.json has not been generated")
 
     audio_path = project / "video" / "audio_timeline.json"
-    if needs_narration and audio_path.is_file():
+    if needs_audio and audio_path.is_file():
         audio = load_object(audio_path)
         safety_ms = audio.get("advance_safety_ms", 150)
         if (
@@ -507,14 +681,20 @@ def validate(
                         errors.append(
                             f"Audio timeline page {page} duration differs from MP3"
                         )
-    elif needs_narration:
+    elif needs_audio:
         warnings.append("audio_timeline.json is missing; final timing is not verified")
 
-    required_approvals = ["content", "visual"]
+    required_approvals = ["content"]
+    if needs_visual:
+        required_approvals.append("visual")
     if needs_narration:
         required_approvals.append("narration")
     for approval in required_approvals:
-        passed, message = approval_status(project, approval)
+        try:
+            passed, message = approval_status(project, approval)
+        except (OSError, ValueError) as exc:
+            errors.append(f"Build state: {exc}")
+            break
         if not passed:
             warnings.append(message)
     return errors, warnings
@@ -523,6 +703,22 @@ def validate(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", type=Path, required=True)
+    parser.add_argument(
+        "--stage",
+        choices=(
+            "content",
+            "visual",
+            "animation",
+            "narration",
+            "audio",
+            "narration_audio",
+            "static_pptx",
+            "animated_pptx",
+            "narrated_pptx",
+            "video",
+        ),
+        help="Validate only the selected current stage instead of the final deliverable",
+    )
     parser.add_argument(
         "--strict",
         action="store_true",
@@ -534,7 +730,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     project = args.project.expanduser().resolve()
-    errors, warnings = validate(project)
+    errors, warnings = validate(project, stage=args.stage)
     for warning in warnings:
         print(f"WARN {warning}")
     for error in errors:

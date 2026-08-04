@@ -15,6 +15,7 @@ from typing import Any, Sequence
 from build_manifest import build_manifest, render_review
 from production_common import (
     canonical_hash,
+    chapter_audio_fingerprint,
     chapter_groups,
     file_hash,
     load_object,
@@ -26,6 +27,7 @@ from production_common import (
     project_paths,
     require_approvals,
     render_chapter_ssml,
+    voice_synthesis_projection,
     write_object,
 )
 
@@ -88,6 +90,7 @@ def apply_voice_overrides(
     rate: str | None,
     pitch: str | None,
     persist: bool = True,
+    announce: bool = True,
 ) -> dict[str, Any]:
     changed = False
     updated = dict(profile)
@@ -99,7 +102,7 @@ def apply_voice_overrides(
     if changed and persist:
         write_object(profile_path, normalized)
         print(f"OK  updated voice profile: {profile_path}")
-    elif changed:
+    elif changed and announce:
         print(f"PLAN update voice profile: {profile_path}")
     return normalized
 
@@ -235,18 +238,6 @@ def split_chapter(
         )
         output = audio_dir / f"{page:02d}.mp3"
         output.write_bytes(mp3)
-        page_input_digest = canonical_hash(
-            {
-                "chapter": chapter_digest,
-                "page": page,
-                "start_frame": start_frame,
-                "end_frame": end_frame,
-            }
-        )
-        (audio_dir / f"{page:02d}.sha256").write_text(
-            page_input_digest + "\n",
-            encoding="utf-8",
-        )
         page_rows.append(
             {
                 "page": page,
@@ -268,45 +259,87 @@ def split_chapter(
     }
 
 
+def chapter_cache_is_current(
+    chapter: dict[str, Any],
+    digest: str,
+    ssml: str,
+    paths: dict[str, Path],
+) -> bool:
+    digest_path = paths["audio_dir"] / f"{chapter['id']}.sha256"
+    ssml_path = paths["scripts_dir"] / f"{chapter['id']}.ssml"
+    metadata_path = paths["audio_dir"] / f"{chapter['id']}.bookmarks.json"
+    if (
+        not digest_path.is_file()
+        or digest_path.read_text(encoding="utf-8").strip() != digest
+        or not ssml_path.is_file()
+        or ssml_path.read_text(encoding="utf-8") != ssml
+        or not metadata_path.is_file()
+    ):
+        return False
+    try:
+        metadata = load_object(metadata_path)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+    expected_pages = [page["page"] for page in chapter["pages"]]
+    rows = metadata.get("pages")
+    if (
+        metadata.get("chapter") != chapter["id"]
+        or metadata.get("chapter_sha256") != digest
+        or not isinstance(rows, list)
+        or [row.get("page") for row in rows if isinstance(row, dict)]
+        != expected_pages
+    ):
+        return False
+    for row in rows:
+        if not isinstance(row, dict) or isinstance(row.get("page"), bool):
+            return False
+        page = row.get("page")
+        audio = paths["audio_dir"] / f"{page:02d}.mp3"
+        if (
+            row.get("mp3") != audio.name
+            or not audio.is_file()
+            or row.get("mp3_sha256") != file_hash(audio)
+        ):
+            return False
+    return True
+
+
 def synthesize_command(args: argparse.Namespace) -> int:
     project = args.project.expanduser().resolve()
     config = load_project_config(project)
-    if config["deliverable"] not in {"narrated_pptx", "video"}:
+    if config["deliverable"] not in {
+        "narration_audio",
+        "narrated_pptx",
+        "video",
+    }:
         raise RuntimeError(
-            "Synthesis is allowed only for narrated_pptx or video projects"
+            "Synthesis requires narration_audio, narrated_pptx, or video"
+        )
+    if any((args.voice, args.rate, args.pitch)):
+        raise ValueError(
+            "synthesize no longer changes voice settings; use configure-voice, "
+            "then approve narration first; audition is recommended"
         )
     paths = project_paths(project)
     director = load_object(paths["director"])
     manifest = load_object(paths["manifest"])
-    expected_pages = [
-        int(row["page"])
-        for row in manifest.get("slides", [])
-        if isinstance(row, dict)
-    ]
-    pages = normalize_director_pages(director, expected_pages)
+    if config["deliverable"] == "narration_audio":
+        pages = normalize_director_pages(director)
+        expected_pages = [row["page"] for row in pages]
+    else:
+        expected_pages = [
+            int(row["page"])
+            for row in manifest.get("slides", [])
+            if isinstance(row, dict)
+        ]
+        pages = normalize_director_pages(director, expected_pages)
     profile = load_voice_profile(paths["voice_profile"])
-    original_profile = profile
-    profile = apply_voice_overrides(
-        paths["voice_profile"],
-        profile,
-        voice=args.voice,
-        rate=args.rate,
-        pitch=args.pitch,
-        persist=not args.dry_run,
-    )
-    if profile != original_profile:
-        if args.dry_run:
-            print(
-                "PLAN voice profile would change; audition and narration "
-                "approval are required before synthesis"
-            )
-            return 0
-        raise RuntimeError(
-            "Voice profile updated. Audition the new voice, then run "
-            "approve --stage narration before synthesizing."
-        )
     require_approvals(project, ("content", "narration"))
-    merged_manifest = build_manifest(manifest, director, profile)
+    merged_manifest = build_manifest(
+        None if config["deliverable"] == "narration_audio" else manifest,
+        director,
+        profile,
+    )
     if not args.dry_run:
         write_object(paths["manifest"], merged_manifest)
         review_path = project / "video" / "narration_review.md"
@@ -319,14 +352,44 @@ def synthesize_command(args: argparse.Namespace) -> int:
         load_environment(project, args.env_file)
     selected = parse_pages(args.pages)
     groups = chapter_groups(pages)
+    chapter_contracts: dict[str, tuple[str, str, bool]] = {}
     if selected is not None:
         missing = sorted(selected - set(expected_pages))
         if missing:
             raise ValueError(f"Pages are not in the presentation: {missing}")
+        requested_groups = {
+            group["id"]
+            for group in groups
+            if selected.intersection(page["page"] for page in group["pages"])
+        }
+        stale_groups: set[str] = set()
+        for group in groups:
+            expected_digest, expected_ssml = chapter_audio_fingerprint(
+                group, profile
+            )
+            current = chapter_cache_is_current(
+                group,
+                expected_digest,
+                expected_ssml,
+                paths,
+            )
+            chapter_contracts[group["id"]] = (
+                expected_digest,
+                expected_ssml,
+                current,
+            )
+            if not current:
+                stale_groups.add(group["id"])
+        extra = stale_groups - requested_groups
+        if extra:
+            print(
+                "INFO also rebuilding stale chapters outside --pages: "
+                + ",".join(sorted(extra))
+            )
         groups = [
             group
             for group in groups
-            if selected.intersection(page["page"] for page in group["pages"])
+            if group["id"] in requested_groups.union(stale_groups)
         ]
     if not args.dry_run:
         paths["scripts_dir"].mkdir(parents=True, exist_ok=True)
@@ -335,29 +398,21 @@ def synthesize_command(args: argparse.Namespace) -> int:
     generated = 0
     reused = 0
     for chapter in groups:
-        ssml = render_chapter_ssml(chapter, profile)
-        digest = canonical_hash(
-            {
-                "chapter": chapter,
-                "voice_profile": profile,
-                "ssml": ssml,
-                "pipeline": 1,
-            }
-        )
+        if chapter["id"] in chapter_contracts:
+            digest, ssml, cache_current = chapter_contracts[chapter["id"]]
+        else:
+            digest, ssml = chapter_audio_fingerprint(chapter, profile)
+            cache_current = chapter_cache_is_current(
+                chapter,
+                digest,
+                ssml,
+                paths,
+            )
         ssml_path = paths["scripts_dir"] / f"{chapter['id']}.ssml"
         if not args.dry_run:
             ssml_path.write_text(ssml, encoding="utf-8")
         digest_path = paths["audio_dir"] / f"{chapter['id']}.sha256"
-        page_audio = [
-            paths["audio_dir"] / f"{page['page']:02d}.mp3"
-            for page in chapter["pages"]
-        ]
-        if (
-            not args.force
-            and digest_path.is_file()
-            and digest_path.read_text(encoding="utf-8").strip() == digest
-            and all(path.is_file() for path in page_audio)
-        ):
+        if not args.force and cache_current:
             reused += 1
             print(f"SKIP {chapter['id']}: inputs unchanged")
             continue
@@ -400,7 +455,9 @@ def synthesize_command(args: argparse.Namespace) -> int:
         state["artifacts"]["audio"] = {
             path.name: file_hash(path) for path in audio_files
         }
-        state["artifacts"]["audio_voice_sha256"] = canonical_hash(profile)
+        state["artifacts"]["audio_voice_sha256"] = canonical_hash(
+            voice_synthesis_projection(profile)
+        )
         write_object(paths["build_state"], state)
     print(
         f"OK  synthesis: generated={generated}, reused={reused}, "
@@ -412,9 +469,13 @@ def synthesize_command(args: argparse.Namespace) -> int:
 def audition_command(args: argparse.Namespace) -> int:
     project = args.project.expanduser().resolve()
     config = load_project_config(project)
-    if config["deliverable"] not in {"narrated_pptx", "video"}:
+    if config["deliverable"] not in {
+        "narration_audio",
+        "narrated_pptx",
+        "video",
+    }:
         raise RuntimeError(
-            "Voice audition is allowed only for narrated_pptx or video projects"
+            "Voice audition requires narration_audio, narrated_pptx, or video"
         )
     paths = project_paths(project)
     base_profile = load_voice_profile(paths["voice_profile"])
@@ -486,6 +547,131 @@ def audition_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def configure_voice_command(args: argparse.Namespace) -> int:
+    project = args.project.expanduser().resolve()
+    config = load_project_config(project)
+    if config["deliverable"] not in {
+        "narration_audio",
+        "narrated_pptx",
+        "video",
+    }:
+        raise RuntimeError("Voice configuration requires a narration deliverable")
+    paths = project_paths(project)
+    current = load_voice_profile(paths["voice_profile"])
+    updated = apply_voice_overrides(
+        paths["voice_profile"],
+        current,
+        voice=args.voice,
+        rate=args.rate,
+        pitch=args.pitch,
+        persist=False,
+        announce=args.dry_run,
+    )
+    pronunciation_file = getattr(args, "pronunciation_file", None)
+    replace_pronunciations = bool(
+        getattr(args, "replace_pronunciations", False)
+    )
+    if replace_pronunciations and pronunciation_file is None:
+        raise ValueError(
+            "--replace-pronunciations requires --pronunciation-file"
+        )
+    if pronunciation_file is not None:
+        glossary_path = pronunciation_file.expanduser().resolve()
+        glossary = load_object(glossary_path)
+        raw_pronunciations = (
+            glossary.get("pronunciations")
+            if "pronunciations" in glossary
+            else glossary
+        )
+        if not isinstance(raw_pronunciations, dict):
+            raise ValueError(
+                "Pronunciation file must be an object or contain a "
+                "pronunciations object"
+            )
+        merged_pronunciations = (
+            {} if replace_pronunciations else dict(updated["pronunciations"])
+        )
+        merged_pronunciations.update(raw_pronunciations)
+        updated = normalize_voice_profile(
+            {**updated, "pronunciations": merged_pronunciations}
+        )
+    director = load_object(paths["director"])
+    raw_pages = director.get("pages")
+    refreshed: dict[str, Any] | None = None
+    refreshed_review: str | None = None
+    refresh_error: str | None = None
+    derived_changed = False
+    if isinstance(raw_pages, list) and raw_pages:
+        try:
+            current_manifest = load_object(paths["manifest"])
+            refreshed = build_manifest(
+                None
+                if config["deliverable"] == "narration_audio"
+                else current_manifest,
+                director,
+                updated,
+            )
+            refreshed_review = render_review(refreshed)
+            review_path = project / "video" / "narration_review.md"
+            derived_changed = (
+                refreshed != current_manifest
+                or not review_path.is_file()
+                or review_path.read_text(encoding="utf-8") != refreshed_review
+            )
+        except (KeyError, OSError, TypeError, ValueError) as exc:
+            refresh_error = str(exc)
+    changed = updated != current
+    if args.dry_run:
+        if refreshed is not None and derived_changed:
+            print("PLAN refresh narration manifest and review")
+    else:
+        if changed:
+            write_object(paths["voice_profile"], updated)
+            print(f"OK  updated voice profile: {paths['voice_profile']}")
+        if refreshed is not None and refreshed_review is not None and derived_changed:
+            write_object(paths["manifest"], refreshed)
+            (project / "video" / "narration_review.md").write_text(
+                refreshed_review,
+                encoding="utf-8",
+            )
+    if updated == current:
+        print("INFO voice profile unchanged")
+    if refresh_error is not None:
+        voice_state = (
+            "would be updated"
+            if args.dry_run and changed
+            else "is updated"
+            if changed
+            else "is unchanged"
+        )
+        print(
+            f"WARN voice configuration {voice_state}, but the derived narration "
+            f"review could not be refreshed: {refresh_error}"
+        )
+    elif not isinstance(raw_pages, list) or not raw_pages:
+        print("INFO narration director is empty; there is no review to refresh")
+    else:
+        print("INFO derived narration manifest and review are current")
+    if args.dry_run:
+        print("PLAN configure-voice; no files changed")
+    elif changed or derived_changed:
+        print(
+            "OK  configure-voice; approve narration before synthesis; "
+            "audition is recommended"
+        )
+    elif refresh_error is not None:
+        print(
+            "OK  configure-voice; voice unchanged and derived review remains "
+            "unresolved; no approval status was inferred"
+        )
+    else:
+        print(
+            "OK  configure-voice; no changes; no new narration approval is "
+            "required solely for this no-op"
+        )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -500,6 +686,16 @@ def build_parser() -> argparse.ArgumentParser:
     synthesize.add_argument("--force", action="store_true")
     synthesize.add_argument("--dry-run", action="store_true")
     synthesize.set_defaults(func=synthesize_command)
+
+    configure = subparsers.add_parser("configure-voice")
+    configure.add_argument("--project", type=Path, required=True)
+    configure.add_argument("--voice")
+    configure.add_argument("--rate")
+    configure.add_argument("--pitch")
+    configure.add_argument("--pronunciation-file", type=Path)
+    configure.add_argument("--replace-pronunciations", action="store_true")
+    configure.add_argument("--dry-run", action="store_true")
+    configure.set_defaults(func=configure_voice_command)
 
     audition = subparsers.add_parser("audition")
     audition.add_argument("--project", type=Path, required=True)

@@ -10,7 +10,11 @@
     "mode": "uninitialized"
   },
   "content": {
-    "page_script": "page-script.md"
+    "page_script": "page-script.md",
+    "binding_mode": null,
+    "binding_audit": null,
+    "page_script_origin_document": null,
+    "page_count_at_init": null
   },
   "template": {
     "mode": "generated",

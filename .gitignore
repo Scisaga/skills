@@ -57,3 +57,4 @@ temp/
 !*/assets/**
 !*.ttf
 !*.otf
+.build/

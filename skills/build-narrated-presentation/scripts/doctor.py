@@ -26,10 +26,11 @@ AUDIO_MODULES = {
 
 
 def required_modules(stage: str) -> dict[str, str]:
-    modules = dict(STATIC_MODULES)
-    if stage in {"audio", "video"}:
-        modules.update(AUDIO_MODULES)
-    return modules
+    if stage == "static":
+        return dict(STATIC_MODULES)
+    if stage == "audio":
+        return dict(AUDIO_MODULES)
+    return {**STATIC_MODULES, **AUDIO_MODULES}
 
 
 def module_available(module: str) -> bool:
