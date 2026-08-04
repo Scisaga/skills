@@ -1,26 +1,80 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
   <defs>
+    <clipPath id="matrix-shell">
+      <rect x="64" y="228" width="1472" height="586" rx="20"/>
+    </clipPath>
+    <linearGradient id="input-header" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#352654"/>
+      <stop offset="1" stop-color="#292237"/>
+    </linearGradient>
+    <linearGradient id="execute-header" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#17414A"/>
+      <stop offset="1" stop-color="#1B3036"/>
+    </linearGradient>
+    <linearGradient id="verify-header" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#493B18"/>
+      <stop offset="1" stop-color="#332D1D"/>
+    </linearGradient>
     <style>
-      text { font-family: Inter, "Noto Sans SC", "Microsoft YaHei", sans-serif; fill: #F5F7FA; }
-      .title { font-size: 58px; font-weight: 800; }
+      text { font-family: Inter, "Noto Sans SC", "Microsoft YaHei", sans-serif; }
+      .title { font-size: 58px; font-weight: 800; fill: #F7F9FC; }
       .subtitle { font-size: 23px; font-weight: 500; fill: #AEB7C6; }
-      .eyebrow { font-size: 18px; font-weight: 800; letter-spacing: 2px; }
-      .column { font-size: 24px; font-weight: 900; }
-      .row-title { font-size: 24px; font-weight: 800; }
-      .body { font-size: 19px; font-weight: 600; fill: #CED4DE; }
-      .token { font-size: 17px; font-weight: 800; }
+      .eyebrow { font-size: 16px; font-weight: 800; letter-spacing: 1.8px; fill: #8E99AA; }
+      .header-kicker { font-size: 15px; font-weight: 900; letter-spacing: 1.6px; }
+      .header-title { font-size: 25px; font-weight: 900; fill: #F7F9FC; }
+      .row-title { font-size: 24px; font-weight: 800; fill: #F5F7FA; }
+      .cell-title { font-size: 22px; font-weight: 800; fill: #F5F7FA; }
+      .body { font-size: 19px; font-weight: 600; fill: #C6CEDA; }
+      .token { font-size: 17px; font-weight: 800; fill: #F5F7FA; }
+      .footer { font-size: 16px; font-weight: 700; fill: #7F8999; }
+      .badge-value { font-size: 22px; font-weight: 900; fill: #F7F9FC; }
+      .input-text { fill: #CDBBFF; }
+      .execute-text { fill: #8BEAF1; }
+      .verify-text { fill: #FFE08A; }
     </style>
   </defs>
 
   <g id="base">
-    <rect width="1600" height="900" fill="#111318"/>
+    <rect width="1600" height="900" fill="#101217"/>
+    <path d="M1280 0 H1600 V214 C1518 178 1439 186 1369 142 C1326 115 1298 67 1280 0 Z" fill="#171B23"/>
     <rect x="64" y="68" width="9" height="96" rx="4.5" fill="#A978FF"/>
-    <rect x="64" y="238" width="1472" height="568" rx="28" fill="#1B1F27" stroke="#343B49" stroke-width="3"/>
-    <path d="M396 238 V806 M776 238 V806 M1156 238 V806" fill="none" stroke="#343B49" stroke-width="3"/>
-    <path d="M64 346 H1536 M64 498 H1536 M64 650 H1536" fill="none" stroke="#343B49" stroke-width="3"/>
-    <text x="64" y="854" class="token" fill="#7F8999">原创技术矩阵样板 · 1600 × 900</text>
-    <circle cx="1485" cy="100" r="42" fill="#242A35" stroke="#A978FF" stroke-width="3"/>
-    <path d="M1463 100 H1507 M1485 78 V122" stroke="#A978FF" stroke-width="6" stroke-linecap="round"/>
+
+    <g clip-path="url(#matrix-shell)">
+      <rect x="64" y="228" width="1472" height="586" fill="#181C24"/>
+      <rect x="64" y="346" width="1472" height="154" fill="#1B2029"/>
+      <rect x="64" y="652" width="1472" height="162" fill="#1A1F27"/>
+
+      <rect x="64" y="228" width="320" height="118" fill="#232935"/>
+      <rect x="384" y="228" width="384" height="118" fill="url(#input-header)"/>
+      <rect x="768" y="228" width="384" height="118" fill="url(#execute-header)"/>
+      <rect x="1152" y="228" width="384" height="118" fill="url(#verify-header)"/>
+      <rect x="384" y="340" width="384" height="6" fill="#A978FF"/>
+      <rect x="768" y="340" width="384" height="6" fill="#27C3D1"/>
+      <rect x="1152" y="340" width="384" height="6" fill="#F6C344"/>
+
+      <path d="M384 228 V814 M768 228 V814 M1152 228 V814" fill="none" stroke="#343C49" stroke-width="2"/>
+      <path d="M64 346 H1536 M64 500 H1536 M64 652 H1536" fill="none" stroke="#343C49" stroke-width="2"/>
+    </g>
+    <rect x="64" y="228" width="1472" height="586" rx="20" fill="none" stroke="#3A4352" stroke-width="2"/>
+
+    <text x="64" y="858" class="footer">原创技术矩阵样板 · DARK / MATRIX · 1600 × 900</text>
+
+    <g transform="translate(1356 66)">
+      <rect width="180" height="82" rx="18" fill="#181D25" stroke="#323B49" stroke-width="1.5"/>
+      <g transform="translate(22 21)" fill="#A978FF">
+        <rect width="9" height="9" rx="2"/>
+        <rect x="14" width="9" height="9" rx="2" opacity=".7"/>
+        <rect x="28" width="9" height="9" rx="2" opacity=".45"/>
+        <rect y="14" width="9" height="9" rx="2" opacity=".7"/>
+        <rect x="14" y="14" width="9" height="9" rx="2"/>
+        <rect x="28" y="14" width="9" height="9" rx="2" opacity=".7"/>
+        <rect y="28" width="9" height="9" rx="2" opacity=".45"/>
+        <rect x="14" y="28" width="9" height="9" rx="2" opacity=".7"/>
+        <rect x="28" y="28" width="9" height="9" rx="2"/>
+      </g>
+      <text x="76" y="36" class="badge-value">3 × 3</text>
+      <text x="76" y="59" class="header-kicker input-text">MATRIX</text>
+    </g>
   </g>
 
   <g id="title">
@@ -29,86 +83,101 @@
   </g>
 
   <g id="beat_01">
-    <rect x="64" y="238" width="332" height="108" rx="28" fill="#242A35"/>
-    <text x="96" y="285" class="eyebrow" fill="#AEB7C6">DIMENSION</text>
-    <text x="96" y="320" class="column">比较维度</text>
+    <text x="96" y="270" class="eyebrow">DIMENSION</text>
+    <text x="96" y="306" class="header-title">比较维度</text>
 
-    <rect x="396" y="238" width="380" height="108" fill="#6E4ACF"/>
-    <circle cx="448" cy="292" r="27" fill="#C8B3FF"/>
-    <path d="M434 292 H462 M448 278 V306" stroke="#151922" stroke-width="6" stroke-linecap="round"/>
-    <text x="493" y="300" class="column">输入层</text>
+    <g transform="translate(416 254)">
+      <rect width="60" height="60" rx="13" fill="#CDBBFF"/>
+      <path d="M30 14 V36 M21 28 L30 37 L39 28 M17 43 H43 V48 H17 Z" fill="none" stroke="#171922" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <text x="496" y="272" class="header-kicker input-text">INPUT</text>
+    <text x="496" y="306" class="header-title">输入层</text>
 
-    <rect x="776" y="238" width="380" height="108" fill="#087F8C"/>
-    <circle cx="828" cy="292" r="27" fill="#82E6EE"/>
-    <path d="M812 292 H844 M820 281 L812 292 L820 303 M836 281 L844 292 L836 303" fill="none" stroke="#151922" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="873" y="300" class="column">执行层</text>
+    <g transform="translate(800 254)">
+      <rect width="60" height="60" rx="13" fill="#8BEAF1"/>
+      <circle cx="17" cy="30" r="4" fill="#171922"/>
+      <circle cx="43" cy="18" r="4" fill="#171922"/>
+      <circle cx="43" cy="42" r="4" fill="#171922"/>
+      <path d="M21 30 H29 C35 30 35 18 39 18 M29 30 C35 30 35 42 39 42" fill="none" stroke="#171922" stroke-width="3.5" stroke-linecap="round"/>
+    </g>
+    <text x="880" y="272" class="header-kicker execute-text">EXECUTE</text>
+    <text x="880" y="306" class="header-title">执行层</text>
 
-    <path d="M1156 266 Q1156 238 1184 238 H1508 Q1536 238 1536 266 V346 H1156 Z" fill="#B88700"/>
-    <circle cx="1208" cy="292" r="27" fill="#FFE08A"/>
-    <path d="M1193 292 l11 12 21-25" fill="none" stroke="#151922" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="1253" y="300" class="column">验证层</text>
+    <g transform="translate(1184 254)">
+      <rect width="60" height="60" rx="13" fill="#FFE08A"/>
+      <path d="M30 13 L44 18 V29 C44 39 38 46 30 50 C22 46 16 39 16 29 V18 Z" fill="none" stroke="#171922" stroke-width="3.5" stroke-linejoin="round"/>
+      <path d="M22 30 L28 36 L39 23" fill="none" stroke="#171922" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <text x="1264" y="272" class="header-kicker verify-text">VERIFY</text>
+    <text x="1264" y="306" class="header-title">验证层</text>
   </g>
 
   <g id="beat_02">
-    <text x="96" y="407" class="row-title">核心问题</text>
-    <text x="96" y="443" class="body">每层首先回答什么</text>
+    <text x="96" y="385" class="eyebrow">01 / QUESTION</text>
+    <text x="96" y="419" class="row-title">核心问题</text>
+    <text x="96" y="452" class="body">每层首先回答什么</text>
 
-    <rect x="428" y="374" width="316" height="94" rx="18" fill="#2A223C" stroke="#A978FF" stroke-width="2"/>
-    <text x="456" y="413" class="row-title" font-size="22">信息可靠吗？</text>
-    <text x="456" y="445" class="body">来源、范围、约束</text>
+    <rect x="416" y="370" width="320" height="106" rx="12" fill="#241E31" stroke="#7654B8" stroke-width="1.5"/>
+    <rect x="416" y="390" width="4" height="66" rx="2" fill="#A978FF"/>
+    <text x="448" y="414" class="cell-title">信息可靠吗？</text>
+    <text x="448" y="449" class="body">来源、范围、约束</text>
 
-    <rect x="808" y="374" width="316" height="94" rx="18" fill="#17343A" stroke="#27C3D1" stroke-width="2"/>
-    <text x="836" y="413" class="row-title" font-size="22">动作可控吗？</text>
-    <text x="836" y="445" class="body">权限、顺序、回退</text>
+    <rect x="800" y="370" width="320" height="106" rx="12" fill="#183238" stroke="#278E98" stroke-width="1.5"/>
+    <rect x="800" y="390" width="4" height="66" rx="2" fill="#27C3D1"/>
+    <text x="832" y="414" class="cell-title">动作可控吗？</text>
+    <text x="832" y="449" class="body">权限、顺序、回退</text>
 
-    <rect x="1188" y="374" width="316" height="94" rx="18" fill="#3B321A" stroke="#F6C344" stroke-width="2"/>
-    <text x="1216" y="413" class="row-title" font-size="22">结果可信么？</text>
-    <text x="1216" y="445" class="body">证据、差异、完成度</text>
+    <rect x="1184" y="370" width="320" height="106" rx="12" fill="#37301D" stroke="#A17E21" stroke-width="1.5"/>
+    <rect x="1184" y="390" width="4" height="66" rx="2" fill="#F6C344"/>
+    <text x="1216" y="414" class="cell-title">结果可信吗？</text>
+    <text x="1216" y="449" class="body">证据、差异、完成度</text>
   </g>
 
   <g id="beat_03">
-    <text x="96" y="559" class="row-title">关键对象</text>
-    <text x="96" y="595" class="body">只呈现稳定名词</text>
+    <text x="96" y="539" class="eyebrow">02 / OBJECTS</text>
+    <text x="96" y="573" class="row-title">关键对象</text>
+    <text x="96" y="606" class="body">只呈现稳定名词</text>
 
-    <rect x="428" y="526" width="96" height="38" rx="19" fill="#6E4ACF"/>
-    <text x="476" y="552" text-anchor="middle" class="token">文档</text>
-    <rect x="536" y="526" width="96" height="38" rx="19" fill="#4B3A79"/>
-    <text x="584" y="552" text-anchor="middle" class="token">事实</text>
-    <rect x="644" y="526" width="100" height="38" rx="19" fill="#343044"/>
-    <text x="694" y="552" text-anchor="middle" class="token">边界</text>
+    <rect x="416" y="550" width="96" height="44" rx="10" fill="#7249D1"/>
+    <text x="464" y="579" text-anchor="middle" class="token">文档</text>
+    <rect x="524" y="550" width="96" height="44" rx="10" fill="#4A396B" stroke="#6D578F" stroke-width="1"/>
+    <text x="572" y="579" text-anchor="middle" class="token">事实</text>
+    <rect x="632" y="550" width="104" height="44" rx="10" fill="#302C3B" stroke="#514761" stroke-width="1"/>
+    <text x="684" y="579" text-anchor="middle" class="token">边界</text>
 
-    <rect x="808" y="526" width="96" height="38" rx="19" fill="#087F8C"/>
-    <text x="856" y="552" text-anchor="middle" class="token">任务</text>
-    <rect x="916" y="526" width="96" height="38" rx="19" fill="#245A61"/>
-    <text x="964" y="552" text-anchor="middle" class="token">工具</text>
-    <rect x="1024" y="526" width="100" height="38" rx="19" fill="#293D42"/>
-    <text x="1074" y="552" text-anchor="middle" class="token">状态</text>
+    <rect x="800" y="550" width="96" height="44" rx="10" fill="#088D9B"/>
+    <text x="848" y="579" text-anchor="middle" class="token">任务</text>
+    <rect x="908" y="550" width="96" height="44" rx="10" fill="#245D65" stroke="#347681" stroke-width="1"/>
+    <text x="956" y="579" text-anchor="middle" class="token">工具</text>
+    <rect x="1016" y="550" width="104" height="44" rx="10" fill="#283C42" stroke="#38535B" stroke-width="1"/>
+    <text x="1068" y="579" text-anchor="middle" class="token">状态</text>
 
-    <rect x="1188" y="526" width="96" height="38" rx="19" fill="#B88700"/>
-    <text x="1236" y="552" text-anchor="middle" class="token">摘要</text>
-    <rect x="1296" y="526" width="96" height="38" rx="19" fill="#755D1A"/>
-    <text x="1344" y="552" text-anchor="middle" class="token">报告</text>
-    <rect x="1404" y="526" width="100" height="38" rx="19" fill="#443C28"/>
-    <text x="1454" y="552" text-anchor="middle" class="token">证据</text>
+    <rect x="1184" y="550" width="96" height="44" rx="10" fill="#B88A00"/>
+    <text x="1232" y="579" text-anchor="middle" class="token">摘要</text>
+    <rect x="1292" y="550" width="96" height="44" rx="10" fill="#755D1A" stroke="#967824" stroke-width="1"/>
+    <text x="1340" y="579" text-anchor="middle" class="token">报告</text>
+    <rect x="1400" y="550" width="104" height="44" rx="10" fill="#443C28" stroke="#665A39" stroke-width="1"/>
+    <text x="1452" y="579" text-anchor="middle" class="token">证据</text>
   </g>
 
   <g id="beat_04">
-    <text x="96" y="711" class="row-title">完成标准</text>
-    <text x="96" y="747" class="body">用动词表达输出</text>
+    <text x="96" y="691" class="eyebrow">03 / DONE</text>
+    <text x="96" y="725" class="row-title">完成标准</text>
+    <text x="96" y="758" class="body">用动词表达输出</text>
 
-    <circle cx="450" cy="718" r="18" fill="#A978FF"/>
-    <path d="M442 718 l6 7 12-15" fill="none" stroke="#151922" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="482" y="726" class="row-title" font-size="22">确认输入可用</text>
-    <text x="482" y="760" class="body">不合格则原路返工</text>
+    <rect x="416" y="690" width="52" height="52" rx="11" fill="#35264E" stroke="#7654B8" stroke-width="1.5"/>
+    <path d="M430 716 L440 726 L456 706" fill="none" stroke="#B68BFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="488" y="714" class="cell-title">确认输入可用</text>
+    <text x="488" y="748" class="body">不合格则原路返工</text>
 
-    <circle cx="830" cy="718" r="18" fill="#27C3D1"/>
-    <path d="M822 718 l6 7 12-15" fill="none" stroke="#151922" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="862" y="726" class="row-title" font-size="22">完成最小动作</text>
-    <text x="862" y="760" class="body">失败可定位、可恢复</text>
+    <rect x="800" y="690" width="52" height="52" rx="11" fill="#193A40" stroke="#278E98" stroke-width="1.5"/>
+    <path d="M814 716 L824 726 L840 706" fill="none" stroke="#40D6E3" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="872" y="714" class="cell-title">完成最小动作</text>
+    <text x="872" y="748" class="body">失败可定位、可恢复</text>
 
-    <circle cx="1210" cy="718" r="18" fill="#F6C344"/>
-    <path d="M1202 718 l6 7 12-15" fill="none" stroke="#151922" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="1242" y="726" class="row-title" font-size="22">交付可核验证据</text>
-    <text x="1242" y="760" class="body">自动检查与人工观看分开</text>
+    <rect x="1184" y="690" width="52" height="52" rx="11" fill="#40361A" stroke="#A17E21" stroke-width="1.5"/>
+    <path d="M1198 716 L1208 726 L1224 706" fill="none" stroke="#FFD45C" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="1256" y="714" class="cell-title">交付可核验证据</text>
+    <text x="1256" y="748" class="body">自动检查与人工观看分开</text>
   </g>
 </svg>
