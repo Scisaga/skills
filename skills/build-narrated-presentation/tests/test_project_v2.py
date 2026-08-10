@@ -368,6 +368,128 @@ class ProjectV2Tests(unittest.TestCase):
                 )
             )
 
+    def test_combined_pitch_blocks_approval_and_synthesis_recheck(self) -> None:
+        project = self.create_project(
+            "combined-pitch-block",
+            "narration_audio",
+            prepare_visual=False,
+        )
+        self.approve(project, "content")
+        self.prepare_narration_review(project)
+        paths = project_paths(project)
+        director = load_object(paths["director"])
+        director["pages"][0]["segments"][0]["pitch"] = "+0.1st"
+        write_object(paths["director"], director)
+        voice = load_object(paths["voice_profile"])
+        voice["pitch"] = "+0.1st"
+        write_object(paths["voice_profile"], voice)
+
+        with self.assertRaisesRegex(ValueError, r"page 1 segment 1.*\+0.2st"):
+            self.approve(project, "narration")
+
+        production_common.record_approval(
+            project,
+            "narration",
+            approved_by="forged-legacy-test",
+        )
+        with self.assertRaisesRegex(ValueError, r"page 1 segment 1.*\+0.2st"):
+            audio_production.synthesize_command(
+                argparse.Namespace(
+                    project=project,
+                    pages=None,
+                    voice=None,
+                    rate=None,
+                    pitch=None,
+                    env_file=None,
+                    force=False,
+                    dry_run=True,
+                )
+            )
+
+    def test_global_pitch_change_invalidates_all_chapter_fingerprints(self) -> None:
+        self.source.write_text(
+            "# 项目演讲稿\n\n"
+            "## 第 1 页｜开场 · 30 秒\n\n"
+            "第一页面向听众建立主题，并提供足以直接合成旁白的完整正文。\n\n"
+            "## 第 2 页｜结束 · 30 秒\n\n"
+            "第二页收束完整判断，并提供足以直接合成旁白的结束正文。\n",
+            encoding="utf-8",
+        )
+        self.source_sha = hashlib.sha256(self.source.read_bytes()).hexdigest()
+        project = self.create_project(
+            "pitch-fingerprint",
+            "narration_audio",
+            prepare_visual=False,
+        )
+        self.approve(project, "content")
+        prepare_narration.prepare(
+            project,
+            force=False,
+            chapter_max_seconds=30,
+        )
+        self.approve(project, "narration")
+        paths = project_paths(project)
+        director = load_object(paths["director"])
+        pages = production_common.normalize_director_pages(director)
+        groups = production_common.chapter_groups(pages)
+        self.assertEqual(len(groups), 2)
+        original_voice = production_common.load_voice_profile(
+            paths["voice_profile"]
+        )
+        before = [
+            production_common.chapter_audio_fingerprint(group, original_voice)[0]
+            for group in groups
+        ]
+
+        audio_production.configure_voice_command(
+            argparse.Namespace(
+                project=project,
+                voice=None,
+                rate=None,
+                pitch="+0.1st",
+                dry_run=False,
+            )
+        )
+
+        self.assertFalse(approval_status(project, "narration")[0])
+        updated_voice = production_common.load_voice_profile(
+            paths["voice_profile"]
+        )
+        after = [
+            production_common.chapter_audio_fingerprint(group, updated_voice)[0]
+            for group in groups
+        ]
+        self.assertTrue(all(left != right for left, right in zip(before, after)))
+        pitch_audit = load_object(paths["manifest"])["narration_pitch"]
+        self.assertEqual(pitch_audit["min_final_pitch"], "+0st")
+        self.assertEqual(pitch_audit["max_final_pitch"], "+0.1st")
+
+    def test_voice_configuration_rejects_invalid_combined_pitch_without_write(self) -> None:
+        project = self.create_project(
+            "pitch-config-block",
+            "narration_audio",
+            prepare_visual=False,
+        )
+        self.approve(project, "content")
+        self.prepare_narration_review(project)
+        paths = project_paths(project)
+        director = load_object(paths["director"])
+        director["pages"][0]["segments"][0]["pitch"] = "+0.1st"
+        write_object(paths["director"], director)
+        original_voice = paths["voice_profile"].read_bytes()
+
+        with self.assertRaisesRegex(ValueError, r"page 1 segment 1.*\+0.2st"):
+            audio_production.configure_voice_command(
+                argparse.Namespace(
+                    project=project,
+                    voice=None,
+                    rate=None,
+                    pitch="+0.1st",
+                    dry_run=False,
+                )
+            )
+        self.assertEqual(paths["voice_profile"].read_bytes(), original_voice)
+
     def test_build_state_and_approval_records_are_strictly_validated(self) -> None:
         project = self.create_project("strict-state", "static_pptx")
         self.approve(project, "content")

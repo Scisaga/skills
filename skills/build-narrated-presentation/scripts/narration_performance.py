@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from contract_versions import NARRATION_PERFORMANCE_CONTRACT_VERSION
+from narration_pitch import format_pitch, pitch_in_default_range
 
 
 PERFORMANCE_CONTRACT = (
@@ -39,10 +40,10 @@ _INTENT_LABELS = {
 _PROFILES = {
     "opening": {
         "rate": -2,
-        "pitch": 0.2,
+        "pitch": 0.0,
         "pause": 180,
         "direction": "温暖克制地正式开场；首段稍慢建立注意，中段清楚展开结构，末段收稳并引向主题。",
-        "rationale": "开场需要先建立信任，再交代路线；因此首尾降速、音高轻微回落，段间停顿略长。",
+        "rationale": "开场需要先建立信任，再交代路线；因此首尾降速，并用较长段间停顿稳定说话人身份。",
     },
     "context": {
         "rate": -1,
@@ -60,45 +61,45 @@ _PROFILES = {
     },
     "comparison": {
         "rate": -2,
-        "pitch": -0.1,
+        "pitch": 0.0,
         "pause": 190,
         "direction": "保持客观克制；对比项使用对称节奏，转折前短停，不制造高低优劣，结论句加重。",
-        "rationale": "比较页容易被听成站队；使用较低音高和对称停顿，让边界与选择依据成为重心。",
+        "rationale": "比较页容易被听成站队；使用对称语速和停顿，让边界与选择依据成为重心。",
     },
     "evidence": {
         "rate": -4,
-        "pitch": -0.4,
+        "pitch": 0.0,
         "pause": 200,
         "direction": "以审慎可信的证据语气讲述；数据和口径刻意放慢，限制条件与最终判断进一步收稳。",
         "rationale": "数字、标准和事实边界需要更高可辨识度；降低局部语速并延长停顿，避免机械播报。",
     },
     "case-study": {
         "rate": -2,
-        "pitch": -0.1,
+        "pitch": 0.0,
         "pause": 180,
         "direction": "采用工程案例叙事；先交代对象，再逐步增强问题张力，难点、结果与启示分开落点。",
         "rationale": "案例页需要形成对象—难点—解决—结果的推进；中段保持流动，关键判断和结尾收慢。",
     },
     "catalog": {
         "rate": 4,
-        "pitch": 0.2,
+        "pitch": 0.1,
         "pause": 140,
         "direction": "清晰分组而不逐项报表；同类内容适度提速，类别切换留停顿，末段归纳共同价值。",
         "rationale": "分类或清单页容易单调；用轻微提速维持流动，并在类别边界与归纳句处降速。",
     },
     "conclusion": {
         "rate": -4,
-        "pitch": -0.3,
+        "pitch": -0.1,
         "pause": 220,
         "direction": "降低速度并增强确定性；先收束判断，再给出边界或行动方向，结尾留出思考空间。",
-        "rationale": "判断页承担观点落地；整体降速、降低音高并拉开停顿，使结论有分量而不过度煽情。",
+        "rationale": "判断页承担观点落地；整体降速并拉开停顿，只用极轻微音高回落辅助收束。",
     },
     "closing": {
         "rate": -5,
-        "pitch": -0.4,
+        "pitch": -0.1,
         "pause": 240,
         "direction": "庄重而真诚地结束；回扣主旨，核心判断慢、稳、低，最后完整落地并自然致谢。",
-        "rationale": "结束页需要形成价值峰值并明确收尾；逐段减速、音高回落，最后一句不拖尾。",
+        "rationale": "结束页需要形成价值峰值并明确收尾；逐段减速、拉开停顿，只作极轻微音高回落。",
     },
 }
 
@@ -169,11 +170,9 @@ def _format_rate(value: int) -> str:
 
 
 def _format_pitch(value: float) -> str:
-    value = max(-1.0, min(1.0, value))
-    if abs(value) < 0.0001:
-        return "+0st"
-    rendered = f"{value:+.1f}".rstrip("0").rstrip(".")
-    return rendered + "st"
+    if not pitch_in_default_range(value):
+        raise ValueError("Default narration pitch must stay within ±0.1st")
+    return format_pitch(value)
 
 
 def derive_page_performance(
@@ -200,16 +199,12 @@ def derive_page_performance(
     for index, paragraph in enumerate(paragraphs):
         if segment_count == 1:
             rate = base_rate - 2
-            pitch = base_pitch - 0.1
         elif index == 0:
             rate = base_rate - 1
-            pitch = base_pitch + 0.1
         elif index == segment_count - 1:
             rate = base_rate - 2
-            pitch = base_pitch - 0.2
         else:
             rate = base_rate + (1 if index % 2 else 0)
-            pitch = base_pitch + (0.1 if index % 2 else 0.0)
         pause = 0
         if index < segment_count - 1:
             pause = min(
@@ -220,7 +215,7 @@ def derive_page_performance(
             {
                 "text": paragraph,
                 "rate": _format_rate(rate),
-                "pitch": _format_pitch(pitch),
+                "pitch": _format_pitch(base_pitch),
                 "pause_after_ms": pause,
             }
         )
@@ -239,35 +234,18 @@ def _rate_value(value: object) -> int | None:
     return int(value[:-1])
 
 
-def _pitch_value(value: object) -> float | None:
-    if value is None:
-        return 0.0
-    if not isinstance(value, str) or not re.fullmatch(
-        r"[+-]\d+(?:\.\d+)?st", value
-    ):
-        return None
-    return float(value[:-2])
-
-
 def _rate_bucket(value: object) -> str:
     parsed = _rate_value(value)
     if parsed is None:
         return "invalid"
+    if parsed <= -6:
+        return "very-slow"
     if parsed <= -4:
         return "slow"
+    if parsed >= 7:
+        return "very-fast"
     if parsed >= 4:
         return "fast"
-    return "neutral"
-
-
-def _pitch_bucket(value: object) -> str:
-    parsed = _pitch_value(value)
-    if parsed is None:
-        return "invalid"
-    if parsed <= -0.5:
-        return "low"
-    if parsed >= 0.5:
-        return "high"
     return "neutral"
 
 
@@ -303,7 +281,7 @@ def audit_narration_performance(director: dict[str, Any]) -> dict[str, Any]:
     directions: list[str] = []
     rationales: list[str] = []
     intents: list[str] = []
-    signatures: list[tuple[tuple[str, str, str], ...]] = []
+    signatures: list[tuple[tuple[str, str], ...]] = []
     cue_pages: list[int] = []
     page_evidence: list[dict[str, Any]] = []
     all_rates: set[str] = set()
@@ -346,7 +324,7 @@ def audit_narration_performance(director: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(raw_segments, list) or not raw_segments:
             errors.append(f"Director page {page} has no performance segments")
             continue
-        signature_rows: set[tuple[str, str, str]] = set()
+        signature_rows: set[tuple[str, str]] = set()
         has_executable_cue = False
         for index, segment in enumerate(raw_segments):
             if not isinstance(segment, dict):
@@ -364,12 +342,10 @@ def audit_narration_performance(director: dict[str, Any]) -> dict[str, Any]:
             signature_rows.add(
                 (
                     _rate_bucket(rate),
-                    _pitch_bucket(pitch),
                     _pause_bucket(pause, final=final),
                 )
             )
             rate_value = _rate_value(rate)
-            pitch_value = _pitch_value(pitch)
             pause_is_cue = bool(
                 not final
                 and isinstance(pause, int)
@@ -379,8 +355,6 @@ def audit_narration_performance(director: dict[str, Any]) -> dict[str, Any]:
             if (
                 isinstance(rate_value, int)
                 and abs(rate_value) >= 2
-                or isinstance(pitch_value, float)
-                and abs(pitch_value) >= 0.2
                 or pause_is_cue
             ):
                 has_executable_cue = True

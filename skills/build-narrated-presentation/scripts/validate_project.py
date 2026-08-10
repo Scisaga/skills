@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Sequence
 
+from narration_pitch import narration_pitch_audit
 from production_common import (
     approval_status,
     canonical_hash,
@@ -275,6 +276,7 @@ def validate(
         director_policy = director.get("policy", {})
         if director_policy.get("visual_sync") != "independent":
             errors.append("director.policy.visual_sync must be independent")
+        normalized_director: list[dict[str, Any]] = []
         try:
             normalized_director = normalize_director_pages(
                 director,
@@ -316,6 +318,20 @@ def validate(
                 errors.append("Manifest voice profile_sha256 is stale")
         else:
             errors.append("Manifest voice is missing")
+        if normalized_director and voice_profile:
+            pitch_audit = narration_pitch_audit(
+                normalized_director,
+                voice_profile,
+            )
+            for row in pitch_audit["out_of_range"]:
+                errors.append(
+                    "Combined narration pitch is out of range on page "
+                    f"{row['page']} segment {row['segment']}: "
+                    f"{row['global_pitch']} + {row['local_pitch']} = "
+                    f"{row['final_pitch']}"
+                )
+            if manifest.get("narration_pitch") != pitch_audit:
+                errors.append("Manifest narration_pitch evidence is stale")
 
     source_for_fidelity: Path | None = None
     if isinstance(source_config, dict):

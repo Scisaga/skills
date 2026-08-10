@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
+from narration_pitch import narration_pitch_audit
 from pptx_production import P_NS, slide_audio_target, timeline_rows
 from production_common import (
     canonical_hash,
@@ -684,6 +685,26 @@ def static_qa(
     }
 
 
+def narration_pitch_qa(
+    pages: list[dict[str, Any]],
+    voice: dict[str, Any],
+    manifest: dict[str, Any],
+    errors: list[str],
+) -> dict[str, Any]:
+    """Return the audio-QA pitch evidence and append blocking findings."""
+    pitch_audit = narration_pitch_audit(pages, voice)
+    for row in pitch_audit["out_of_range"]:
+        errors.append(
+            "Combined narration pitch is out of range on page "
+            f"{row['page']} segment {row['segment']}: "
+            f"{row['global_pitch']} + {row['local_pitch']} = "
+            f"{row['final_pitch']}"
+        )
+    if manifest.get("narration_pitch") != pitch_audit:
+        errors.append("Manifest narration_pitch evidence is stale")
+    return pitch_audit
+
+
 def audio_qa(
     project: Path,
     errors: list[str],
@@ -708,6 +729,8 @@ def audio_qa(
         if isinstance(row, dict)
     ]
     pages = normalize_director_pages(director, expected_pages)
+    pitch_audit = narration_pitch_qa(pages, voice, manifest, errors)
+    pitch_is_valid = pitch_audit["status"] == "pass"
     groups = chapter_groups(pages)
     manifest_voice = manifest.get("voice")
     if (
@@ -877,7 +900,13 @@ def audio_qa(
     chapter_results: list[dict[str, Any]] = []
     for group in groups:
         page_numbers = [page["page"] for page in group["pages"]]
-        expected_digest, expected_ssml = chapter_audio_fingerprint(group, voice)
+        expected_digest: str | None = None
+        expected_ssml: str | None = None
+        if pitch_is_valid:
+            expected_digest, expected_ssml = chapter_audio_fingerprint(
+                group,
+                voice,
+            )
         digest_path = paths["audio_dir"] / f"{group['id']}.sha256"
         ssml_path = paths["scripts_dir"] / f"{group['id']}.ssml"
         recorded_digest = (
@@ -885,9 +914,9 @@ def audio_qa(
             if digest_path.is_file()
             else None
         )
-        if recorded_digest != expected_digest:
+        if pitch_is_valid and recorded_digest != expected_digest:
             errors.append(f"Chapter {group['id']} audio digest is stale")
-        if (
+        if pitch_is_valid and (
             not ssml_path.is_file()
             or ssml_path.read_text(encoding="utf-8") != expected_ssml
         ):
@@ -901,7 +930,10 @@ def audio_qa(
                 errors.append(
                     f"Chapter {group['id']} bookmark metadata has stale id"
                 )
-            if metadata.get("chapter_sha256") != expected_digest:
+            if (
+                pitch_is_valid
+                and metadata.get("chapter_sha256") != expected_digest
+            ):
                 errors.append(
                     f"Chapter {group['id']} bookmark digest is stale"
                 )
@@ -943,6 +975,7 @@ def audio_qa(
                     else None
                 ),
                 "input_fingerprint": expected_digest,
+                "pitch_status": pitch_audit["status"],
             }
         )
 
@@ -994,6 +1027,15 @@ def audio_qa(
         "pages": page_results,
         "chapters": chapter_results,
         "performance_audit": performance_audit,
+        "narration_pitch": pitch_audit,
+        "voice_identity": {
+            "status": "consistent",
+            "provider": voice["provider"],
+            "voice": voice["voice"],
+            "style": voice["style"],
+            "global_rate": voice["rate"],
+            "global_pitch": voice["pitch"],
+        },
         "timing_review_pages": timing_review_pages,
         "pronunciation_terms": applicable_terms,
         "pronunciation_review": pronunciation_review,

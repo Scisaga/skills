@@ -18,11 +18,16 @@ from contract_versions import (
     NARRATION_PERFORMANCE_CONTRACT_VERSION,
     PAGE_SCRIPT_CONTRACT_VERSION,
 )
+from narration_pitch import (
+    PITCH_CONTRACT,
+    PITCH_RE,
+    combine_pitch as combine_narration_pitch,
+    validate_pitch_component,
+)
 from narration_performance import INTENTS, PERFORMANCE_CONTRACT
 
 
 RATE_RE = re.compile(r"^[+-]\d+%$")
-PITCH_RE = re.compile(r"^[+-]\d+(?:\.\d+)?st$")
 TECHNICAL_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z0-9]+(?![A-Za-z0-9])")
 PURE_GRADE_RE = re.compile(r"(?<![A-Za-z0-9])\d{3,4}(?![A-Za-z0-9])")
 MATERIAL_LIST_CONTEXT_RE = re.compile(
@@ -316,6 +321,7 @@ def normalize_voice_profile(profile: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("voice_profile.rate must use the +5% form")
     if not isinstance(pitch, str) or not PITCH_RE.fullmatch(pitch):
         raise ValueError("voice_profile.pitch must use the +0st form")
+    validate_pitch_component(pitch, field="voice_profile.pitch")
     if (
         isinstance(page_break_ms, bool)
         or not isinstance(page_break_ms, int)
@@ -447,6 +453,11 @@ def validate_segments(page: int, segments: object) -> list[dict[str, Any]]:
             not isinstance(pitch, str) or not PITCH_RE.fullmatch(pitch)
         ):
             raise ValueError(f"Page {page} segment {index} has invalid pitch")
+        if pitch is not None:
+            validate_pitch_component(
+                pitch,
+                field=f"Page {page} segment {index} pitch",
+            )
         row = {
             "text": text.strip(),
             "rate": rate,
@@ -704,11 +715,7 @@ def combine_rate(global_rate: str, local_rate: str) -> str:
 
 
 def combine_pitch(global_pitch: str, local_pitch: str | None) -> str:
-    global_value = float(global_pitch[:-2])
-    local_value = float(local_pitch[:-2]) if local_pitch is not None else 0.0
-    total = global_value + local_value
-    rendered = f"{total:+.6f}".rstrip("0").rstrip(".")
-    return rendered + "st"
+    return combine_narration_pitch(global_pitch, local_pitch)
 
 
 def render_chapter_ssml(
@@ -794,8 +801,9 @@ def chapter_audio_fingerprint(
             {
                 "chapter": chapter_projection,
                 "voice_profile": voice_projection,
+                "pitch_contract": PITCH_CONTRACT,
                 "ssml": ssml,
-                "pipeline": 2,
+                "pipeline": 3,
             }
         ),
         ssml,

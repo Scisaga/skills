@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from build_manifest import build_manifest, render_review
+from narration_pitch import require_narration_pitch
 from production_common import (
     canonical_hash,
     chapter_audio_fingerprint,
@@ -602,6 +603,10 @@ def configure_voice_command(args: argparse.Namespace) -> int:
     refresh_error: str | None = None
     derived_changed = False
     if isinstance(raw_pages, list) and raw_pages:
+        require_narration_pitch(
+            normalize_director_pages(director),
+            updated,
+        )
         try:
             current_manifest = load_object(paths["manifest"])
             refreshed = build_manifest(

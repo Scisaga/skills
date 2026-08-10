@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 from typing import Any, Sequence
 
+from narration_pitch import require_narration_pitch
 from production_common import (
     canonical_hash,
     chapter_groups,
@@ -54,6 +55,8 @@ def build_manifest(
             row["page"] for row in normalize_director_pages(director)
         ]
     rows = validate_director(director, expected_pages)
+    normalized_pages = [rows[page] for page in expected_pages]
+    pitch_audit = require_narration_pitch(normalized_pages, voice_profile)
     result = copy.deepcopy(visual) if isinstance(visual, dict) else {}
     if not isinstance(result.get("slides"), list) or not result["slides"]:
         result["slides"] = [{"page": page} for page in expected_pages]
@@ -70,6 +73,7 @@ def build_manifest(
     }
     result["narration_policy"] = copy.deepcopy(director["policy"])
     result["narration_policy"]["continuous_chapter_synthesis"] = True
+    result["narration_pitch"] = pitch_audit
     for slide in result["slides"]:
         page = int(slide["page"])
         narration = copy.deepcopy(rows[page])
@@ -80,7 +84,6 @@ def build_manifest(
         if narration.get("target_seconds") is not None:
             slide["target_seconds"] = narration["target_seconds"]
         slide["narration"] = narration
-    normalized_pages = [rows[page] for page in expected_pages]
     result["pronunciation_review"] = pronunciation_audit(
         normalized_pages,
         voice_profile["pronunciations"],
@@ -99,6 +102,7 @@ def build_manifest(
 def render_review(manifest: dict[str, Any]) -> str:
     voice = manifest["voice"]
     slides = manifest["slides"]
+    pitch_audit = manifest["narration_pitch"]
     intents = sorted(
         {
             slide["narration"]["intent"]
@@ -130,6 +134,11 @@ def render_review(manifest: dict[str, Any]) -> str:
         f"- 音色：`{voice['name']}`",
         f"- 全局 style：`{voice['style'] or 'none'}`",
         f"- 全局语速 / 音高：`{voice['rate']}` / `{voice['pitch']}`",
+        f"- 最终音高范围：`{pitch_audit['min_final_pitch']}` 至 "
+        f"`{pitch_audit['max_final_pitch']}`（允许 "
+        f"`{pitch_audit['allowed_min_pitch']}` 至 "
+        f"`{pitch_audit['allowed_max_pitch']}`）",
+        f"- 音高契约：`{pitch_audit['contract']}`",
         f"- 表现契约：`{manifest['narration_policy'].get('performance_contract')}`",
         f"- 页面 / 表达意图：{len(slides)} 页 / {', '.join(intents)}",
         f"- 局部语速：{', '.join(local_rates)}",
@@ -202,8 +211,8 @@ def render_review(manifest: dict[str, Any]) -> str:
                 "",
                 f"**目标时长：** {target_display}",
                 "",
-                "| 段 | 局部语速 | 局部音高 | 最终语速 | 最终音高 | 段后停顿 | 正文 |",
-                "|---:|---:|---:|---:|---:|---:|---|",
+                "| 段 | 局部语速 | 全局音高 | 局部音高 | 最终语速 | 最终音高 | 段后停顿 | 正文 |",
+                "|---:|---:|---:|---:|---:|---:|---:|---|",
             ]
         )
         for index, segment in enumerate(narration["segments"], 1):
@@ -212,8 +221,8 @@ def render_review(manifest: dict[str, Any]) -> str:
             effective_pitch = combine_pitch(voice["pitch"], local_pitch)
             segment_text = segment["text"].replace("|", "\\|")
             lines.append(
-                f"| {index} | `{segment['rate']}` | `{local_pitch}` | "
-                f"`{effective_rate}` | `{effective_pitch}` | "
+                f"| {index} | `{segment['rate']}` | `{voice['pitch']}` | "
+                f"`{local_pitch}` | `{effective_rate}` | `{effective_pitch}` | "
                 f"{segment['pause_after_ms']}ms | {segment_text} |"
             )
         lines.append("")
@@ -243,13 +252,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     voice_profile = load_voice_profile(profile_path)
     manifest = build_manifest(visual, director, voice_profile)
+    review = render_review(manifest)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.review.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    args.review.write_text(render_review(manifest), encoding="utf-8")
+    args.review.write_text(review, encoding="utf-8")
     print(f"OK  {args.output}: {len(manifest['slides'])} slides")
     print(f"OK  {args.review}: narration review")
     return 0

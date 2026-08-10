@@ -9,6 +9,7 @@ SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from build_manifest import build_manifest, render_review
+from narration_performance import PERFORMANCE_CONTRACT
 from production_common import (
     normalize_voice_profile,
     pronunciation_audit,
@@ -38,7 +39,7 @@ def director(text: str) -> dict:
         "schema_version": 2,
         "policy": {
             "visual_sync": "independent",
-            "performance_contract": "rhetorical-v1",
+            "performance_contract": PERFORMANCE_CONTRACT,
         },
         "pages": [
             {

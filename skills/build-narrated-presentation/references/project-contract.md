@@ -191,19 +191,20 @@ content acceptance fingerprint 包含 profile、门禁、复核和绑定证据�
 - 每页 `narration`；
 - `voice` 及声音配置摘要；
 - `narration_policy`；
+- `narration_pitch`：最终音高契约、全局/局部/最终值、最小值、最大值和越界段落；
 - `pronunciation_review`：正文技术代号的已配置读法和非阻断未覆盖清单；
 - 连续的 `narration_chapters`；
 - 与导演稿一致的 `slide_count`。
 
 导演稿可以调整章节、表达意图、语速、音高和停顿，但各页 `segments[].text` 拼接后必须与 `page-script.md` 的规范化口述正文一致。每页还记录 `intent`、`direction`、`rationale` 和可选 `target_seconds`；前三项用于审阅，真正改变声音的是 segment 参数。正文删改必须先发生在 `page-script.md`，重新通过 content 审批后再派生导演稿。
 
-非空导演稿要求 `policy.performance_contract: rhetorical-v1`。narration 审批摘要记录稳定的表现契约版本和 performance audit；统一书面 direction、统一有效韵律或微小参数抖动不能成为通过证据。旧表现契约仍可读取项目内容，但必须重新准备或修正导演稿后再批准旁白。
+非空导演稿要求 `policy.performance_contract: rhetorical-v2`。narration 审批摘要记录稳定的表现契约版本、performance audit 和最终音高审计；profile 差异由语速区间与非末段停顿/断句组合证明，音高不单独计入，统一书面 direction、统一有效韵律、微小参数抖动或 `-0.1st/+0.1st` 机械交替都不能成为通过证据。旧表现契约仍可读取项目内容，但必须重新准备或修正导演稿后再批准旁白。
 
 `narration_audio` 的 manifest 页面只需要页码和旁白字段。视觉项目再要求每页 `source_svg`；动画项目还要求 `beats[]` 和图层计划。不得因空视觉 manifest 阻断纯音频项目。
 
 静态和动画 PPTX 基线都必须记录 PPTX SHA、当前内容字节 fingerprint 和相应 visual fingerprint。SVG、模板、动画计划或 PPTX 变化后不能复用旧基线，也不能给一个未由当前视觉装配器生成的旧文件补盖“当前”状态。
 
-声音和发音词典只在 `video/voice_profile.json` 维护。`configure-voice` 可合并或替换独立 glossary；导演稿非空时同步刷新 manifest 和 `narration_review.md`，旧 narration 审批自动失效。候选技术代号发现只服务审阅，不自动写入词典或创建新的审批层。
+声音和发音词典只在 `video/voice_profile.json` 维护。全局与局部 pitch 都限制在 `±0.1st`，相加后的最终 pitch 仍必须在 `±0.1st`，不自动 clamp。`configure-voice` 可合并或替换独立 glossary；导演稿非空时先重算全部段落的最终音高，越界则不写入，否则同步刷新 manifest 和 `narration_review.md`，旧 narration 审批自动失效。候选技术代号发现只服务审阅，不自动写入词典或创建新的审批层。
 
 音频时间轴每页记录：
 

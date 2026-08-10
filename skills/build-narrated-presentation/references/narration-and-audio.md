@@ -3,6 +3,7 @@
 ## 目录
 
 - [从逐页正文生成导演稿](#从逐页正文生成导演稿)
+- [稳定说话人音高契约](#稳定说话人音高契约)
 - [声音配置](#声音配置)
 - [专业术语与材料牌号](#专业术语与材料牌号)
 - [配置、审阅与试听顺序](#配置审阅与试听顺序)
@@ -47,13 +48,13 @@ plan 必须覆盖全部页，每页只允许覆盖 `intent`、`direction`、`rat
   "role": "说明工程边界",
   "intent": "comparison",
   "direction": "保持客观克制，对比项使用对称节奏，结论句加重。",
-  "rationale": "比较页容易被听成站队，因此降低音高并在转折处留停。",
+  "rationale": "比较页容易被听成站队，因此使用对称语速并在转折处留停。",
   "target_seconds": 45,
   "segments": [
     {
       "text": "这里保留该页实际口述正文。",
       "rate": "-4%",
-      "pitch": "-0.3st",
+      "pitch": "+0st",
       "pause_after_ms": 180
     }
   ]
@@ -62,9 +63,26 @@ plan 必须覆盖全部页，每页只允许覆盖 `intent`、`direction`、`rat
 
 `direction`、`intent` 和 `rationale` 是审阅依据，本身不会改变声音。实际进入 SSML 的只有页面 `segments[].rate`、`pitch`、`pause_after_ms`，以及全局 voice/style/rate/pitch/page break 和实际命中的发音规则。不得把书面语气说明去重当成可听编排，也不得用这些参数绑定动画时序。
 
-旁白审批在原有边界内执行一次轻量 performance audit，不增加新门禁或状态文件。四页以上的导演稿若仍使用统一 direction、缺少多个实质可听 profile，或只有 `+0%/+0st/100ms` 模板，将直接阻断。审计按有意义的语速、音高和停顿区间分桶，`+1%` 一类微小抖动不能冒充语气变化。表现契约版本进入 narration 审批摘要，契约升级后旧审批自动失效。
+旁白审批在原有边界内执行一次轻量 performance audit，不增加新门禁或状态文件。四页以上的导演稿若仍使用统一 direction、缺少多个实质可听 profile，或只有统一语速和停顿模板，将直接阻断。审计以有意义的语速区间和非末段停顿/断句组合为 profile 证据；音高不单独计入，机械交替 `-0.1st/+0.1st` 也不能制造新 profile。`+1%` 一类微小语速抖动同样不能冒充语气变化。表现契约版本进入 narration 审批摘要，契约升级后旧审批自动失效。
 
 `narration_review.md` 必须显示当前音色和全局参数，并逐段列出局部与最终 rate/pitch、停顿、表达意图和编排依据。人工或智能体修改 `narration_director.json` 后运行 `manifest` 刷新审阅稿，再进行 narration 审批。
+
+## 稳定说话人音高契约
+
+默认旁白的最终音高按数值相加：
+
+```text
+final_pitch = global_pitch + local_pitch
+allowed_final_pitch = [-0.1st, +0.1st]
+```
+
+全局与局部音高本身也只接受 `-0.1st` 至 `+0.1st`，但分别合法不代表组合合法。全局 `+0.1st` 与局部 `+0.1st` 的最终值为 `+0.2st`，必须在 manifest、narration 审批、合成和 audio QA 阶段阻断；全局 `-0.1st` 与局部 `+0.1st` 的最终值为 `+0st`，允许通过。任何入口都不得自动 clamp，避免审阅意图与实际 SSML 不一致。
+
+默认优先使用 `+0st`，只在明确的轻微抬升、转折或收束处使用 `±0.1st`。段落层次主要由语速、非末段停顿、断句和重音组织；不要按段落奇偶机械交替音高，也不要为了通过 performance audit 扩大或摆动音高。整套旁白保持 `+0st` 是合法状态，只要语速和停顿具有合理变化。
+
+manifest 保存逐页逐段的全局、局部和最终音高，以及最终最小值、最大值和越界段落；`narration_review.md` 显示同一证据。最终 SSML 生成前再次调用同一硬门禁，audio QA 再计算并报告相同范围，三处结果必须一致。
+
+只有显式范围覆盖能够绑定当前 voice/style/global 配置的试听确认时，才允许扩大默认范围。当前 `build_state.json` 尚未记录这种可验证确认，因此本技能当前不提供宽范围覆盖；不能用手工字段或临时 SSML 绕过。
 
 ## 声音配置
 
@@ -110,7 +128,7 @@ run.sh configure-voice --project PROJECT \
 
 `configure-voice` 更新声音配置并停止；导演稿非空且现有 manifest 可合并时同时刷新旁白 manifest 与 `narration_review.md`。它不修改源稿、逐页稿或导演稿，也不请求 TTS，也不要求视觉审批或动画 PPTX 基线。损坏或未完成的视觉 manifest 不阻断声音配置写入，命令会明确 warning 派生审阅稿未刷新，之后 narration 审批仍会阻断陈旧派生物；空导演稿则明确说明尚无 review。voice、rate 或 pitch 的生产投影实际变化时，旧 narration 审批自动失效；no-op 配置保持 current。`synthesize` 不接受临时声音覆盖；所有生产声音都必须先进入 `voice_profile.json` 并完成审阅。
 
-全局与局部 rate、pitch 按数值相加。声音变化不触发输入门禁或内容审批，只使 narration 审批、相应章节缓存及音频下游失效。
+全局与局部 rate、pitch 按数值相加；pitch 必须按上一节检查最终值。声音变化不触发输入门禁或内容审批，但会重新计算全部段落的最终音高，并使 narration 审批、全部章节缓存及音频下游失效。若新全局音高导致任一段越界，`configure-voice` 直接失败且不写入配置。
 
 默认环境变量：
 
@@ -279,7 +297,7 @@ T_deck = ΣT_slide + ΣT_transition
 run.sh qa --project PROJECT --level audio
 ```
 
-自动检查页面集合、逐页 MP3、真实时长、bookmark、声音摘要、表现审计和时间轴；人工试听仍负责发音、切分和听感。
+自动检查页面集合、逐页 MP3、真实时长、bookmark、声音摘要、表现审计和时间轴；同时报告最终音高最小值、最大值及越界页码/段落，任一最终值超出 `±0.1st` 即失败，并确认同一 voice、style 与全局配置贯穿全部章节。人工试听仍负责发音、切分、声音年龄、质感、身份稳定性和整体听感。
 
 ## 纯音频与演示分流
 

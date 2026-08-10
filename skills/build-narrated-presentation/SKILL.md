@@ -1,6 +1,6 @@
 ---
 name: build-narrated-presentation
-description: 从逐页演讲稿、产品计划、执行方案或渲染型 Markdown 制作逐页旁白 MP3、静态 PPTX、动画 PPTX、自动旁白 PPTX 或 PowerPoint 导出的 MP4；保真绑定已整理的逐页正文，并要求其他输入显式提供 adapted page-script，支持可执行语气编排、音频独立交付、模板复用、技术信息图、章节连续合成后逐页切分、真实音频时长换页、声音重配和分级验收，自动重编码修正 Office 2019 CreateVideo 的像素色阶，并在 PowerPoint 导出后直接交付而不做视频画面检查。适用于“把演讲稿逐页配音”“只生成每页音频”“把文档生成 PPT/PPTX”“复用现有 PPT 模板”“制作技术架构演示”“给 PPT 加动画或旁白”“更换音色或发音”“只替换 PPT 音频”“导出旁白视频”及“检查媒体嵌入和换页”的场景。
+description: 从逐页演讲稿、产品计划、执行方案或渲染型 Markdown 制作逐页旁白 MP3、静态 PPTX、动画 PPTX、自动旁白 PPTX 或 PowerPoint 导出的 MP4；保真绑定已整理的逐页正文，并要求其他输入显式提供 adapted page-script，支持可执行语气编排、愿景型路线图与商业蓝图表达、音频独立交付、模板复用、技术信息图、章节连续合成后逐页切分、真实音频时长换页、声音重配和分级验收，自动重编码修正 Office 2019 CreateVideo 的像素色阶，并在 PowerPoint 导出后直接交付而不做视频画面检查。适用于“把演讲稿逐页配音”“只生成每页音频”“把文档生成 PPT/PPTX”“制作未来路线、技术愿景或商业蓝图”“复用现有 PPT 模板”“制作技术架构演示”“给 PPT 加动画或旁白”“更换音色或发音”“只替换 PPT 音频”“导出旁白视频”及“检查媒体嵌入和换页”的场景。
 ---
 
 # Build Narrated Presentation
@@ -23,14 +23,16 @@ description: 从逐页演讲稿、产品计划、执行方案或渲染型 Markdo
 10. 连续语气按章节一次合成，在页边界插入 bookmark，再切成逐页 MP3；每页交付一个 MP3。
 11. 页面换页使用真实 MP3 时长加安全余量。`video` 在当前旁白 PPTX 通过 standard QA 后交给 PowerPoint 导出。默认 `--color-range-fix auto`：识别为 Office 2019 时不能只改 H.264 标签，必须用 FFmpeg 把误用的 full-range 像素映射为标准 limited range 并以 libx264 重新编码，音频 stream copy；识别为 Office 2021/2022 或更新版本时跳过。兼容处理后立即停止，不做 ffprobe、抽帧、播放、人工观看或 release QA。
 12. 单页 SVG 设计改稿是局部任务：只读取目标页、模板安全区和所选视觉规范，只修改目标 SVG，并做单页解析、画布、资源引用、全尺寸与缩略图检查。除非用户明确要求更新演示交付物，不运行 `init`、输入门禁、审批、全项目 `validate`、PPTX 装配、音频生产或任何等级的 `qa`，也不顺带修改其他页面和既有交付物。
+13. 制作未来路线、技术愿景或商业蓝图页时，主体先表达方向、价值、规模化逻辑和明确主张；事实边界集中放在低干扰脚注、来源说明、验收记录或内部 QA。除法律、安全、财务或重大事实误导风险外，不在标题、标签、正文和旁白中反复堆叠防御性限定。规划能力使用“将、面向、形成、推进、成为”等未来时态，不能写成已经实现；该规则不授权改写 `identity` 绑定的逐页稿。
+14. 默认旁白必须保持单一、稳定的说话人身份。全局音高与局部音高相加后的最终 SSML 音高必须位于 `-0.1st` 至 `+0.1st`；旁白审批、合成和 audio QA 都检查最终值并在越界时阻断，不能静默截断。音高只作极轻微修饰，不能单独成为 performance profile 证据，也不能机械交替 `-0.1st/+0.1st` 冒充编排；优先用语速、停顿、断句和重音形成层次。只有显式范围覆盖绑定当前音色的试听确认后才可扩大；当前状态机尚未记录该确认，因此不提供范围覆盖。
 
 ## 工作流
 
 1. 先判断是完整生产还是单页 SVG 设计改稿；后者直接读取 `references/visual-and-animation.md` 的局部流程并在单页检查后停止。
 2. 完整生产读取 `references/input-quality-gate.md`，识别输入 profile 和绑定方式。
 3. 选择 `narration_audio`、`static_pptx`、`animated_pptx`、`narrated_pptx` 或 `video`，直接运行 `init`。计划类输入只额外准备一次 SHA 绑定的语义复核。
-4. 检查 `page-script.md` 后执行 `approve --stage content`。
-5. 需要旁白时运行 `prepare-narration`，逐页检查 `narration_review.md` 中的表达意图、编排依据、最终 rate/pitch/pause，以及专业术语的“原词 → 实际读法”。结合上下文为缩写、材料牌号、工程标准号建立发音词典；未确认项保留为警告，不让 TTS 猜读后直接批量生产。必要时修改导演稿或声音词典并刷新 manifest，推荐先合成术语试听，随后批准旁白。
+4. 检查 `page-script.md` 后执行 `approve --stage content`。若包含未来路线、技术愿景或商业蓝图页，先按 `references/vision-and-roadmap-narrative.md` 检查主叙事、时态与事实边界；`identity` 稿只提出修改建议，得到改写授权并切换为 `adapted` 后才能重写。
+5. 需要旁白时运行 `prepare-narration`，逐页检查 `narration_review.md` 中的表达意图、编排依据、全局/局部/最终音高、最终 rate 与 pause，以及专业术语的“原词 → 实际读法”。最终音高必须在 `±0.1st` 内，表现差异以语速、停顿、断句和重音为主。结合上下文为缩写、材料牌号、工程标准号建立发音词典；未确认项保留为警告，不让 TTS 猜读后直接批量生产。必要时修改导演稿或声音词典并刷新 manifest，推荐先合成术语试听，随后批准旁白。
 6. `narration_audio` 合成逐页 MP3、生成真实时间轴、执行 audio QA 后停止。
 7. 需要演示时，适配模板并制作 1–4 张代表性 SVG；批准视觉后批量生成静态或动画 PPTX。
 8. `narrated_pptx` 先要求当前动画基线的 static QA PASS，再将逐页音频嵌入并执行 standard QA；standard 指纹绑定该 static 报告，不能跳过真实 OOXML 动画检查。`video` 再由 Windows PowerPoint 导出 MP4，按版本执行 Office 2019 像素色阶重编码，记录结果后直接交付，不做视频画面检查。
@@ -95,6 +97,7 @@ bash skills/build-narrated-presentation/scripts/run.sh approve \
 ## 资源导航
 
 - 输入身份、一次门禁和内容保真：`references/input-quality-gate.md`
+- 未来路线、技术愿景与商业蓝图叙事：`references/vision-and-roadmap-narrative.md`
 - 交付分支、空状态和增量重建：`references/workflow.md`
 - schema v2、目录、绑定和审批：`references/project-contract.md`
 - 模板、SVG 和动画：`references/visual-and-animation.md`

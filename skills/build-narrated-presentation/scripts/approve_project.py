@@ -130,6 +130,7 @@ def verify_narration_review(project: Path) -> dict[str, object]:
     return {
         "director_text_audit": text_audit,
         "performance_audit": performance_audit,
+        "narration_pitch": expected_manifest["narration_pitch"],
     }
 
 
