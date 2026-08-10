@@ -7,6 +7,7 @@
 - [QA 等级](#qa-等级)
 - [来源与空状态检查](#来源与空状态检查)
 - [音频验收](#音频验收)
+- [单页 SVG 局部检查](#单页-svg-局部检查)
 - [视觉、PPTX 与视频验收](#视觉pptx-与视频验收)
 - [缓存与失败处理](#缓存与失败处理)
 - [完成定义](#完成定义)
@@ -34,7 +35,7 @@ run.sh doctor --stage video
 
 - `static`：检查代码可见的 SVG/PPTX Python 模块；
 - `audio`：只检查代码可见的 TTS、MP3 编码和时长模块，不继承静态依赖；
-- `video`：叠加 PowerShell/ffprobe 等可探测边界。
+- `video`：叠加 PowerShell 边界；视频导出后不要求 ffprobe 或其他 MP4 检查工具。
 
 `doctor` 是依赖预检，不证明字体实际可用、Azure 凭据有效、服务可连通、`.env` 内容正确或桌面 PowerPoint 已可自动化；这些条件在对应生产命令和实机检查中验证。
 
@@ -47,9 +48,8 @@ run.sh doctor --stage video
 | `static` | static/animated/narrated PPTX、video | 来源绑定、模板、SVG、当前静态或动画基线、内部媒体关系和视觉 provenance |
 | `audio` | `narration_audio`、narrated PPTX、video | 导演稿、声音、逐页 MP3、bookmark 和真实时间轴 |
 | `standard` | narrated PPTX、video | 复用当前 audio 报告，检查动画基线血缘、旁白 PPTX、内部 MP3、自动播放和换页 |
-| `release` | video | 复用当前 standard 报告，检查 PowerPoint 导出证据、MP4、ffprobe 和人工完整观看 |
 
-`narration_audio` 在 audio QA 后停止，不能进入 standard 或 release。`release` 只允许 `deliverable=video`。
+`narration_audio` 在 audio QA 后停止，不能进入 standard。`video` 的最终 QA 也是 standard；PowerPoint 导出是生产步骤，导出后不再增加视频 QA 等级。
 
 ## 来源与空状态检查
 
@@ -100,6 +100,12 @@ audio QA 自动检查：
 
 自动 QA 不能声称实际发音已经人工通过。
 
+## 单页 SVG 局部检查
+
+单页 SVG 设计改稿且不更新 PPTX、动画或视频时，不运行本文件定义的整套 QA 等级。只按 `visual-and-animation.md` 对目标文件做解析、画布、资源引用、安全区、全尺寸渲染和缩略图目视检查，并在结果中写明目标文件与未同步的下游交付物。
+
+该检查不写入 `build_state.json`，不产生 static QA PASS，也不能维持依赖旧 SVG fingerprint 的 visual 审批或下游 QA 为 current。用户后续要求同步正式演示交付物时，再按实际影响的层级装配和验收；内容与音频未变时不重跑输入、旁白或 audio QA。
+
 ## 视觉、PPTX 与视频验收
 
 ### Static
@@ -123,20 +129,11 @@ audio QA 自动检查：
 - 每页自动播放，`advTm` 来自真实时长；
 - 演示启用 timings、narration 和 animation。
 
-### Release
+### PowerPoint 视频导出
 
-`export-video` 只允许 `deliverable=video`，并要求当前 standard QA 有效。视频导出完成不等于已经观看。
+`export-video` 只允许 `deliverable=video`，并要求当前 standard QA 有效。命令确认 PowerPoint 导出过程成功、导出报告存在且输出 MP4 非空；再按 ProductReleaseIds/Build 决定是否把 Office 2019 的 full-range 像素映射为 limited range 并重新编码 H.264，最后记录 PPTX、最终 MP4、PowerPoint 身份、兼容决策与报告摘要。
 
-导出证据保存 PowerPoint 报告 SHA，并绑定旁白 PPTX SHA 与输出 MP4 SHA。release 要求 ffprobe 实际执行成功并返回有效时长；工具缺失、探测失败或时长无效都会阻断。
-
-人工完整观看当前 MP4 后执行：
-
-```bash
-run.sh qa --project PROJECT --level release \
-  --human-confirmed --confirmed-by REVIEWER
-```
-
-人工确认绑定当前 MP4 SHA-256，至少检查黑帧、跳变、音频截断、错误换页、重复或静音页、截图清晰度和结尾行为。
+Office 2019 的重编码是已知兼容修复，不是通过抽帧或观看得出的画面检查。完成后立即停止，不运行 ffprobe、额外时长检查、抽帧、播放、人工完整观看或 release QA。非空文件检查只是确认 PowerPoint/FFmpeg 确实产出交付物，不是视频内容验收。
 
 ## 缓存与失败处理
 
@@ -146,7 +143,7 @@ QA 在深度检查前计算当前等级依赖和检查脚本 fingerprint。只�
 SKIP qa=audio: inputs and tools unchanged
 ```
 
-失败结果不能缓存为通过。audio fingerprint 不包含模板和 SVG；static fingerprint 不包含声音和 MP3。standard 复用有效 audio 报告，release 复用有效 standard 报告，不重复执行整套低层检查。
+失败结果不能缓存为通过。audio fingerprint 不包含模板和 SVG；static fingerprint 不包含声音和 MP3。standard 复用有效 audio 报告，不重复执行整套低层检查。
 
 | 表现 | 处理 |
 |---|---|
@@ -160,14 +157,13 @@ SKIP qa=audio: inputs and tools unchanged
 | `narration_audio` 被视觉依赖阻断 | 使用 audio 阶段与 audio QA，检查是否误走 PPTX 链 |
 | 一个音频跨多页 | 整章合成后按 bookmark 切成逐页 MP3 |
 | 页面过早切换 | 重新读取真实 MP3 时长并加安全余量 |
-| 误称已经完整观看 | 分开报告导出、自动检查和人工观看证据 |
 
 ## 自动化完成定义
 
-以下定义描述状态机可证明的机器链路；除 video 的显式 full-watch 外，静态视觉、动画播放和自然听感的人工确认属于推荐的最终交付签核，不伪装成已记录状态。
+以下定义描述状态机可证明的机器链路；静态视觉、动画播放和自然听感的人工确认属于推荐的最终交付签核，不伪装成已记录状态。视频按用户要求不做导出后检查。
 
 - `narration_audio`：content 与 narration 审批有效，全部逐页 MP3、bookmark、真实时间轴和 audio QA 通过。
 - `static_pptx`：content 与 visual 审批有效，静态 PPTX 和 static QA 通过。
 - `animated_pptx`：当前动画基线 provenance、首秒动画结构和针对动画输出的 static QA 有效。
 - `narrated_pptx`：逐页 MP3、真实时间轴、独立旁白 PPTX 和 standard QA 通过。
-- `video`：PowerPoint 导出成功，MP4 自动检查和人工完整观看完成，release QA 通过。
+- `video`：旁白 PPTX 的 standard QA 通过，PowerPoint 导出成功，适用的 Office 2019 像素色阶重编码完成，导出报告存在且产生非空最终 MP4；到此停止。

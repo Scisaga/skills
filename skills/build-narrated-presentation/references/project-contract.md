@@ -113,7 +113,7 @@ identity 和 adapted 都要求逐页正文使用连续的 `## 第 N 页｜标题
 | `static_pptx` | content、visual | static |
 | `animated_pptx` | content、visual | static（针对动画基线的结构 QA；实机播放另行人工确认） |
 | `narrated_pptx` | content、visual、narration | standard |
-| `video` | content、visual、narration | release |
+| `video` | content、visual、narration | standard（检查旁白 PPTX；PowerPoint 导出后只做适用的 Office 2019 像素色阶重编码，不做视频画面 QA） |
 
 `template.mode` 为 `provided` 时保存 `inputs/template-source.pptx`；为 `generated` 时 `source` 为 `null`。安全区必须位于 `1600×900` 画布内。`narration_audio` 不要求模板文件实际存在。
 
@@ -144,7 +144,6 @@ presentation-project/
 │   ├── qa_static.json
 │   ├── qa_audio.json
 │   ├── qa_standard.json
-│   ├── qa_release.json
 │   ├── layers/                        # 仅视觉项目
 │   ├── scripts/
 │   └── audio/

@@ -4,6 +4,7 @@ import argparse
 import contextlib
 import hashlib
 import io
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -543,6 +544,99 @@ class ProjectV2Tests(unittest.TestCase):
             self.assertEqual(doctor.check_stage("static"), [])
         self.assertTrue(set(checked).issubset(set(doctor.STATIC_MODULES)))
         self.assertFalse(set(checked).intersection(doctor.AUDIO_MODULES))
+
+    def test_video_doctor_does_not_require_ffprobe(self) -> None:
+        executables: list[str] = []
+
+        def which(name: str) -> str | None:
+            executables.append(name)
+            if name == "powershell.exe":
+                return "/mock/powershell.exe"
+            return None
+
+        with (
+            mock.patch.object(doctor, "module_available", return_value=True),
+            mock.patch.object(doctor.shutil, "which", side_effect=which),
+        ):
+            self.assertEqual(doctor.check_stage("video"), [])
+        self.assertNotIn("ffprobe", executables)
+
+    def test_office_2019_product_id_selects_color_range_fix(self) -> None:
+        generation, reason = powerpoint_production.classify_powerpoint_generation(
+            {
+                "powerpoint_version": "16.0",
+                "powerpoint_build": "14701",
+                "office_product_release_ids": "ProPlus2019Retail",
+            }
+        )
+        self.assertEqual(generation, "office-2019")
+        self.assertIn("ProductReleaseIds", reason)
+
+    def test_newer_office_build_skips_color_range_fix(self) -> None:
+        report = {
+            "powerpoint_version": "16.0",
+            "powerpoint_build": "14332",
+            "office_product_release_ids": "ProPlus2021Volume",
+        }
+        video = self.root / "newer-office.mp4"
+        video.write_bytes(b"newer")
+        with mock.patch.object(powerpoint_production, "reencode_office2019_color_range") as reencode:
+            compatibility = powerpoint_production.apply_color_range_compatibility(
+                video,
+                report,
+                "auto",
+            )
+        reencode.assert_not_called()
+        self.assertEqual(compatibility["powerpoint_generation"], "newer-office")
+        self.assertEqual(compatibility["action"], "skipped")
+
+    def test_shared_retail_build_without_product_id_is_unknown(self) -> None:
+        generation, reason = powerpoint_production.classify_powerpoint_generation(
+            {
+                "powerpoint_version": "16.0",
+                "powerpoint_build": "14701",
+            }
+        )
+        self.assertEqual(generation, "unknown")
+        self.assertIn("shared", reason)
+
+    def test_unknown_office_generation_requires_explicit_override(self) -> None:
+        video = self.root / "unknown-office.mp4"
+        video.write_bytes(b"unknown")
+        compatibility = powerpoint_production.apply_color_range_compatibility(
+            video,
+            {"powerpoint_version": "16.0"},
+            "auto",
+        )
+        self.assertEqual(compatibility["action"], "skipped")
+        self.assertIn("warning", compatibility)
+
+    def test_office_2019_fix_reencodes_pixels_to_limited_range(self) -> None:
+        video = self.root / "office-2019.mp4"
+        video.write_bytes(b"raw-video")
+        commands: list[list[str]] = []
+
+        def run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+            commands.append(command)
+            Path(command[-1]).write_bytes(b"fixed-video")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with (
+            mock.patch.object(powerpoint_production, "find_ffmpeg", return_value="ffmpeg"),
+            mock.patch.object(powerpoint_production.subprocess, "run", side_effect=run),
+        ):
+            compatibility = powerpoint_production.apply_color_range_compatibility(
+                video,
+                {"office_product_release_ids": "PowerPoint2019Volume"},
+                "auto",
+            )
+
+        self.assertEqual(video.read_bytes(), b"fixed-video")
+        self.assertEqual(compatibility["action"], "applied")
+        self.assertTrue(compatibility["reencoded"])
+        self.assertIn("libx264", commands[0])
+        self.assertIn("scale=in_range=pc:out_range=tv", commands[0])
+        self.assertEqual(compatibility["audio_reencoded"], False)
 
     def test_static_qa_does_not_require_audio_artifacts(self) -> None:
         project = self.create_project("static-qa", "static_pptx")

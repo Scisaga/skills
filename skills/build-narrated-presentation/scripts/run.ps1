@@ -59,9 +59,9 @@ Usage:
   scripts\run.ps1 synthesize --project C:\work\presentation
   scripts\run.ps1 replace-audio --project C:\work\presentation
   scripts\run.ps1 assemble-pptx --project C:\work\presentation
-  scripts\run.ps1 export-video --project C:\work\presentation
+  scripts\run.ps1 export-video --project C:\work\presentation [--color-range-fix auto|on|off]
   scripts\run.ps1 export-pages --project C:\work\presentation --pages 8,9,14 --format pdf --output C:\work\selected.pdf
-  scripts\run.ps1 qa --project C:\work\presentation --level static|audio|standard|release
+  scripts\run.ps1 qa --project C:\work\presentation --level static|audio|standard
   scripts\run.ps1 rebuild --project C:\work\presentation --scope audio --qa standard
   scripts\run.ps1 validate --project C:\work\presentation [--stage content|visual|animation|narration|audio]
 "@

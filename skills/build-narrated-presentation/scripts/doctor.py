@@ -64,15 +64,17 @@ def check_stage(stage: str) -> list[str]:
             print(
                 "ERROR PowerShell is required for Windows PowerPoint automation."
             )
-        ffprobe = shutil.which("ffprobe")
-        if ffprobe:
-            print(f"OK  ffprobe: {ffprobe}")
+        ffmpeg = shutil.which("ffmpeg")
+        if ffmpeg:
+            print(f"OK  optional Office 2019 color-range helper: {ffmpeg}")
         else:
-            missing.append("ffprobe")
-            print("ERROR ffprobe is required for video QA.")
+            print(
+                "INFO ffmpeg is only required when the Office 2019 color-range "
+                "compatibility fix is selected."
+            )
         print(
             "INFO Final video export still requires installed Windows desktop "
-            "PowerPoint."
+            "PowerPoint; no post-export video inspection is required."
         )
     return missing
 

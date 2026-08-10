@@ -293,7 +293,7 @@ audio QA 通过即完成。不得要求 visual 审批，不得读取模板、SVG
 
 ### `video`
 
-standard QA 后由 Windows PowerPoint 导出 MP4。导出证据、自动视频检查和人工完整观看分别记录；release QA 需要当前 MP4 的显式完整观看确认。
+standard QA 后由 Windows PowerPoint 导出 MP4。Office 2019 按导出报告身份把 full-range 像素映射为 limited range 并重新编码 H.264，音频保持 stream copy；Office 2021/2022 或更新版本跳过。随后直接交付，不做 ffprobe、抽帧、观看或 release QA。
 
 只改音频时可使用：
 

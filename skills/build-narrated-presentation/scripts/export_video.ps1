@@ -11,6 +11,36 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function Get-OfficeClickToRunIdentity {
+  $registryPaths = @(
+    "HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\Configuration",
+    "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Office\ClickToRun\Configuration"
+  )
+  foreach ($registryPath in $registryPaths) {
+    if (-not (Test-Path -LiteralPath $registryPath)) {
+      continue
+    }
+    try {
+      $configuration = Get-ItemProperty -LiteralPath $registryPath
+    } catch {
+      continue
+    }
+    return [pscustomobject]@{
+      product_release_ids = [string]$configuration.ProductReleaseIds
+      version_to_report = [string]$configuration.VersionToReport
+      update_channel = [string]$configuration.UpdateChannel
+      registry_path = $registryPath
+    }
+  }
+  return [pscustomobject]@{
+    product_release_ids = $null
+    version_to_report = $null
+    update_channel = $null
+    registry_path = $null
+  }
+}
+
 $inputPath = [System.IO.Path]::GetFullPath($InputPptx)
 $outputPath = [System.IO.Path]::GetFullPath($OutputMp4)
 if (-not (Test-Path -LiteralPath $inputPath -PathType Leaf)) {
@@ -30,6 +60,9 @@ try {
   $powerPoint.Visible = -1
   $presentation = $powerPoint.Presentations.Open($inputPath, -1, 0, -1)
   $version = [string]$powerPoint.Version
+  $build = try { [string]$powerPoint.Build } catch { $null }
+  $productCode = try { [string]$powerPoint.ProductCode } catch { $null }
+  $officeIdentity = Get-OfficeClickToRunIdentity
   $presentation.CreateVideo(
     $outputPath,
     $true,
@@ -62,17 +95,22 @@ try {
     throw "PowerPoint created an empty video: $outputPath"
   }
   $report = [ordered]@{
-    schema_version = 1
+    schema_version = 2
     operation = "powerpoint-create-video"
     input_pptx = $inputPath
     output_mp4 = $outputPath
     output_bytes = $item.Length
     powerpoint_version = $version
+    powerpoint_build = $build
+    powerpoint_product_code = $productCode
+    office_product_release_ids = $officeIdentity.product_release_ids
+    office_click_to_run_version = $officeIdentity.version_to_report
+    office_update_channel = $officeIdentity.update_channel
+    office_identity_source = $officeIdentity.registry_path
     use_timings_and_narrations = $true
     started_at = $started.ToUniversalTime().ToString("o")
     completed_at = (Get-Date).ToUniversalTime().ToString("o")
     status = "exported"
-    human_watch = "not-performed"
   }
   if ($ReportPath) {
     $reportFile = [System.IO.Path]::GetFullPath($ReportPath)

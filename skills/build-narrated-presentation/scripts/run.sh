@@ -125,9 +125,9 @@ Usage:
   scripts/run.sh synthesize --project /path/to/project [--pages 1-3] [--dry-run]
   scripts/run.sh replace-audio --project /path/to/project
   scripts/run.sh assemble-pptx --project /path/to/project [--adapter command]
-  scripts/run.sh export-video --project /path/to/project
+  scripts/run.sh export-video --project /path/to/project [--color-range-fix auto|on|off]
   scripts/run.sh export-pages --project /path/to/project --pages 8,9,14 --format pdf --output selected.pdf
-  scripts/run.sh qa --project /path/to/project --level static|audio|standard|release
+  scripts/run.sh qa --project /path/to/project --level static|audio|standard
   scripts/run.sh rebuild --project /path/to/project --scope audio --qa standard [--voice voice-name]
   scripts/run.sh validate --project /path/to/project [--stage content|visual|animation|narration|audio] [--strict]
 USAGE

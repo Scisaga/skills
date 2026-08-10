@@ -128,7 +128,8 @@ ppt/slides/slideN.xml 中的 transition advTm
 
 ```bash
 bash skills/build-narrated-presentation/scripts/run.sh export-video \
-  --project /path/to/project
+  --project /path/to/project \
+  --color-range-fix auto
 ```
 
 命令通过 PowerPoint `CreateVideo`：
@@ -138,10 +139,23 @@ bash skills/build-narrated-presentation/scripts/run.sh export-video \
 - 默认输出 1080p、30fps、质量 100；
 - 轮询导出状态直到完成、失败或超时；
 - 写入 `video/powerpoint_export.json`；
+- 记录 PowerPoint `Version`、`Build`、Product Code 和 Click-to-Run ProductReleaseIds；
 - 把“PPTX 已由 PowerPoint 打开”和“MP4 已由 PowerPoint 导出”分别记录到构建状态；
-- 将人工完整观看状态重置为待办。
+- 按版本执行 Office 2019 像素色阶重编码后停止。
 
 可按需传入 `--vertical-resolution`、`--frames-per-second`、`--quality` 和 `--timeout-minutes`。不要用统一“每张幻灯片秒数”覆盖现有计时。
+
+### Office 2019 色彩范围兼容
+
+实测 Office 2019 `CreateVideo` 可能把实际使用 full-range 像素值的 H.264 标为 limited range，导致播放器扩展色阶后高光变白、暗部压黑；Office 2021/2022 或更新环境未复现。由于 Office 2019 和更新版本都可能报告 `Version=16.0`，零售版 build 也可能重叠，`auto` 优先使用 Click-to-Run ProductReleaseIds；只有明确落在 Office 2019 volume 范围的旧 build 才作为回退证据，其他缺少产品 ID 的 build 归为 `unknown`：
+
+- `office-2019`：不能只改标签；执行 `scale=in_range=pc:out_range=tv` 把像素映射到标准 limited range，以 `libx264 -preset slow -crf 16 -pix_fmt yuv420p` 重编码视频，音频及其他流保持 copy，临时 MP4 成功后原子替换交付文件；
+- `newer-office`：不修改 MP4；
+- `unknown`：不猜测、不修改，在报告中写 warning；已知是 Office 2019 时显式传 `--color-range-fix on`，已知无问题时传 `off`。
+
+重编码输出固定标记 BT.709 limited range，保留原始尺寸、时间戳和音频流；它会重写视频码流，但不改变动画编排、旁白内容或目标时长，也不属于视频画面检查。Office 2019 需要 FFmpeg 时若未安装，运行 `scripts/install_ffmpeg.ps1`（Windows）或 `scripts/install_ffmpeg.sh`（Linux/WSL）后重试。PowerPoint `Build` 与 ProductReleaseIds、兼容判断、修复前后 SHA、编码器、CRF 和 `reencoded=true` 必须写入 `video/powerpoint_export.json`。
+
+完成兼容处理后直接交付 MP4。不要调用 ffprobe，不抽帧、不播放、不安排人工完整观看，也不运行 release QA；导出前的 standard QA 已负责检查旁白 PPTX 的媒体、自动播放和换页结构。
 
 ## 导出指定页面
 
@@ -157,25 +171,13 @@ bash skills/build-narrated-presentation/scripts/run.sh export-pages \
 - PNG/JPG：`--output` 是目录，每页输出一个位图；
 - 页码必须是逗号分隔的正整数且不能超过总页数。
 
-这个命令适合局部审阅，不等同于完整放映或完整视频验收。
+这个命令适合局部审阅，不触发视频后检。
 
 ## 证据边界
 
-严格区分：
+只记录：
 
 1. PowerPoint 成功打开当前 PPTX；
-2. PowerPoint 成功导出当前 MP4；
-3. 工具对当前 MP4 做了时长和文件检查；
-4. 人工从头到尾观看当前 MP4。
+2. PowerPoint 成功导出非空 MP4，并记录当前 PPTX、最终 MP4、PowerPoint 身份和色彩范围兼容决策。
 
-自动化启动或关闭放映窗口不能证明已经完整观看。只有操作者真实看完后，才运行：
-
-```bash
-bash skills/build-narrated-presentation/scripts/run.sh qa \
-  --project /path/to/project \
-  --level release \
-  --human-confirmed \
-  --confirmed-by "reviewer"
-```
-
-确认记录与当前 MP4 SHA-256 绑定；重新导出后自动失效。
+Office 2019 的像素色阶重编码是确定性兼容步骤；这些证据不扩展成对 MP4 画面、时长或观看效果的检查。

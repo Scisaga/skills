@@ -58,3 +58,8 @@ temp/
 !*.ttf
 !*.otf
 .build/
+
+# Local Androguard analysis session
+/androguard.db
+/androguard.db-shm
+/androguard.db-wal

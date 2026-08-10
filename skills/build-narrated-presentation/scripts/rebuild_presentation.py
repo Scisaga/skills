@@ -162,8 +162,7 @@ def rebuild_audio(args: argparse.Namespace) -> int:
         print("INFO deliverable=narrated_pptx; stopping before video export")
     if deliverable == "video" and not args.skip_export:
         print(
-            "INFO video exported; release QA is pending an explicit full-watch. "
-            "After watching, run qa --level release --human-confirmed"
+            "INFO video exported; stopping without post-export inspection"
         )
 
     assert before is not None

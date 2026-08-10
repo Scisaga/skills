@@ -8,6 +8,7 @@
 - [空派生状态](#空派生状态)
 - [逐页音频独立链](#逐页音频独立链)
 - [演示视觉链](#演示视觉链)
+- [单页 SVG 设计改稿](#单页-svg-设计改稿)
 - [变更影响](#变更影响)
 - [增量重建](#增量重建)
 
@@ -21,7 +22,7 @@
 | `static_pptx` | 内容、模板、SVG、静态装配、static QA | 动画和声音 |
 | `animated_pptx` | 静态链路、SVG 分层、首秒动画 | 声音和视频 |
 | `narrated_pptx` | 视觉链、旁白、逐页音频、自动换页、standard QA | 视频导出 |
-| `video` | 旁白 PPTX、PowerPoint 导出、release QA | 无 |
+| `video` | 旁白 PPTX、standard QA、PowerPoint 导出、适用时执行 Office 2019 像素色阶重编码 | MP4 画面检查、ffprobe、抽帧、人工观看、release QA |
 
 不要先初始化最高层级再“暂时只做音频”。只需要逐页 MP3 时明确选择 `narration_audio`，让模板、SVG、PPTX 等实际文件依赖和视觉 QA 退出生产链；同一 schema 的兼容字段仍保留，但不读取对应视觉产物。
 
@@ -166,7 +167,28 @@ run.sh approve --project PROJECT \
 
 `narrated_pptx` 和 `video` 同时需要视觉链和逐页音频链。视觉与旁白审批可以独立准备，但装配自动旁白 PPTX 时两者都必须有效。旁白 PPTX 从动画基线生成独立文件，不覆盖静态或动画基线；进入 standard QA 前，动画基线必须已有当前 static QA PASS，standard cache 同时绑定其 fingerprint、状态记录和实际报告 SHA。
 
-`narrated_pptx` 在 standard QA 后停止。`video` 由 Windows PowerPoint 使用现有媒体和时间轴导出 MP4；自动导出后仍需人工完整观看，再执行 release QA。
+`narrated_pptx` 在 standard QA 后停止。`video` 由 Windows PowerPoint 使用现有媒体和时间轴导出 MP4；Office 2019 自动把误用的 full-range 像素映射为标准 limited range 并重新编码 H.264，Office 2021/2022 或更新版本跳过。兼容决策写入导出报告后直接交付，不做视频画面检查、ffprobe、抽帧、人工观看或 release QA。
+
+## 单页 SVG 设计改稿
+
+用户明确只要求调整某一页或少数指定页的 SVG 设计，且没有要求同步 PPTX、动画、旁白或视频时，把它作为独立的局部编辑任务，不进入标准生产入口：
+
+```text
+确认目标页和 source_svg
+→ 读取该页内容、模板安全区与当前视觉规范
+→ 只修改目标 SVG
+→ 执行单页 SVG 检查并目视全尺寸与缩略图
+→ 交付目标 SVG 后停止
+```
+
+局部范围内：
+
+- 保留 `page-script.md`、模板、manifest、图层计划、其他页面、音频、PPTX、视频和 `build_state.json`；只有目标页确实使用的页内资产不可避免时才一起修改，并在交付摘要中列明；
+- 不运行 `init`、输入门禁、`approve`、全项目 `validate`、任何等级的 `qa`、PPTX 装配或 PowerPoint 导出；
+- 按 `visual-and-animation.md` 检查 XML、`viewBox`、外部引用、安全区、溢出、全尺寸渲染和 400×225 缩略图；这属于单页设计检查，不写入正式 QA PASS；
+- 明确报告只更新了哪些 SVG，以及 PPTX、动画和视频没有同步。目标 SVG 变化后，任何依赖旧 SVG 指纹的 visual 审批、PPTX provenance 或 static QA 都不能继续声称 current。
+
+只有用户明确要求把改稿同步到演示交付物时，才扩展到目标页的分层/动画和必要的 PPTX 装配，再按实际更新的交付层级执行相应 QA；内容和音频字节未变时不得重做内容门禁、旁白或 audio QA。若现有装配器只能全稿重建，应先说明这一技术边界，不能把“同步单页”静默扩张成整套内容、音频和视频生产。
 
 ## 变更影响
 
@@ -176,10 +198,10 @@ run.sh approve --project PROJECT \
 | `page-script.md` | 内容、视觉、旁白审批及下游 | 原始源稿 |
 | 门禁/复核/绑定证据或输入契约版本 | content acceptance 失效，修复后重新 content 审批 | 内容字节未变时保留视觉、导演稿、音频和 PPTX |
 | 模板、安全区或代表性 SVG | 视觉审批、相关 PPTX 与视频 | 内容、导演稿、音频 |
-| 其他某页 SVG 或动画 | 受影响视觉、PPTX 与视频 | 内容、音频 |
+| 其他某页 SVG 或动画 | 仅设计改稿时只检查目标页；同步交付物时才失效并重建受影响视觉、PPTX 与视频 | 内容、音频、其他页面 |
 | 导演稿文字、章节或局部节奏 | 旁白审批、受影响章节音频及下游 | 内容、视觉 |
 | 音色、全局声音参数或词典 | 旁白审批、受影响音频及下游 | 内容、视觉 |
-| 输出分辨率 | PowerPoint 导出和 MP4 检查 | PPTX、音频、视觉内容 |
+| 输出分辨率 | PowerPoint 重新导出 | PPTX、音频、视觉内容 |
 
 章节是连续合成和缓存单位。修改章节中任意一页时，重建完整章节；逐页 MP3 仍是最终交付和 PowerPoint 嵌入单位。
 
@@ -201,6 +223,6 @@ run.sh configure-voice --project PROJECT --voice VOICE
 run.sh rebuild --project PROJECT --scope audio --qa audio
 ```
 
-`narration_audio` 只能停在 audio QA。`narrated_pptx` 可继续到 standard QA。`video --qa audio` 在重建旁白 PPTX 后停止，不导出视频；`video --qa standard` 在 standard QA 后可继续 PowerPoint 导出并停在“等待人工观看”，`--skip-export` 则显式停止。release QA 始终由人工完整观看后单独执行，不能用 rebuild 的成功退出码冒充 release 已通过。
+`narration_audio` 只能停在 audio QA。`narrated_pptx` 可继续到 standard QA。`video --qa audio` 在重建旁白 PPTX 后停止，不导出视频；`video --qa standard` 在 standard QA 后可继续 PowerPoint 导出、执行适用的 Office 2019 像素色阶重编码并直接停止，`--skip-export` 则显式停在导出前。导出后不运行视频画面检查或 release QA。
 
 `video/build_state.json` 只记录已经发生的审批、产物、QA 和 PowerPoint 证据。不得预填未来状态，不得手工把失败或空状态改为通过。

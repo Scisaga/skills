@@ -1,13 +1,13 @@
 ---
 name: build-narrated-presentation
-description: 从逐页演讲稿、产品计划、执行方案或渲染型 Markdown 制作逐页旁白 MP3、静态 PPTX、动画 PPTX、自动旁白 PPTX 或 PowerPoint 导出的 MP4；保真绑定已整理的逐页正文，并要求其他输入显式提供 adapted page-script，支持可执行语气编排、音频独立交付、模板复用、技术信息图、章节连续合成后逐页切分、真实音频时长换页、声音重配和分级验收。适用于“把演讲稿逐页配音”“只生成每页音频”“把文档生成 PPT/PPTX”“复用现有 PPT 模板”“制作技术架构演示”“给 PPT 加动画或旁白”“更换音色或发音”“只替换 PPT 音频”“导出旁白视频”及“检查媒体嵌入和换页”的场景。
+description: 从逐页演讲稿、产品计划、执行方案或渲染型 Markdown 制作逐页旁白 MP3、静态 PPTX、动画 PPTX、自动旁白 PPTX 或 PowerPoint 导出的 MP4；保真绑定已整理的逐页正文，并要求其他输入显式提供 adapted page-script，支持可执行语气编排、音频独立交付、模板复用、技术信息图、章节连续合成后逐页切分、真实音频时长换页、声音重配和分级验收，自动重编码修正 Office 2019 CreateVideo 的像素色阶，并在 PowerPoint 导出后直接交付而不做视频画面检查。适用于“把演讲稿逐页配音”“只生成每页音频”“把文档生成 PPT/PPTX”“复用现有 PPT 模板”“制作技术架构演示”“给 PPT 加动画或旁白”“更换音色或发音”“只替换 PPT 音频”“导出旁白视频”及“检查媒体嵌入和换页”的场景。
 ---
 
 # Build Narrated Presentation
 
 ## 概述
 
-把事实源、逐页口述稿、视觉、动画、声音和交付物分开管理。`project.json.deliverable` 决定链路：只要逐页 MP3 时选择 `narration_audio`，不得启动模板、SVG 或 PowerPoint；需要演示时才继续视觉和装配。
+把事实源、逐页口述稿、视觉、动画、声音和交付物分开管理。`project.json.deliverable` 决定链路：只要逐页 MP3 时选择 `narration_audio`，不得启动模板、SVG 或 PowerPoint；需要演示时才继续视觉和装配。若用户只要求调整指定页 SVG 设计且不要求同步 PPTX、动画或视频，则只编辑并验收目标 SVG，不启动整套生产或 QA 链路。
 
 ## 不变量
 
@@ -21,17 +21,19 @@ description: 从逐页演讲稿、产品计划、执行方案或渲染型 Markdo
 8. 声音和发音词典只写入 `video/voice_profile.json`。`narration_review.md` 必须列出正文中的拉丁技术代号、已配置实际读法和未覆盖项；候选发现只产生审阅警告，不根据字形自动猜读或新增阻断门禁。材料成分牌号按元素语义判断，例如 `AlSi10Mg` 是成分型合金牌号，中文专业口播读作“铝硅十镁”，不能按普通英文串或化学分子式裸读。
 9. 需要更改声音或词典时由 `configure-voice` 刷新已有旁白审阅稿；音色和术语试听是推荐的人工质量步骤，当前 narration 审批是机器实际执行的正式边界。`synthesize` 不修改声音配置。
 10. 连续语气按章节一次合成，在页边界插入 bookmark，再切成逐页 MP3；每页交付一个 MP3。
-11. 页面换页使用真实 MP3 时长加安全余量。PowerPoint 打开、视频导出、自动检查和人工完整观看是不同证据。
+11. 页面换页使用真实 MP3 时长加安全余量。`video` 在当前旁白 PPTX 通过 standard QA 后交给 PowerPoint 导出。默认 `--color-range-fix auto`：识别为 Office 2019 时不能只改 H.264 标签，必须用 FFmpeg 把误用的 full-range 像素映射为标准 limited range 并以 libx264 重新编码，音频 stream copy；识别为 Office 2021/2022 或更新版本时跳过。兼容处理后立即停止，不做 ffprobe、抽帧、播放、人工观看或 release QA。
+12. 单页 SVG 设计改稿是局部任务：只读取目标页、模板安全区和所选视觉规范，只修改目标 SVG，并做单页解析、画布、资源引用、全尺寸与缩略图检查。除非用户明确要求更新演示交付物，不运行 `init`、输入门禁、审批、全项目 `validate`、PPTX 装配、音频生产或任何等级的 `qa`，也不顺带修改其他页面和既有交付物。
 
 ## 工作流
 
-1. 读取 `references/input-quality-gate.md`，识别输入 profile 和绑定方式。
-2. 选择 `narration_audio`、`static_pptx`、`animated_pptx`、`narrated_pptx` 或 `video`，直接运行 `init`。计划类输入只额外准备一次 SHA 绑定的语义复核。
-3. 检查 `page-script.md` 后执行 `approve --stage content`。
-4. 需要旁白时运行 `prepare-narration`，逐页检查 `narration_review.md` 中的表达意图、编排依据、最终 rate/pitch/pause，以及专业术语的“原词 → 实际读法”。结合上下文为缩写、材料牌号、工程标准号建立发音词典；未确认项保留为警告，不让 TTS 猜读后直接批量生产。必要时修改导演稿或声音词典并刷新 manifest，推荐先合成术语试听，随后批准旁白。
-5. `narration_audio` 合成逐页 MP3、生成真实时间轴、执行 audio QA 后停止。
-6. 需要演示时，适配模板并制作 1–4 张代表性 SVG；批准视觉后批量生成静态或动画 PPTX。
-7. `narrated_pptx` 先要求当前动画基线的 static QA PASS，再将逐页音频嵌入并执行 standard QA；standard 指纹绑定该 static 报告，不能跳过真实 OOXML 动画检查。`video` 再由 Windows PowerPoint 导出 MP4，并在人工完整观看后执行 release QA。
+1. 先判断是完整生产还是单页 SVG 设计改稿；后者直接读取 `references/visual-and-animation.md` 的局部流程并在单页检查后停止。
+2. 完整生产读取 `references/input-quality-gate.md`，识别输入 profile 和绑定方式。
+3. 选择 `narration_audio`、`static_pptx`、`animated_pptx`、`narrated_pptx` 或 `video`，直接运行 `init`。计划类输入只额外准备一次 SHA 绑定的语义复核。
+4. 检查 `page-script.md` 后执行 `approve --stage content`。
+5. 需要旁白时运行 `prepare-narration`，逐页检查 `narration_review.md` 中的表达意图、编排依据、最终 rate/pitch/pause，以及专业术语的“原词 → 实际读法”。结合上下文为缩写、材料牌号、工程标准号建立发音词典；未确认项保留为警告，不让 TTS 猜读后直接批量生产。必要时修改导演稿或声音词典并刷新 manifest，推荐先合成术语试听，随后批准旁白。
+6. `narration_audio` 合成逐页 MP3、生成真实时间轴、执行 audio QA 后停止。
+7. 需要演示时，适配模板并制作 1–4 张代表性 SVG；批准视觉后批量生成静态或动画 PPTX。
+8. `narrated_pptx` 先要求当前动画基线的 static QA PASS，再将逐页音频嵌入并执行 standard QA；standard 指纹绑定该 static 报告，不能跳过真实 OOXML 动画检查。`video` 再由 Windows PowerPoint 导出 MP4，按版本执行 Office 2019 像素色阶重编码，记录结果后直接交付，不做视频画面检查。
 
 详细分支和变更影响读取 `references/workflow.md`；字段与审批读取 `references/project-contract.md`。
 
@@ -103,10 +105,11 @@ bash skills/build-narrated-presentation/scripts/run.sh approve \
 
 ## 输出规则
 
-- 不覆盖用户输入、模板原件、原始 SVG 或既有交付物。
+- 不覆盖用户输入、模板原件、未指定修改的原始 SVG 或既有交付物。
 - 只生成当前 `deliverable` 所需链路；`narration_audio` 不生成 PPTX 或视频。
+- 单页 SVG 设计改稿只交付目标 SVG 和局部检查结论；若未重建 PPTX 或视频，明确说明这些交付物未同步，不把局部检查冒充正式 QA PASS。
 - 未经用户明确确认，不使用 `--allow-substantial-rewrite`。
 - 不把 `direction` 文案当成可听语气；只有进入最终 SSML 的 rate、pitch、pause 或受支持的 voice style 才算实际编排。
 - 不把混合字母数字一律逐字符读。缩写可用 `say_as: characters`；材料成分牌号用经专业语境确认的中文 `alias`；纯数字牌号、序号型牌号和标准号分别按行业口播习惯处理。
 - 第三方图片只用于风格研究，不进入交付物。
-- 没有对应摘要的导出证据或人工完整观看证据时，不声称视频已经完成。
+- PowerPoint 导出命令成功并完成适用的 Office 2019 像素色阶重编码，记录当前 PPTX、最终 MP4、PowerPoint Product ID/Build、兼容决策与导出报告后，即可报告视频导出完成；该确定性重编码不是视频 QA，不要再启动画面检查、抽帧、观看或 release QA。

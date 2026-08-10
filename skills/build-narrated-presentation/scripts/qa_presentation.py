@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run cached audio, standard, or release QA for a presentation project."""
+"""Run cached static, audio, or standard QA for a presentation project."""
 
 from __future__ import annotations
 
@@ -1357,34 +1357,14 @@ def qa_command(args: argparse.Namespace) -> int:
         "video",
     }:
         raise RuntimeError("qa=standard requires narrated_pptx or video")
-    if args.level == "release" and deliverable != "video":
-        raise RuntimeError("qa=release requires deliverable=video")
     approval_requirements = {
         "static": ("content", "visual"),
         "audio": ("content", "narration"),
         "standard": ("content", "visual", "narration"),
-        "release": ("content", "visual", "narration"),
     }
     require_approvals(project, approval_requirements[args.level])
     paths = project_paths(project)
     state = load_state(paths["build_state"])
-    if args.human_confirmed and args.level != "release":
-        raise ValueError("--human-confirmed is only valid with --level release")
-    if args.confirmed_by and not args.human_confirmed:
-        raise ValueError("--confirmed-by requires --human-confirmed")
-    if args.human_confirmed:
-        video = paths["video"]
-        if not video.is_file():
-            raise FileNotFoundError(video)
-        state["powerpoint"]["human_watch"] = {
-            "status": "passed",
-            "video_sha256": file_hash(video),
-            "confirmed_at": now_iso(),
-            "confirmed_by": args.confirmed_by or "user",
-            "evidence": "explicit-full-watch-confirmation",
-        }
-        write_object(paths["build_state"], state)
-
     fingerprints = cache_fingerprints(project, args.level, state)
     fingerprint = fingerprints[args.level]
     cached_report = current_cached_report(
@@ -1424,41 +1404,7 @@ def qa_command(args: argparse.Namespace) -> int:
             cached_static_report=reusable_static,
         )
     else:
-        reusable_standard = current_cached_report(
-            project,
-            "standard",
-            state,
-            fingerprints["standard"],
-        )
-        reusable_audio = (
-            None
-            if reusable_standard is not None
-            else current_cached_report(
-                project,
-                "audio",
-                state,
-                fingerprints["audio"],
-            )
-        )
-        reusable_static = (
-            None
-            if reusable_standard is not None
-            else current_cached_report(
-                project,
-                "static",
-                state,
-                fingerprints["static"],
-            )
-        )
-        _, report = release_qa(
-            project,
-            state,
-            errors,
-            warnings,
-            cached_standard_report=reusable_standard,
-            cached_audio_report=reusable_audio,
-            cached_static_report=reusable_static,
-        )
+        raise ValueError(f"Unsupported QA level: {args.level}")
 
     for warning in warnings:
         print(f"WARN {warning}")
@@ -1484,8 +1430,6 @@ def qa_command(args: argparse.Namespace) -> int:
         "report": str(report_path.relative_to(project)),
         "report_sha256": file_hash(report_path),
     }
-    if not errors and args.level == "release":
-        state["inputs"] = report["inputs"]
     write_object(paths["build_state"], state)
     if errors:
         return 1
@@ -1498,16 +1442,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--project", type=Path, required=True)
     parser.add_argument(
         "--level",
-        choices=("static", "audio", "standard", "release"),
+        choices=("static", "audio", "standard"),
         required=True,
     )
     parser.add_argument("--force", action="store_true")
-    parser.add_argument(
-        "--human-confirmed",
-        action="store_true",
-        help="Assert that a person watched the current MP4 in full",
-    )
-    parser.add_argument("--confirmed-by")
     return parser
 
 
