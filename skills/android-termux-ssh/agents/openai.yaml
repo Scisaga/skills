@@ -1,0 +1,7 @@
+interface:
+  display_name: "Android Termux SSH"
+  short_description: "Deploy standalone Termux SSH, APIs, Bluetooth, and Boot"
+  icon_small: "./assets/logo.svg"
+  icon_large: "./assets/logo.svg"
+  brand_color: "#3DDC84"
+  default_prompt: "Use $android-termux-ssh to install and verify a standalone Termux SSH management environment, including the optional local-only Bluetooth companion, on an Android device."
