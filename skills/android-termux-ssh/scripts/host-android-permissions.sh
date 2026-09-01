@@ -9,6 +9,7 @@ DO_BACKGROUND=0
 DO_HYPEROS=0
 APPLY=0
 failures=0
+EXTRA_KEEP_PACKAGES=()
 
 usage() {
   cat <<'EOF'
@@ -21,6 +22,7 @@ Options:
   --api               grant common Termux:API camera/location/notification access
   --background        add Termux packages to DeviceIdle and standard background AppOps
   --hyperos-greeze    merge all Termux package names into MILLET_NO_RESTRICT_APP
+  --keep-package PKG  also keep a dependent package such as the device VPN; repeatable
   --all-standard      same as --storage --api --background
   --apply             perform changes; without this flag only print the plan
   -h, --help          show this help
@@ -37,6 +39,12 @@ while [[ $# -gt 0 ]]; do
     --api) DO_API=1; shift ;;
     --background) DO_BACKGROUND=1; shift ;;
     --hyperos-greeze) DO_HYPEROS=1; shift ;;
+    --keep-package)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      [[ "$2" =~ ^[A-Za-z0-9._-]+$ ]] || { printf 'ERROR: invalid package name: %s\n' "$2" >&2; exit 2; }
+      EXTRA_KEEP_PACKAGES+=("$2")
+      shift 2
+      ;;
     --all-standard) DO_STORAGE=1; DO_API=1; DO_BACKGROUND=1; shift ;;
     --apply) APPLY=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -52,6 +60,7 @@ state=$("${ADB_CMD[@]}" get-state 2>/dev/null | tr -d '\r' || true)
 [[ "$state" == device ]] || { printf 'ERROR: no usable adb device (state=%s)\n' "${state:-none}" >&2; exit 2; }
 
 adb_shell() { "${ADB_CMD[@]}" shell "$@" | tr -d '\r'; }
+adb_shell_script() { printf '%s\n' "$1" | "${ADB_CMD[@]}" shell sh | tr -d '\r'; }
 package_exists() { adb_shell pm path "$1" 2>/dev/null | grep -q '^package:'; }
 
 printf 'Target: %s %s (serial=%s)\n' \
@@ -63,6 +72,7 @@ printf 'Requested changes:\n'
 (( DO_API )) && printf '  - Termux:API camera, location, notification, and overlay permissions/AppOps\n'
 (( DO_BACKGROUND )) && printf '  - package-scoped DeviceIdle/background/wake-lock allowances\n'
 (( DO_HYPEROS )) && printf '  - vendor setting MILLET_NO_RESTRICT_APP, preserving existing entries\n'
+(( ${#EXTRA_KEEP_PACKAGES[@]} )) && printf '  - dependent keep-alive packages: %s\n' "${EXTRA_KEEP_PACKAGES[*]}"
 
 if (( APPLY == 0 )); then
   printf '\nPreview only. Re-run with --apply after the user authorizes these changes.\n'
@@ -103,7 +113,7 @@ if (( DO_API )); then
 fi
 
 if (( DO_BACKGROUND )); then
-  for package_name in com.termux com.termux.api com.termux.boot; do
+  for package_name in com.termux com.termux.api com.termux.boot io.github.scisaga.termuxbluetoothbridge "${EXTRA_KEEP_PACKAGES[@]}"; do
     package_exists "$package_name" || continue
     run_optional "$package_name DeviceIdle whitelist" adb_shell cmd deviceidle whitelist "+$package_name"
     run_optional "$package_name RUN_IN_BACKGROUND AppOp" adb_shell appops set "$package_name" RUN_IN_BACKGROUND allow
@@ -123,6 +133,11 @@ if (( DO_HYPEROS )); then
   add_entry() {
     local entry=$1
     [[ -n "$entry" ]] || return 0
+    if [[ ! "$entry" =~ ^[A-Za-z0-9._-]+$ ]]; then
+      printf 'WARN ignoring malformed MILLET entry: %s\n' "$entry" >&2
+      failures=$((failures + 1))
+      return 0
+    fi
     case ",$merged," in
       *",$entry,"*) ;;
       *) merged=${merged:+$merged,}$entry ;;
@@ -133,10 +148,14 @@ if (( DO_HYPEROS )); then
     entry=${entry//[[:space:]]/}
     add_entry "$entry"
   done
-  for package_name in com.termux com.termux.api com.termux.boot; do
+  for package_name in com.termux com.termux.api com.termux.boot io.github.scisaga.termuxbluetoothbridge "${EXTRA_KEEP_PACKAGES[@]}"; do
     package_exists "$package_name" && add_entry "$package_name"
   done
-  if adb_shell settings put system MILLET_NO_RESTRICT_APP "$merged" >/dev/null; then
+  # PowerKeeper serializes its no-restrict set as "pkg.one, pkg.two". Send the
+  # command over stdin so adb.exe invoked from WSL cannot split the value at
+  # spaces before Android's shell receives it.
+  merged_display=${merged//,/, }
+  if adb_shell_script "settings put system MILLET_NO_RESTRICT_APP '$merged_display'" >/dev/null; then
     printf 'OK   MILLET_NO_RESTRICT_APP=%s\n' "$(adb_shell settings get system MILLET_NO_RESTRICT_APP)"
   else
     printf 'ERROR could not update MILLET_NO_RESTRICT_APP\n' >&2

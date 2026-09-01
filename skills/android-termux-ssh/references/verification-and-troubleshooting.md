@@ -17,6 +17,7 @@ bash verify-termux.sh
 - `~/AGENTS.md` 存在并包含最新的设备应用、能力与边界说明。
 - `termux:service-wakelock` 已请求。
 - 需要共享存储时，`~/storage/downloads` 可读写。
+- 配置交互式 SSH 共享工作区时，目标目录可读写，且 Git `safe.directory` 只覆盖该子树而不是全局 `*`。
 - 需要 API 时，命令存在；相机和 Wi-Fi 分别做最小真实测试。
 
 ### 主机侧
@@ -41,7 +42,15 @@ ssh -o BatchMode=yes -o ConnectTimeout=8 -p 8022 root@PHONE_IP true
 4. 物理息屏，至少持续 6 分钟，每 30–60 秒建立一个新的直接 LAN SSH 会话。
 5. 重启、用户首次解锁后，等待 Boot 拉起服务，再重复物理息屏测试。
 
+HyperOS 上额外记录 `dumpsys greezer` 中 Termux UID 的最后一次 `FZ/THAW` 事件。仅看到白名单字符串不算通过；以息屏后没有新增 `FZ`、CPU wake lock 未被标记 `DISABLED` 且新 SSH 会话成功为准。
+
+使用 VPN 地址时，静置期间不要从设备主动向 VPN 网关发包；先从主机建立第一条 SSH 会话，再做其他 ping/探测。否则出站流量可能重建 WireGuard 握手或 NAT 映射，产生假阳性。
+
 最终移除全部 `adb forward`、停止 ADB server 或断开 USB，然后再连接一次 `PHONE_IP:8022`。这是“不依赖 ADB”的验收证据。
+
+### 可选 Codex 验收
+
+安装了 Codex 时运行 `bash verify-termux.sh`，确认官方 npm 主包、同版本 Linux ABI 运行包和 CLI 版本一致，登录缓存与网络环境文件均为 `0600`，CA bundle 可读，且 `NO_PROXY` 分别包含 `localhost`、`127.0.0.1` 和 `::1`。验证脚本默认不发送模型请求；需要显式联网 smoke test、设备代码登录或 Android 沙箱排障时，按 [codex-on-termux.md](codex-on-termux.md) 执行。
 
 ## 症状定位
 

@@ -78,6 +78,12 @@ com.termux.api
 com.termux.boot
 ```
 
+若安装了本 skill 的蓝牙 companion，也加入：
+
+```text
+io.github.scisaga.termuxbluetoothbridge
+```
+
 使用：
 
 ```bash
@@ -85,7 +91,35 @@ bash scripts/run.sh host-permissions --serial SERIAL \
   --hyperos-greeze --apply
 ```
 
-该设置可能被 PowerKeeper 在用户修改其他应用电池策略时重新生成。遇到复发先重新读取设置，不要直接反复重启服务。关于该私有列表与 Greeze 的代码和实机研究：<https://github.com/dingwen07/hyperos-fcm-fix/blob/main/docs/xiaomi-hyperos-gms-fcm-greezer-investigation.md>
+若 SSH 地址依赖设备上的 VPN，还要把实际 VPN 包加入相同的后台策略。例如设备使用官方 WireGuard：
+
+```bash
+bash scripts/run.sh host-permissions --serial SERIAL \
+  --background --hyperos-greeze \
+  --keep-package com.wireguard.android --apply
+```
+
+先用 `dumpsys connectivity`、`ip addr` 和包状态确认 VPN 实现，不要仅凭接口名猜包名。
+
+`MILLET_NO_RESTRICT_APP` 是 PowerKeeper 从其用户配置表中所有 `bgControl=noRestrict` 项生成的派生列表。脚本直接合并该值可以立即修复和验证，但 PowerKeeper 可能在重启或用户修改其他应用电池策略时重新生成它。要做持久交付，还必须在小米自己的应用耗电策略页面中，把实际安装的 Termux、Termux:API、Termux:Boot 和蓝牙 companion 分别设为“不限制”；之后重新读取该列表并重启验证。
+
+在当前 HyperOS 能解析标准 intent 的情况下，可逐包打开对应页面：
+
+```bash
+adb -s SERIAL shell am start -W \
+  -a android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS \
+  -d package:com.termux.api
+```
+
+不要用 ADB 绕过图案/PIN。若页面被锁屏层遮挡，让用户正常解锁后再继续。遇到复发先重新读取设置和 `dumpsys greezer`，不要直接反复重启服务。关于该私有列表与 Greeze 的代码和实机研究：<https://github.com/dingwen07/hyperos-fcm-fix/blob/main/docs/xiaomi-hyperos-gms-fcm-greezer-investigation.md>
+
+验收必须同时满足：
+
+- `mWakefulness=Asleep`；
+- `termux:service-wakelock` 不含 `DISABLED`；
+- 静置超过设备的冻结窗口后，新建 SSH 会话成功；
+- `dumpsys greezer` 没有新增 Termux UID 的 `FZ` 事件；
+- 重启并首次解锁后重复上述检查。
 
 厂商私有实现可能改变。只有日志证据吻合时才使用这条分支，不要把 `MILLET_NO_RESTRICT_APP` 当作所有 Android 的通用设置。
 

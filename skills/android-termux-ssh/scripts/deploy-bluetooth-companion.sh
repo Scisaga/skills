@@ -173,7 +173,7 @@ case "${1:-help}" in
     exec am start -a android.settings.BLUETOOTH_SETTINGS
     ;;
   help|-h|--help)
-    printf '%s\n' 'Usage: termux-bluetooth {status|bonded|scan [1..25]|open|settings}'
+    printf '%s\n' 'Usage: termux-bluetooth {start|status|bonded|scan [1..25]|open|settings}'
     ;;
   *)
     echo "unknown command: $1" >&2

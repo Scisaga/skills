@@ -45,6 +45,7 @@ abi=$(adb_shell getprop ro.product.cpu.abi)
 printf 'Device: %s %s, Android %s (API %s), %s\n' "$manufacturer" "$model" "$release" "$sdk" "$abi"
 
 packages=(com.termux com.termux.api com.termux.boot)
+greeze_packages=("${packages[@]}" io.github.scisaga.termuxbluetoothbridge)
 declare -A package_uid
 for package_name in "${packages[@]}"; do
   if adb_shell pm path "$package_name" 2>/dev/null | grep -q '^package:'; then
@@ -100,7 +101,7 @@ if [[ "${manufacturer,,}" == *xiaomi* || "${manufacturer,,}" == *redmi* ]]; then
   millet=$(adb_shell settings get system MILLET_NO_RESTRICT_APP 2>/dev/null || true)
   printf 'HyperOS/MIUI MILLET_NO_RESTRICT_APP: %s\n' "${millet:-unset}"
   millet_compact=${millet//[[:space:]]/}
-  for package_name in "${packages[@]}"; do
+  for package_name in "${greeze_packages[@]}"; do
     if adb_shell pm path "$package_name" >/dev/null 2>&1; then
       case ",$millet_compact," in
         *",$package_name,"*) ok "$package_name is in the Greeze no-restrict list" ;;
@@ -108,6 +109,11 @@ if [[ "${manufacturer,,}" == *xiaomi* || "${manufacturer,,}" == *redmi* ]]; then
       esac
     fi
   done
+  termux_uid=${package_uid[com.termux]:-}
+  if [[ -n "$termux_uid" ]]; then
+    latest_greeze_event=$(adb_shell dumpsys greezer 2>/dev/null | grep -E "(FZ|THAW) uid = $termux_uid([[:space:]]|$)" | tail -n 1 || true)
+    [[ -n "$latest_greeze_event" ]] && printf 'Latest Termux Greeze event: %s\n' "$latest_greeze_event"
+  fi
 fi
 
 forwards=$("${ADB_CMD[@]}" forward --list 2>/dev/null | tr -d '\r')

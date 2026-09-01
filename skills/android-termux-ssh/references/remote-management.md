@@ -36,6 +36,17 @@ sv-enable sshd
 
 Boot 脚本通过 `termux-wake-lock`、`start-services.sh` 和 runit 拉起 SSH。不要同时维护另一个循环执行 `sshd` 的守护脚本，以免重复监听或掩盖 runit 状态。
 
+## VPN 地址
+
+若主机连接的是 WireGuard 等 VPN 地址，交付同时依赖 Termux 和 VPN 应用：
+
+- 对 VPN 包配置“不限制”、DeviceIdle 白名单和厂商后台豁免。
+- 对位于 NAT 后的移动设备，检查 WireGuard peer 是否需要 `PersistentKeepalive = 25`；通过应用的正式配置界面或导入配置修改，不直接篡改应用私有数据库。
+- 息屏验收时先静置，不要从手机主动 ping VPN 网关。手机的出站包会临时重建握手/NAT 映射，可能掩盖“主机首次入站仍不可达”的问题。
+- 分别验证局域网地址和 VPN 地址；一个成功不能证明另一个正常。
+
+主机第一次连接超时、但手机主动向隧道发包后立即恢复，是 VPN keepalive/路径问题的强信号，不应继续归因于 `sshd`。
+
 ## 共享存储
 
 Android 公共下载目录：
@@ -58,6 +69,22 @@ Termux 标准快捷路径：
 cd ~/storage/downloads
 ```
 
+### 共享工作区别名
+
+如果用户需要让其他 Android 应用直接查看 Git 工作树，推荐保留 SSH 登录目录和真实 `$HOME`，只创建容易记忆的 `~/workspace` 别名：
+
+```bash
+bash bootstrap.sh \
+  --authorized-key-file ~/host_key.pub \
+  --shared-workspace /storage/emulated/0/termux
+```
+
+登录后使用 `cd ~/workspace`。提示符显示 `~/workspace`，实际文件保存在 `/storage/emulated/0/termux`。`.ssh`、`AGENTS.md`、服务配置和 token 仍留在私有 `$HOME`，其他 Android 应用可以查看共享目标中的工作树。
+
+只有用户明确要求登录后自动进入共享目录时，才额外使用 `--ssh-start-directory "$HOME/workspace"`；默认不改变交互式 SSH 起始目录。
+
+Android emulated storage 会报告合成所有者，较新的 Git 可能报 `detected dubious ownership`。bootstrap 只为用户明确选择的共享子树添加 `safe.directory=/storage/emulated/0/termux/*`，不要用全局 `safe.directory=*`。共享存储不完整支持 Unix 权限位、符号链接、socket 和大小写语义；普通源码工作树可以使用，依赖这些特性的仓库应保留在 `$HOME`。
+
 ## Termux:API
 
 必须同时满足：
@@ -65,6 +92,8 @@ cd ~/storage/downloads
 1. Android 安装了同签名的 Termux:API 应用。
 2. Termux 内安装了 `termux-api` 命令包。
 3. Android 权限和系统开关已启用。
+
+Termux:API 的启动器界面不需要常驻。SSH 中执行 `termux-battery-status`、`termux-wifi-scaninfo`、`termux-camera-photo` 等 CLI 时，会按需向 Termux:API 应用发出请求。若应用被系统“强行停止”、因反复崩溃进入异常状态，或者 Android/厂商策略拒绝后台启动，请求可能失败或一直等待；这时需要用户解锁并手动打开 Termux:API 一次。相机等受限资源还可能要求 Termux Activity 位于前台。
 
 列出 Wi-Fi 热点：
 
@@ -87,10 +116,13 @@ remote-bluetooth-settings
 它尝试打开 Android 蓝牙设置页。若用户明确要求从 SSH 读取蓝牙状态、已配对设备或执行限时 BLE 扫描，可部署本 skill 自带的独立、可审计 companion，详见 [bluetooth-companion.md](bluetooth-companion.md)。部署后使用：
 
 ```bash
+termux-bluetooth start
 termux-bluetooth status
 termux-bluetooth bonded
 termux-bluetooth scan 8
 ```
+
+界面无需常驻；环回 API 依赖 companion 的前台服务。`start` 可从 SSH 打开 companion Activity，再由它启动非导出的前台服务。若应用被强行停止，或锁屏/厂商策略阻止后台拉起 Activity，需要用户解锁并手动打开一次。详细行为和边界见 companion 参考文档。
 
 不要默认安装第三方修改版 Termux:API：它可能使用不同签名、与 F-Droid 主应用冲突，并扩大蓝牙权限。companion 不是 F-Droid/Termux 官方组件，不提供通用配对或连接动作，也不能静默开关蓝牙。
 

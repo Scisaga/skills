@@ -4,6 +4,8 @@ set -Eeuo pipefail
 SSH_PORT=8022
 LOGIN_LABEL=root
 HOST_LABEL=android
+SSH_START_DIRECTORY=
+SHARED_WORKSPACE=
 AUTHORIZED_KEY_FILE=
 AUTHORIZED_KEY_STDIN=0
 WITH_API=1
@@ -26,6 +28,8 @@ Options:
   --ssh-port PORT             SSH port (default: 8022; unprivileged devices cannot use <1024)
   --login-label NAME          Cosmetic SSH/prompt user label (default: root)
   --host-label NAME           Cosmetic prompt host label (default: android)
+  --ssh-start-directory PATH  Initial directory for interactive SSH; keeps HOME private
+  --shared-workspace PATH     Expose PATH as ~/workspace without changing login directory
   --without-api               Do not install Termux:API CLI or camera/Wi-Fi helpers
   --without-bash              Do not install/configure Ubuntu-style Bash interaction
   --without-storage-links     Do not create standard ~/storage links when access exists
@@ -77,6 +81,16 @@ while [[ $# -gt 0 ]]; do
       HOST_LABEL=$2
       shift 2
       ;;
+    --ssh-start-directory)
+      [[ $# -ge 2 ]] || die "$1 requires a path"
+      SSH_START_DIRECTORY=$2
+      shift 2
+      ;;
+    --shared-workspace)
+      [[ $# -ge 2 ]] || die "$1 requires a path"
+      SHARED_WORKSPACE=$2
+      shift 2
+      ;;
     --without-api) WITH_API=0; shift ;;
     --without-bash) WITH_BASH=0; shift ;;
     --without-storage-links) WITH_STORAGE=0; shift ;;
@@ -96,6 +110,13 @@ if (( SSH_PORT < 1024 )) && (( $(id -u) != 0 )); then
 fi
 [[ "$LOGIN_LABEL" =~ ^[A-Za-z0-9._-]+$ ]] || die "login label contains unsupported characters"
 [[ "$HOST_LABEL" =~ ^[A-Za-z0-9._-]+$ ]] || die "host label contains unsupported characters"
+if [[ -n "$SSH_START_DIRECTORY" ]]; then
+  [[ "$SSH_START_DIRECTORY" == /* ]] || die "SSH start directory must be an absolute path"
+  (( WITH_BASH == 1 )) || die "--ssh-start-directory requires Bash configuration"
+fi
+if [[ -n "$SHARED_WORKSPACE" ]]; then
+  [[ "$SHARED_WORKSPACE" == /* ]] || die "shared workspace must be an absolute path"
+fi
 if [[ -n "$AUTHORIZED_KEY_FILE" && $AUTHORIZED_KEY_STDIN -eq 1 ]]; then
   die "choose either --authorized-key-file or --authorized-key-stdin"
 fi
@@ -107,7 +128,7 @@ if (( SKIP_PACKAGES == 0 )); then
   packages=(
     openssh termux-services bash coreutils less procps findutils grep sed gawk
     diffutils file which iproute2 bash-completion command-not-found man nano vim
-    htop tree
+    htop tree git
   )
   if (( WITH_API == 1 )); then packages+=(termux-api); fi
   apt-get -o Dpkg::Options::="--force-confold" -y install "${packages[@]}"
@@ -224,6 +245,30 @@ elif (( WITH_STORAGE == 1 )); then
   warn "shared storage is not accessible; grant Android storage access and run termux-setup-storage"
 fi
 
+if [[ -n "$SHARED_WORKSPACE" ]]; then
+  mkdir -p -- "$SHARED_WORKSPACE"
+  [[ -d "$SHARED_WORKSPACE" && -r "$SHARED_WORKSPACE" \
+    && -w "$SHARED_WORKSPACE" && -x "$SHARED_WORKSPACE" ]] || \
+    die "shared workspace is not fully accessible: $SHARED_WORKSPACE"
+  workspace_link="$HOME/workspace"
+  if [[ -L "$workspace_link" ]]; then
+    [[ "$(readlink -f -- "$workspace_link")" == "$(readlink -f -- "$SHARED_WORKSPACE")" ]] || \
+      die "existing ~/workspace points somewhere else: $(readlink -- "$workspace_link")"
+  elif [[ -e "$workspace_link" ]]; then
+    die "~/workspace already exists and is not a symlink"
+  else
+    ln -s -- "$SHARED_WORKSPACE" "$workspace_link"
+  fi
+  if command -v git >/dev/null 2>&1 \
+      && [[ "$SHARED_WORKSPACE" == /storage/emulated/0/* ]]; then
+    git_safe_directory="$SHARED_WORKSPACE/*"
+    if ! git config --global --get-all safe.directory 2>/dev/null \
+        | grep -Fqx -- "$git_safe_directory"; then
+      git config --global --add safe.directory "$git_safe_directory"
+    fi
+  fi
+fi
+
 ensure_line() {
   local file=$1 line=$2
   touch "$file"
@@ -276,9 +321,42 @@ if [[ ${TERM:-dumb} != dumb ]]; then
 else
   PS1="${TERMUX_PROMPT_USER}@${TERMUX_PROMPT_HOST}:\w# "
 fi
+
+# Keep HOME in Termux private storage, but optionally start interactive SSH
+# sessions in a user-selected shared directory.
+if [[ $- == *i* && -n "${SSH_CONNECTION:-}" ]]; then
+  _termux_ssh_start_file="$HOME/.config/android-termux-ssh/ssh-start-directory"
+  if [[ -r "$_termux_ssh_start_file" ]]; then
+    IFS= read -r _termux_ssh_start_dir < "$_termux_ssh_start_file" || true
+    if [[ "${_termux_ssh_start_dir:-}" == /* && -d "$_termux_ssh_start_dir" ]]; then
+      cd -- "$_termux_ssh_start_dir"
+    fi
+  fi
+  unset _termux_ssh_start_file _termux_ssh_start_dir
+fi
 EOF
   } > "$managed_dir/bashrc"
   chmod 600 "$managed_dir/bashrc"
+
+  if [[ -n "$SSH_START_DIRECTORY" ]]; then
+    mkdir -p -- "$SSH_START_DIRECTORY"
+    [[ -d "$SSH_START_DIRECTORY" && -r "$SSH_START_DIRECTORY" \
+      && -w "$SSH_START_DIRECTORY" && -x "$SSH_START_DIRECTORY" ]] || \
+      die "SSH start directory is not fully accessible: $SSH_START_DIRECTORY"
+    printf '%s\n' "$SSH_START_DIRECTORY" > "$managed_dir/ssh-start-directory"
+    chmod 600 "$managed_dir/ssh-start-directory"
+
+    # Android emulated storage reports a synthetic owner, so recent Git marks
+    # repositories there as dubious unless the chosen subtree is trusted.
+    if command -v git >/dev/null 2>&1 \
+        && [[ "$SSH_START_DIRECTORY" == /storage/emulated/0/* ]]; then
+      git_safe_directory="$SSH_START_DIRECTORY/*"
+      if ! git config --global --get-all safe.directory 2>/dev/null \
+          | grep -Fqx -- "$git_safe_directory"; then
+        git config --global --add safe.directory "$git_safe_directory"
+      fi
+    fi
+  fi
 
   cat > "$managed_dir/inputrc" <<'EOF'
 set bell-style none

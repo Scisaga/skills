@@ -71,13 +71,17 @@ termux-bluetooth scan 8
 
 ## 重启与排障
 
-companion 使用自己的 `BOOT_COMPLETED` receiver 启动前台服务。Android 或厂商 ROM 仍可能阻止自启动；先检查通知权限、附近设备权限、应用自启动开关、电池“无限制”和 Greeze 豁免。打开 companion Activity 会再次启动服务：
+companion 使用自己的 `BOOT_COMPLETED` receiver 启动前台服务。它的界面不需要常驻，但 `BluetoothBridgeService` 前台服务必须运行，环回 API 才可用。Android 或厂商 ROM 仍可能阻止自启动；先检查通知权限、附近设备权限、应用自启动开关、电池“不限制”和 Greeze 豁免。
+
+SSH 可以拉起该前台服务，但不是直接对 service 运行 `am startservice`：service 设置为 `exported=false`，Termux 无权直接启动它。helper 会打开已导出的 companion Activity，由 Activity 在蓝牙权限齐全时调用 `startForegroundService()`：
 
 ```bash
-termux-bluetooth open
+termux-bluetooth start
 ```
 
-如果 `status` 连接被拒绝，先确认 companion 前台通知是否存在。若状态可用但扫描返回 Bluetooth disabled，使用：
+`termux-bluetooth open` 是保留的同义命令。`status`、`bonded` 和 `scan` 只访问环回 API，不会隐式打开界面或自动拉起服务。若应用被系统“强行停止”，或者锁屏/厂商后台启动策略拦截 Activity，SSH 拉起可能失败；此时必须由用户解锁并手动打开 companion 一次，不能通过 ADB 或其他方式绕过锁屏。
+
+如果 `status` 连接被拒绝，先运行 `termux-bluetooth start`，再确认 companion 前台通知是否存在。若状态可用但扫描返回 Bluetooth disabled，使用：
 
 ```bash
 termux-bluetooth settings

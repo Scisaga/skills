@@ -9,6 +9,7 @@ Usage: run.sh <command> [arguments]
 
 Commands:
   bootstrap         Configure packages, SSH, Boot, API helpers, storage, and Bash inside Termux
+  configure-codex   Install/configure official Codex CLI inside native Termux
   verify            Run read-only checks inside Termux
   update-agents     Refresh the managed device context in ~/AGENTS.md
   host-doctor       Inspect an Android device through ADB without changing it
@@ -26,6 +27,7 @@ if [[ $# -gt 0 ]]; then shift; fi
 
 case "$command_name" in
   bootstrap) exec bash "$SCRIPT_DIR/bootstrap.sh" "$@" ;;
+  configure-codex) exec bash "$SCRIPT_DIR/configure-codex.sh" "$@" ;;
   verify) exec bash "$SCRIPT_DIR/verify-termux.sh" "$@" ;;
   update-agents) exec bash "$SCRIPT_DIR/update-agents-md.sh" "$@" ;;
   host-doctor) exec bash "$SCRIPT_DIR/host-doctor.sh" "$@" ;;
