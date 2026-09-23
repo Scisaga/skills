@@ -39,8 +39,8 @@ bash skills/dev-ops/scripts/run.sh bootstrap
 bash skills/dev-ops/scripts/run.sh audit-hardcoded
 bash skills/dev-ops/scripts/run.sh render-template gitlab.nginx.conf gitlab.nginx.rendered.conf gitlab
 bash skills/dev-ops/scripts/run.sh service proxy proxy.sh --help
-bash skills/dev-ops/scripts/run.sh service wireguard generate-wg-password-hash.sh my-secret
 bash skills/dev-ops/scripts/run.sh service wireguard deploy.sh
+bash skills/dev-ops/scripts/run.sh service wireguard install-host-route.sh
 ```
 
 ## 资源使用
@@ -49,7 +49,7 @@ bash skills/dev-ops/scripts/run.sh service wireguard deploy.sh
 - 需要确认 `.env`、模板渲染、Compose 校验、远程发布约定或 SSH 凭据准备方式时，读 `references/deploy-conventions.md`
 - 需要处理 DDNS 或证书同步时，读 `references/ddns-workflows.md`
 - 需要处理 Unbound 本地记录或条件转发时，读 `references/unbound-records.md`
-- 需要处理 WireGuard 服务端、客户端或密码哈希生成时，读 `references/wireguard-workflows.md`
+- 需要处理 WireGuard 服务端、客户端或 wg-easy v15 配置时，读 `references/wireguard-workflows.md`
 
 ## 输出规则
 

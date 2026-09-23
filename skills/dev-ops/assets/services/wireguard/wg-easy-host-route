@@ -1,0 +1,37 @@
+#!/usr/bin/env sh
+
+set -eu
+
+action="${1:-add}"
+: "${WG_CONTAINER_NAME:=wg-easy}"
+: "${WG_CONTAINER_IPV4:=10.42.42.42}"
+: "${WG_HOST_ROUTE_CIDR:=10.8.0.0/24}"
+: "${WG_HOST_ROUTE_WAIT_SECONDS:=90}"
+
+case "${WG_HOST_ROUTE_WAIT_SECONDS}" in
+  ''|*[!0-9]*) echo "WG_HOST_ROUTE_WAIT_SECONDS must be an integer" >&2; exit 1 ;;
+esac
+
+case "${action}" in
+  add)
+    elapsed=0
+    while [ "${elapsed}" -lt "${WG_HOST_ROUTE_WAIT_SECONDS}" ]; do
+      if docker inspect -f '{{.State.Running}}' "${WG_CONTAINER_NAME}" 2>/dev/null | grep -qx true \
+        && ip -4 route get "${WG_CONTAINER_IPV4}" >/dev/null 2>&1; then
+        ip -4 route replace "${WG_HOST_ROUTE_CIDR}" via "${WG_CONTAINER_IPV4}"
+        exit 0
+      fi
+      sleep 1
+      elapsed=$((elapsed + 1))
+    done
+    echo "timed out waiting for ${WG_CONTAINER_NAME} at ${WG_CONTAINER_IPV4}" >&2
+    exit 1
+    ;;
+  delete)
+    ip -4 route del "${WG_HOST_ROUTE_CIDR}" via "${WG_CONTAINER_IPV4}" 2>/dev/null || true
+    ;;
+  *)
+    echo "usage: $(basename "$0") [add|delete]" >&2
+    exit 2
+    ;;
+esac

@@ -3,24 +3,25 @@ volumes:
 
 services:
   wg-easy:
+    build:
+      context: .
+      args:
+        WG_EASY_BASE_IMAGE: ${WG_EASY_BASE_IMAGE}
+        WG_PASSWORD_MIN_LENGTH: ${WG_PASSWORD_MIN_LENGTH}
     environment:
-      LANG: ${WG_LANG}
-      WG_HOST: ${WG_HOST}
-      PASSWORD_HASH: ${WG_PASSWORD_HASH}
-      WG_PORT: ${WG_PORT}
-      WG_DEFAULT_ADDRESS: ${WG_DEFAULT_ADDRESS}
-      WG_DEFAULT_DNS: ${WG_DEFAULT_DNS}
-      WG_ALLOWED_IPS: ${WG_ALLOWED_IPS}
-      WG_PERSISTENT_KEEPALIVE: ${WG_PERSISTENT_KEEPALIVE}
-      WG_POST_UP: ${WG_POST_UP:-}
-      WG_PRE_DOWN: ${WG_PRE_DOWN:-}
+      INSECURE: ${WG_UI_INSECURE:-false}
     image: ${WG_EASY_IMAGE}
     container_name: ${WG_CONTAINER_NAME}
+    networks:
+      wg:
+        ipv4_address: ${WG_DOCKER_IPV4_ADDRESS}
+        ipv6_address: ${WG_DOCKER_IPV6_ADDRESS}
     volumes:
       - etc_wireguard:/etc/wireguard
+      - /lib/modules:/lib/modules:ro
     ports:
       - "${WG_PORT}:${WG_PORT}/udp"
-      - "${WG_WEB_PORT}:51821/tcp"
+      - "${WG_WEB_BIND}:${WG_WEB_PORT}:51821/tcp"
     restart: unless-stopped
     cap_add:
       - NET_ADMIN
@@ -28,3 +29,16 @@ services:
     sysctls:
       - net.ipv4.ip_forward=1
       - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv6.conf.all.forwarding=1
+      - net.ipv6.conf.default.forwarding=1
+
+networks:
+  wg:
+    driver: bridge
+    enable_ipv6: true
+    ipam:
+      driver: default
+      config:
+        - subnet: ${WG_DOCKER_IPV4_SUBNET}
+        - subnet: ${WG_DOCKER_IPV6_SUBNET}

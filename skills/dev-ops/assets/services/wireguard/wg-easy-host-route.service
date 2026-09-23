@@ -1,0 +1,17 @@
+[Unit]
+Description=Route the wg-easy VPN subnet through its Docker container
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/default/wg-easy-host-route
+ExecStart=/usr/local/sbin/wg-easy-host-route add
+ExecStop=/usr/local/sbin/wg-easy-host-route delete
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

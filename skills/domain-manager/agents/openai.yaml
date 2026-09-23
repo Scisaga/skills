@@ -1,0 +1,7 @@
+interface:
+  display_name: "Domain Manager"
+  short_description: "安全管理 Gandi 与 Dynadot 的域名和 DNS"
+  icon_small: "./assets/logo.svg"
+  icon_large: "./assets/logo.svg"
+  brand_color: "#2563EB"
+  default_prompt: "Use $domain-manager to inspect or safely change domains and DNS through the Gandi or Dynadot API."

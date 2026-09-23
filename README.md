@@ -9,6 +9,7 @@
 | <img src="skills/android-termux-ssh/assets/logo.svg" alt="Android Termux SSH logo" width="44"> | [`android-termux-ssh`](skills/android-termux-ssh/) | 在 Android 上部署同源 Termux、SSH 公钥登录、Boot/runit 自启动、息屏保活、Termux:API、可选本地蓝牙 companion 与 Codex CLI、设备能力清单、共享存储、登录根目录 AGENTS.md 和 Ubuntu 风格 Bash，并完成不依赖 ADB 的局域网验收。 |
 | <img src="skills/build-narrated-presentation/assets/logo.svg" alt="Build Narrated Presentation logo" width="44"> | [`build-narrated-presentation`](skills/build-narrated-presentation/) | 保真绑定逐页演讲稿，将页面作用编译为可执行语速、音高和停顿，按目标生成每页 MP3、静态/动画/旁白 PPTX 或视频；其他输入显式提供逐页稿，并支持模板复用、章节连续合成、增量重建和分级验收。 |
 | <img src="skills/dev-ops/assets/logo.svg" alt="Dev Ops logo" width="44"> | [`dev-ops`](skills/dev-ops/) | 维护部署脚本、服务资产、Compose、远程发布和主机级安装流程。 |
+| <img src="skills/domain-manager/assets/logo.svg" alt="Domain Manager logo" width="44"> | [`domain-manager`](skills/domain-manager/) | 通过计划确认门禁安全管理 Gandi 与 Dynadot 的域名、DNS、nameserver、DNSSEC、续费与转移。 |
 | <img src="skills/gitlab-issue/assets/logo.svg" alt="GitLab Issue logo" width="44"> | [`gitlab-issue`](skills/gitlab-issue/) | 通过统一入口管理当前自托管 GitLab 仓库的 issue，并强制校验 origin 与实例一致。 |
 | <img src="skills/pdf/assets/logo.svg" alt="PDF logo" width="44"> | [`pdf`](skills/pdf/) | 本地处理 PDF 水印、骑缝章、页面重排、批量操作以及 PDF/图片转换。 |
 | <img src="skills/speech/assets/logo.svg" alt="Speech I/O logo" width="44"> | [`speech`](skills/speech/) | 使用 Azure Speech 合成语音，并通过使用者按需自行部署的开源 qwen3-asr-openai 服务转写音频。 |
@@ -23,6 +24,7 @@
 │   ├── android-termux-ssh/
 │   ├── build-narrated-presentation/
 │   ├── dev-ops/
+│   ├── domain-manager/
 │   ├── gitlab-issue/
 │   ├── pdf/
 │   ├── speech/
@@ -53,6 +55,7 @@
 ```bash
 bash skills/android-termux-ssh/scripts/run.sh help
 bash skills/build-narrated-presentation/scripts/run.sh help
+bash skills/domain-manager/scripts/run.sh help
 bash skills/gitlab-issue/scripts/run.sh help
 bash skills/pdf/scripts/run.sh help
 bash skills/speech/scripts/run.sh help
