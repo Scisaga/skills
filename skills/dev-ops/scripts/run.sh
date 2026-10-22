@@ -2,16 +2,17 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+printf -v RUN_COMMAND 'bash %q' "${SCRIPT_DIR}/run.sh"
 SERVICES_DIR="${SCRIPT_DIR}/services"
 
 usage() {
-  cat <<'EOF'
+  cat <<EOF
 Usage:
-  skills/dev-ops/scripts/run.sh bootstrap
-  skills/dev-ops/scripts/run.sh audit-hardcoded
-  skills/dev-ops/scripts/run.sh render-template <template> <output> <service>
-  skills/dev-ops/scripts/run.sh service <service> <entrypoint> [args...]
-  skills/dev-ops/scripts/run.sh help
+  ${RUN_COMMAND} bootstrap
+  ${RUN_COMMAND} audit-hardcoded
+  ${RUN_COMMAND} render-template <template> <output> <service>
+  ${RUN_COMMAND} service <service> <entrypoint> [args...]
+  ${RUN_COMMAND} help
 EOF
 }
 

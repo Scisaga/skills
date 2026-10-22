@@ -4,13 +4,14 @@
 
 ## 仓库约定
 
-- 所有真实 skill 统一放在 `skills/` 目录下，例如 `skills/build-narrated-presentation/`、`skills/speech/`、`skills/pdf/`、`skills/subtitle-matcher/`。
+- 所有真实 skill 统一放在 `skills/` 目录下，例如 `skills/slides/`、`skills/speech/`、`skills/pdf/`、`skills/subtitle-matcher/`。
 - 仓库根目录只保留仓库级文档、模板和规范，不直接放 skill。
 - 推荐同时维护：
   - `template/skill-template/`
   - `spec/`
 - 仓库级环境变量示例统一维护在根目录 `.env.example`；不得写入真实密钥、token 或含凭据的代理地址。
-- 平台专属元数据不是默认结构；只有明确要接入某个平台 marketplace 或插件系统时，才增加对应目录。
+- 本仓库明确分发 `scisaga` 插件：`plugin.json` 维护唯一身份与版本，Codex、Claude Code 清单由 `scripts/manage_skills.py package --sync-manifests` 生成，避免手工分别改版本。
+- 源码目录名与 frontmatter 使用短名称；独立安装生成 `ss-` 前缀或自定义别名视图，不在源码上批量加前缀。
 - 一个 skill 至少包含 `SKILL.md`。
 - 每个真实 skill 必须提供 `assets/logo.svg`，使用可在浅色和深色背景中识别的简洁矢量图形。
 - 推荐为每个 skill 提供：
@@ -23,6 +24,7 @@
 ## 创建或编辑 Skill 的基本原则
 
 - 优先保持 skill 自包含，不依赖其他 skill 的隐式上下文。
+- 必要跨技能依赖须在安装工具中显式声明并通过安装映射解析；当前为 `video → speech`。
 - `SKILL.md` 只写触发条件、工作流、关键命令和资源导航，不堆长篇背景说明。
 - 详细参数、排障、接口细节放到 `references/`。
 - 需要重复执行、需要确定性、或容易出错的操作，落成 `scripts/`。
@@ -49,9 +51,11 @@
 
 ## 脚本型 Skill 运行约定
 
-适用于像 `skills/build-narrated-presentation/`、`skills/speech/`、`skills/subtitle-matcher/` 这类依赖脚本执行的 skill。新建类似 skill 时，默认沿用同样模式。
+适用于像 `skills/slides/`、`skills/speech/`、`skills/subtitle-matcher/` 这类依赖脚本执行的 skill。新建类似 skill 时，默认沿用同样模式。
 
 ### `.env` 读取规则
+
+Speech 与 Slides 优先保留进程环境变量，再按 `--env-file`、当前工作目录、技能根目录、脚本目录 `.env` 的顺序逐层补充缺失变量。显式文件不存在或发现文件但缺少 `python-dotenv` 时须明确报错。其他既有技能维持下述兼容顺序：
 
 - 优先读当前工作目录的 `.env`
 - 再读 skill 根目录的 `.env`

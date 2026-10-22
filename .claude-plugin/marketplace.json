@@ -1,0 +1,16 @@
+{
+  "name": "scisaga-skills",
+  "owner": {
+    "name": "Scisaga",
+    "url": "https://github.com/Scisaga"
+  },
+  "description": "本地演示、语音、文档、视频和运维技能工具箱。",
+  "plugins": [
+    {
+      "name": "scisaga",
+      "source": "./",
+      "version": "0.1.0",
+      "description": "本地演示、语音、文档、视频和运维技能工具箱。"
+    }
+  ]
+}

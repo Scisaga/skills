@@ -6,6 +6,8 @@ SKILL_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PYTHON_BIN="${PYTHON:-python3}"
 CHECK_ONLY=0
 MODE="all"
+PROVIDER="auto"
+WITH_AZURE=0
 EXTRA_ARGS=()
 
 pick_python() {
@@ -41,6 +43,14 @@ while [ "$#" -gt 0 ]; do
       MODE="${2:?missing value for --mode}"
       shift 2
       ;;
+    --provider)
+      PROVIDER="${2:?missing value for --provider}"
+      shift 2
+      ;;
+    --with-azure)
+      WITH_AZURE=1
+      shift
+      ;;
     *)
       EXTRA_ARGS+=("$1")
       shift
@@ -54,9 +64,20 @@ if ! PYTHON_BIN="$(pick_python)"; then
 fi
 
 if [ "${CHECK_ONLY}" -eq 0 ]; then
+  if [ ! -f "${SKILL_ROOT}/.venv/bin/python" ] && [ ! -f "${SKILL_ROOT}/.venv/Scripts/python.exe" ]; then
+    "${PYTHON_BIN}" -m venv "${SKILL_ROOT}/.venv"
+  fi
+  if [ -f "${SKILL_ROOT}/.venv/bin/python" ]; then
+    PYTHON_BIN="${SKILL_ROOT}/.venv/bin/python"
+  else
+    PYTHON_BIN="${SKILL_ROOT}/.venv/Scripts/python.exe"
+  fi
   echo "==> 安装 speech 依赖"
   "${PYTHON_BIN}" -m pip install -r "${SKILL_ROOT}/requirements.txt"
+  if [ "${PROVIDER}" = "azure-speech" ] || [ "${WITH_AZURE}" -eq 1 ]; then
+    "${PYTHON_BIN}" -m pip install -r "${SKILL_ROOT}/requirements-azure.txt"
+  fi
 fi
 
 echo "==> 检查 speech 运行环境"
-"${PYTHON_BIN}" "${SCRIPT_DIR}/doctor.py" --mode "${MODE}" "${EXTRA_ARGS[@]}"
+"${PYTHON_BIN}" "${SCRIPT_DIR}/doctor.py" --mode "${MODE}" --provider "${PROVIDER}" "${EXTRA_ARGS[@]}"

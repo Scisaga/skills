@@ -1,87 +1,55 @@
 ---
 name: speech
-description: 为中文或多语言场景提供文本转语音与音频转文本能力。适用于生成旁白、演示配音、播报内容，或将会议录音、演示录音、访谈及其他音频文件转写为文本。本 skill 使用 Azure AI Speech 做 TTS，并对接由使用者按需自行部署的开源 qwen3-asr-openai 服务做 ASR。
+description: 将文本合成为 MP3，或通过自托管 qwen3-asr-openai 将音频转写为文本。适用于旁白、演示配音、播报及会议、访谈转写。合成默认优先自托管 qwen3-tts-openai，服务或控制能力不可用时整份回退 Azure Speech；也可显式选择后端。
 ---
 
 # Speech
 
 ## 概述
 
-这个 skill 用于确定性的语音输入输出任务。文本生成 MP3 时使用合成脚本；从音频提取文本时使用转写脚本。ASR 是可选的外部服务依赖，默认地址为 `http://127.0.0.1:12301/`。
-
-## 运行前提与外部依赖
-
-TTS 与 ASR 是两条独立能力：只做转写不需要 Azure Key，只做合成也不需要部署或启动 qwen3-asr-openai。
-
-| 能力 | 外部服务 | 必需配置 | 是否需要 Key |
-|---|---|---|---|
-| 文本转语音（TTS） | Azure AI Speech 云服务；使用前须有 Azure 订阅并创建 Speech 资源 | `AZURE_SPEECH_KEY`；`AZURE_SPEECH_REGION` 必须与该资源的区域一致，也可分别用 `--speech-key`、`--region` 覆盖 | 需要 Azure Speech resource key |
-| 音频转文本（ASR） | 使用者按需自行部署并保持可访问的开源 [`qwen3-asr-openai`](https://github.com/Scisaga/qwen3-asr-openai) 服务 | `QWEN_ASR_API_BASE`，或 `--api-base`；默认 `http://127.0.0.1:12301` | 当前转写接口和客户端不使用 API Key；`ADMIN_TOKEN` 只保护服务端模型热重载，不用于转写 |
-| 本地脚本 | Bash、Python 3、pip，以及 `requirements.txt` 中的 Python 包 | 首次运行 `scripts/bootstrap.sh` | 不需要 |
-
-还必须满足相应网络条件：TTS 运行机能访问 Azure Speech；ASR 运行机能访问配置的 qwen3-asr-openai 地址。`bootstrap.sh` 只安装本地 Python 依赖并做检查，不会创建 Azure 资源、申请 Key、部署或启动 ASR 服务，也不会下载 ASR 模型。需要 ASR 时，由使用者按照上游项目说明自行准备服务。
-
-优先从仓库根目录 `.env.example` 复制本地 `.env`，只填写自己环境的值，不要提交真实 Key。完整准备步骤、配置优先级和系统依赖见 `references/usage.md`；ASR 的依赖边界和客户端契约见 `references/qwen3-asr-openai.md`，具体部署与运维以上游仓库 README 为准。
+使用脚本完成确定性的语音输入输出任务。TTS 默认 `auto`：优先使用自托管 Qwen3 TTS，失败后尝试 Azure；ASR 使用独立的自托管 Qwen3 ASR 服务。两者分别配置，不互相要求服务或凭证。普通配音直接运行本技能，无需 Slides 的项目审批流程。
 
 ## 工作流
 
-1. 先确认任务方向。
-   - 源是文本、目标是 MP3 时，走语音合成。
-   - 源是音频、目标是文本时，走语音转写。
-
-2. 如果是合成，再确认输入来源。
-   - 短文本直接用 `--text`。
-   - 稿件、旁白或长文本用 `--input-file`。
-   - 如果文本已经由其他命令生成，用 `--stdin`。
-
-3. 确认运行前置条件。
-   - TTS 需要 `AZURE_SPEECH_KEY` 和与资源匹配的 `AZURE_SPEECH_REGION`，也可用命令行参数覆盖。
-   - ASR 可使用 `QWEN_ASR_API_BASE`，未设置时默认走 `http://127.0.0.1:12301`。
-   - ASR 服务尚未部署或不可访问时，先提示使用者按 `references/qwen3-asr-openai.md` 中的上游链接自行准备，不要由本 skill 擅自部署。
-   - 首次使用前优先执行 `skills/speech/scripts/bootstrap.sh --mode synthesize` 或 `--mode transcribe`；只有两项都已配置时才使用默认的 `--mode all`。
-   - 只有当前 shell 里没有所需变量时，才使用 `--env-file`。
-
-4. 保守选择参数。
-   - 除非用户指定，否则保持默认音色。
-   - 默认不设置表达风格。只有用户明确要求语气变化时，才传入 `--style`；脚本会从 Azure 音色清单校验音色与风格是否匹配。
-   - 只有用户明确要求语速或音高变化时，再调整 `--rate` 和 `--pitch`。
-   - `--max-chars` 要足够大以减少分段，但不能超过 Azure 的请求限制。
-   - 对 ASR 而言，只有在音频语言已知且稳定时才传 `--language`。
-   - `--prompt` 仅在术语、产品名等会明显影响识别效果时使用。
-
-5. 运行入口。
-   - 统一入口：`bash skills/speech/scripts/run.sh`
-   - 合成入口：`bash skills/speech/scripts/run.sh synthesize`
-   - 转写入口：`bash skills/speech/scripts/run.sh transcribe`
-   - 环境检查入口：`bash skills/speech/scripts/run.sh doctor`
-   - 音频输出用 `--output-mp3`。
-   - 如无特殊要求，合成时保留 `--output-text` 以保存源文本。
-   - 转写时用 `--output-text` 保存文本；如果需要保留原始响应，再加 `--output-json`。
+1. 确认输入输出。文本到 MP3 使用 `synthesize`；音频到文本使用 `transcribe`。短文本用 `--text`，稿件用 `--input-file`，管道用 `--stdin`。
+2. 初始化本地依赖并检查所选能力。运行 `bootstrap.sh --mode synthesize`；Windows 用 `bootstrap.ps1`。只转写用 `--mode transcribe`。需要 Azure 回退时增加 `--with-azure`。依赖初始化不会部署外部服务。
+3. 配置 Qwen 地址和已就绪音色，使用 `list-voices` 查询实际 `voice_id`，不要猜测 ID。配置文件按进程变量、`--env-file`、当前工作目录、技能目录、脚本目录的顺序补充缺失值。从其他项目调用时不会自动读取源码仓库根目录 `.env`。
+4. 保持原文及段落顺序。默认不加风格，沿用既有语速 `+5%`、音高 `+0st`；用户有要求时再调整 `--style`、`--rate`、`--pitch`。脚本会预检 SSML，不能执行的控制会触发回退或显式报错。
+5. 使用 `--provider auto|qwen3-tts-openai|azure-speech`。`--qwen-voice` 是 Qwen 音色，`--voice` 始终是 Azure 音色。显式选择的后端失败即停；输入和本地文件错误直接修正。
+6. 检查 MP3 和同名 `.tts.json` 中的实际服务、音色、回退原因。长文本分段失败时整份切换，不能拼接不同后端或音色的片段。成功后才替换目标音频，失败保留既有音频。
 
 ## 命令模式
 
+以下为源码仓库根目录中的命令；安装后以技能所在目录中的脚本为入口。
+
 ```bash
 bash skills/speech/scripts/bootstrap.sh --mode synthesize
-bash skills/speech/scripts/bootstrap.sh --mode transcribe
-bash skills/speech/scripts/run.sh synthesize --text "你好，欢迎使用语音合成。" --output-mp3 out/demo.mp3
-bash skills/speech/scripts/run.sh synthesize --input-file script.txt --voice zh-CN-XiaoxiaoNeural --style newscast
-cat notes.txt | bash skills/speech/scripts/run.sh synthesize --stdin --output-mp3 out/notes.mp3
-bash skills/speech/scripts/run.sh transcribe --input-file demo.mp3 --output-text out/demo.txt
-bash skills/speech/scripts/run.sh transcribe --input-file meeting.wav --language zh --prompt "产品名 Servforce.AI"
+bash skills/speech/scripts/run.sh list-voices
+bash skills/speech/scripts/run.sh doctor --mode synthesize --check-service
+bash skills/speech/scripts/run.sh synthesize --text "欢迎来到演示。" --output-mp3 out/demo.mp3
+bash skills/speech/scripts/run.sh synthesize --input-file script.txt --provider qwen3-tts-openai --qwen-voice xiaochen-hd
+bash skills/speech/scripts/run.sh synthesize --input-file script.txt --provider azure-speech --voice zh-CN-XiaoxiaoNeural --style newscast
+bash skills/speech/scripts/run.sh transcribe --input-file meeting.wav --language zh --output-text out/meeting.txt
+```
+
+Windows PowerShell：
+
+```powershell
+& skills/speech/scripts/bootstrap.ps1 --mode synthesize --with-azure
+& skills/speech/scripts/run.ps1 synthesize --input-file script.txt --env-file C:/config/speech.env --output-mp3 out/demo.mp3
 ```
 
 ## 资源使用
 
-- 需要参数说明或排障信息时，读取 `references/usage.md`。
-- 需要确认自托管 ASR 的依赖边界、兼容接口和上游部署入口时，读取 `references/qwen3-asr-openai.md`。
-- 首次初始化使用 `scripts/bootstrap.sh`。
-- 日常调试或检查使用 `scripts/run.sh` 和 `scripts/doctor.py`。
-- 文本转语音使用 `scripts/synthesize.py`。
-- 音频转文字使用 `scripts/transcribe.py`。
+- 配置、参数、依赖和排障：[usage.md](references/usage.md)。
+- 自托管 TTS 协议和控制能力：[qwen3-tts-openai.md](references/qwen3-tts-openai.md)。
+- ASR 依赖边界和兼容接口：[qwen3-asr-openai.md](references/qwen3-asr-openai.md)。
+- 初始化：`scripts/bootstrap.sh` / `scripts/bootstrap.ps1`；统一入口：`scripts/run.sh` / `scripts/run.ps1`。
+- 合成与音色：`scripts/synthesize.py`、`scripts/list_voices.py`；转写：`scripts/transcribe.py`；检查：`scripts/doctor.py`。
 
 ## 输出规则
 
-- 不要补写源文本里没有的口播内容。
-- 生成语音时保持原文段落顺序。
-- 除非用户明确要求清洗或总结，否则保留 ASR 返回的原始转写内容。
-- 如果命令失败，要明确暴露依赖、凭证、网络或服务错误，不要吞掉具体原因。
+- 不补写源文本没有的口播内容；默认保存原文，可用 `--output-text` 指定位置。
+- 报告实际使用的后端与音色，出现回退时说明原因，不能把 Azure 结果称为 Qwen 输出。
+- 除非用户明确要求清洗或总结，保留 ASR 返回的原始转写内容。
+- 失败时明确呈现依赖、输入、服务或配置错误；不记录密钥，不把本地 `.env` 打包分享。

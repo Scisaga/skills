@@ -1,2 +1,2 @@
-azure-cognitiveservices-speech
 python-dotenv
+lameenc>=1.7.0

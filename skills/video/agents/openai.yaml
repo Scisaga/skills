@@ -4,4 +4,4 @@ interface:
   icon_small: "./assets/logo.svg"
   icon_large: "./assets/logo.svg"
   brand_color: "#FBBF24"
-  default_prompt: "Use $video to install ffmpeg, extract keyframes, search or generate subtitles, merge subtitles into MP4, validate sync, or summarize a movie with reviews."
+  default_prompt: "Use $scisaga:video to install ffmpeg, extract keyframes, search or generate subtitles, merge subtitles into MP4, validate sync, or summarize a movie with reviews."

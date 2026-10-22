@@ -1,9 +1,12 @@
 import importlib
+import json
 import logging
+import os
+import tempfile
 from pathlib import Path
 
-SKILL_ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS_DIR = Path(__file__).resolve().parent
+SKILL_ROOT = Path(os.path.abspath(__file__)).parents[1]
+SCRIPTS_DIR = Path(os.path.abspath(__file__)).parent
 
 
 def configure_logging(*, quiet: bool, verbose: bool) -> None:
@@ -17,9 +20,7 @@ def configure_logging(*, quiet: bool, verbose: bool) -> None:
 
 
 def get_env_candidates(env_file: str | None) -> list[Path]:
-    if env_file:
-        return [Path(env_file)]
-    return [
+    return ([Path(env_file).expanduser()] if env_file else []) + [
         Path.cwd() / ".env",
         SKILL_ROOT / ".env",
         SCRIPTS_DIR / ".env",
@@ -28,27 +29,44 @@ def get_env_candidates(env_file: str | None) -> list[Path]:
 
 def load_env(*, env_file: str | None, logger: logging.Logger) -> Path | None:
     candidates = get_env_candidates(env_file)
+    if env_file and not candidates[0].is_file():
+        raise RuntimeError(f"指定的 .env 文件不存在: {env_file}")
 
     try:
         from dotenv import load_dotenv
     except ImportError:
         existing = [candidate for candidate in candidates if candidate.exists()]
         if env_file or existing:
-            logger.warning(
-                "检测到 .env 配置，但缺少 `python-dotenv`，无法自动加载。请先安装 `python-dotenv` 或手动导出环境变量。"
+            raise RuntimeError(
+                "检测到 .env 配置，但缺少 python-dotenv；安装：python -m pip install python-dotenv"
             )
         return None
 
+    loaded = None
+    seen = set()
     for candidate in candidates:
-        if not candidate.exists():
+        candidate = candidate.expanduser().absolute()
+        if not candidate.is_file() or candidate in seen:
             continue
-        load_dotenv(candidate, override=False)
+        seen.add(candidate)
+        load_dotenv(candidate, override=False, encoding="utf-8-sig")
         logger.debug("已加载环境变量文件: %s", candidate)
-        return candidate
+        loaded = loaded or candidate
 
-    if env_file:
-        logger.warning("指定的 .env 文件不存在: %s", env_file)
-    return None
+    return loaded
+
+
+def write_object(path: Path, value: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".speech-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
+            json.dump(value, stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def ensure_python_modules(

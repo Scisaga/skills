@@ -4,4 +4,4 @@ interface:
   icon_small: "./assets/logo.svg"
   icon_large: "./assets/logo.svg"
   brand_color: "#FB7185"
-  default_prompt: "Use $pdf to add a visible watermark while keeping this PDF searchable and selectable."
+  default_prompt: "Use $scisaga:pdf to add a visible watermark while keeping this PDF searchable and selectable."

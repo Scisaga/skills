@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+printf -v RUN_COMMAND 'bash %q' "${SCRIPT_DIR}/run.sh"
 SKILL_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 pick_python() {
   local preferred="${PYTHON:-}"
@@ -39,7 +40,7 @@ fi
 
 case "${COMMAND}" in
   bootstrap)
-    exec "${SCRIPT_DIR}/bootstrap.sh" "$@"
+    exec bash "${SCRIPT_DIR}/bootstrap.sh" "$@"
     ;;
   doctor|check)
     exec "${PYTHON_BIN}" "${SCRIPT_DIR}/doctor.py" "$@"
@@ -77,21 +78,21 @@ case "${COMMAND}" in
     exec "${PYTHON_BIN}" "${SCRIPT_DIR}/check_subtitle_sync.py" "$@"
     ;;
   help|-h|--help)
-    cat <<'USAGE'
+    cat <<USAGE
 Usage:
-  skills/video/scripts/run.sh bootstrap [--check-only] [--skip-ffmpeg]
-  skills/video/scripts/run.sh doctor
-  skills/video/scripts/run.sh install-ffmpeg
-  skills/video/scripts/run.sh keyframes --input-file demo.mp4 --output-dir out/frames
-  skills/video/scripts/run.sh extract-audio --input-file demo.mp4 --output-file out/demo.wav
-  skills/video/scripts/run.sh subtitles --input-file demo.mp4 --output-srt out/demo.srt
-  skills/video/scripts/run.sh mux --input-file demo.mkv --subtitle-file out/demo.srt --output-file out/demo.mp4 --check-sync
-  skills/video/scripts/run.sh check-sync --input-file demo.mp4 --subtitle-file out/demo.srt
+  ${RUN_COMMAND} bootstrap [--check-only] [--skip-ffmpeg]
+  ${RUN_COMMAND} doctor
+  ${RUN_COMMAND} install-ffmpeg
+  ${RUN_COMMAND} keyframes --input-file demo.mp4 --output-dir out/frames
+  ${RUN_COMMAND} extract-audio --input-file demo.mp4 --output-file out/demo.wav
+  ${RUN_COMMAND} subtitles --input-file demo.mp4 --output-srt out/demo.srt
+  ${RUN_COMMAND} mux --input-file demo.mkv --subtitle-file out/demo.srt --output-file out/demo.mp4 --check-sync
+  ${RUN_COMMAND} check-sync --input-file demo.mp4 --subtitle-file out/demo.srt
 USAGE
     ;;
   *)
     echo "Error: 未知命令: ${COMMAND}" >&2
-    echo "使用 \`skills/video/scripts/run.sh help\` 查看帮助。" >&2
+    echo "使用 ${RUN_COMMAND} help 查看帮助。" >&2
     exit 1
     ;;
 esac

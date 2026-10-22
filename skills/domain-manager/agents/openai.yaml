@@ -4,4 +4,4 @@ interface:
   icon_small: "./assets/logo.svg"
   icon_large: "./assets/logo.svg"
   brand_color: "#2563EB"
-  default_prompt: "Use $domain-manager to inspect or safely change domains and DNS through the Gandi or Dynadot API."
+  default_prompt: "Use $scisaga:domain-manager to inspect or safely change domains and DNS through the Gandi or Dynadot API."

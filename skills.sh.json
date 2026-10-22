@@ -6,7 +6,7 @@
       "title": "内容与媒体",
       "description": "用于演示文稿、PDF、语音、字幕和视频处理的 Skills。",
       "skills": [
-        "build-narrated-presentation",
+        "slides",
         "pdf",
         "speech",
         "subtitle-matcher",

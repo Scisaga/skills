@@ -1,0 +1,2 @@
+-r requirements.txt
+azure-cognitiveservices-speech>=1.37.0

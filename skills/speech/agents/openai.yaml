@@ -1,7 +1,7 @@
 interface:
   display_name: "Speech I/O"
-  short_description: "Azure TTS and optional self-hosted Qwen ASR"
+  short_description: "Qwen-first TTS, Azure fallback, and optional self-hosted ASR"
   icon_small: "./assets/logo.svg"
   icon_large: "./assets/logo.svg"
   brand_color: "#E879F9"
-  default_prompt: "Use $speech to synthesize or transcribe this content; check only the selected mode's dependencies, and for ASR connect to a reachable user-deployed qwen3-asr-openai service without deploying it automatically."
+  default_prompt: "Use $scisaga:speech to synthesize or transcribe this content. Prefer self-hosted Qwen3 TTS and fall back to Azure for the entire text when needed; report the actual provider and voice. Check only the selected mode's dependencies. Connect to existing self-hosted services without deploying them."

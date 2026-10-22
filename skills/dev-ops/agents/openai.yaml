@@ -4,4 +4,4 @@ interface:
   icon_small: "./assets/logo.svg"
   icon_large: "./assets/logo.svg"
   brand_color: "#34D399"
-  default_prompt: "Use $dev-ops to update a standardized service script under scripts/, adjust service assets under assets/services/, configure wg-easy host routes, or refine a deployment workflow in this repository."
+  default_prompt: "Use $scisaga:dev-ops to update a standardized service script under scripts/, adjust service assets under assets/services/, configure wg-easy host routes, or refine a deployment workflow in this repository."

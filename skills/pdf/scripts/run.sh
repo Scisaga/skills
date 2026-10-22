@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+printf -v RUN_COMMAND 'bash %q' "${SCRIPT_DIR}/run.sh"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 VENV_PYTHON_POSIX="$ROOT_DIR/.venv/bin/python"
 VENV_PYTHON_WINDOWS="$ROOT_DIR/.venv/Scripts/python.exe"
@@ -27,18 +28,18 @@ else
 fi
 
 usage() {
-  cat <<'EOF'
+  cat <<EOF
 用法:
-  bash skills/pdf/scripts/run.sh replace-page <src_pdf> <repl_pdf> <page> <out_pdf>
-  bash skills/pdf/scripts/run.sh overlay-watermark <src_pdf> <out_pdf> [args...]
-  bash skills/pdf/scripts/run.sh watermark <src_pdf> <out_pdf> [args...]
-  bash skills/pdf/scripts/run.sh seam-seal <input_pdf> <seal_png> <output_pdf> [args...]
-  bash skills/pdf/scripts/run.sh page-ops <subcommand> [args...]
-  bash skills/pdf/scripts/run.sh images-to-pdf <output_pdf> <img1> <img2> ...
-  bash skills/pdf/scripts/run.sh pdf-to-images <input_pdf> <output_dir> [args...]
-  bash skills/pdf/scripts/run.sh batch <subcommand> [args...]
-  bash skills/pdf/scripts/run.sh doctor
-  bash skills/pdf/scripts/run.sh bootstrap
+  ${RUN_COMMAND} replace-page <src_pdf> <repl_pdf> <page> <out_pdf>
+  ${RUN_COMMAND} overlay-watermark <src_pdf> <out_pdf> [args...]
+  ${RUN_COMMAND} watermark <src_pdf> <out_pdf> [args...]
+  ${RUN_COMMAND} seam-seal <input_pdf> <seal_png> <output_pdf> [args...]
+  ${RUN_COMMAND} page-ops <subcommand> [args...]
+  ${RUN_COMMAND} images-to-pdf <output_pdf> <img1> <img2> ...
+  ${RUN_COMMAND} pdf-to-images <input_pdf> <output_dir> [args...]
+  ${RUN_COMMAND} batch <subcommand> [args...]
+  ${RUN_COMMAND} doctor
+  ${RUN_COMMAND} bootstrap
 EOF
 }
 

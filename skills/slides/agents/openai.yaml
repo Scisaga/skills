@@ -1,0 +1,7 @@
+interface:
+  display_name: "Slides"
+  short_description: "按用途制作音频与演示，提供专业技术图示参考，支持 Qwen3 优先配音与 Azure 回退"
+  icon_small: "./assets/logo.svg"
+  icon_large: "./assets/logo.svg"
+  brand_color: "#A78BFA"
+  default_prompt: "使用 $scisaga:slides 保真绑定逐页演讲稿，按用途和内容设计视觉，专业技术图示可按需参考示例获得启发；按需生成 MP3、PPTX 或视频，配音优先 Qwen3、不可用时回退 Azure。"

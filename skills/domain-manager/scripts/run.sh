@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+printf -v RUN_COMMAND 'bash %q' "${SCRIPT_DIR}/run.sh"
 SKILL_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 VENV_PYTHON_POSIX="${SKILL_ROOT}/.venv/bin/python"
 VENV_PYTHON_WINDOWS="${SKILL_ROOT}/.venv/Scripts/python.exe"
@@ -29,9 +30,9 @@ pick_python() {
 }
 
 usage() {
-  cat <<'EOF'
+  cat <<EOF
 用法:
-  /absolute/path/to/domain-manager/scripts/run.sh <command> [参数]
+  ${RUN_COMMAND} <command> [参数]
 
 命令:
   bootstrap       创建 skill 私有虚拟环境并安装依赖
@@ -40,9 +41,9 @@ usage() {
   test            运行不联网的单元测试
 
 示例:
-  /absolute/path/to/domain-manager/scripts/run.sh doctor
-  /absolute/path/to/domain-manager/scripts/run.sh request gandi GET /v5/domain/domains
-  /absolute/path/to/domain-manager/scripts/run.sh request dynadot GET /restful/v2/accounts/info
+  ${RUN_COMMAND} doctor
+  ${RUN_COMMAND} request gandi GET /v5/domain/domains
+  ${RUN_COMMAND} request dynadot GET /restful/v2/accounts/info
 
 安全约束:
   GET/HEAD/OPTIONS 默认直接执行；追加 --plan 可只查看计划。

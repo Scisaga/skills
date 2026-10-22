@@ -12,7 +12,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-VIDEO_ROOT = Path(__file__).resolve().parents[1]
+VIDEO_ROOT = Path(os.path.abspath(__file__)).parents[1]
 SCRIPTS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = VIDEO_ROOT.parent
 SPEECH_ROOT = REPO_ROOT / "speech"
@@ -343,7 +343,12 @@ def speech_transcribe(
     quiet: bool,
     verbose: bool,
 ) -> None:
-    transcribe_script = SPEECH_ROOT / "scripts" / "transcribe.py"
+    speech_root = SPEECH_ROOT
+    marker = VIDEO_ROOT / ".scisaga-install.json"
+    if marker.is_file():
+        record = json.loads(marker.read_text(encoding="utf-8"))
+        speech_root = Path(record.get("dependencies", {}).get("speech", SPEECH_ROOT))
+    transcribe_script = speech_root / "scripts" / "transcribe.py"
     if not transcribe_script.exists():
         raise RuntimeError(f"找不到 speech skill 转写脚本: {transcribe_script}")
 

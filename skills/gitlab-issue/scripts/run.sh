@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+printf -v RUN_COMMAND 'bash %q' "${SCRIPT_DIR}/run.sh"
 SKILL_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 VENV_PYTHON_POSIX="${SKILL_ROOT}/.venv/bin/python"
 VENV_PYTHON_WINDOWS="${SKILL_ROOT}/.venv/Scripts/python.exe"
@@ -29,9 +30,9 @@ pick_python() {
 }
 
 usage() {
-  cat <<'EOF'
+  cat <<EOF
 用法:
-  /absolute/path/to/gitlab-issue/scripts/run.sh <command> [参数]
+  ${RUN_COMMAND} <command> [参数]
 
 命令:
   bootstrap       创建 skill 私有虚拟环境并安装依赖
@@ -44,8 +45,8 @@ usage() {
   delete          删除 issue，必须传 --yes
 
 示例:
-  /absolute/path/to/gitlab-issue/scripts/run.sh list --state opened
-  /absolute/path/to/gitlab-issue/scripts/run.sh read --iid 40 --notes
+  ${RUN_COMMAND} list --state opened
+  ${RUN_COMMAND} read --iid 40 --notes
 
 约束:
   仅适用于当前自托管 GitLab 仓库。
