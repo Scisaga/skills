@@ -41,7 +41,10 @@ bash skills/dev-ops/scripts/run.sh render-template gitlab.nginx.conf gitlab.ngin
 bash skills/dev-ops/scripts/run.sh service proxy proxy.sh --help
 bash skills/dev-ops/scripts/run.sh service wireguard deploy.sh
 bash skills/dev-ops/scripts/run.sh service wireguard install-host-route.sh
+bash skills/dev-ops/scripts/run.sh service ddns aliyun_ddns.sh --dry-run
 ```
+
+DDNS 同时同步 NAT IPv4 与网卡 IPv6 时，将 `DDNS_IPV4_SOURCE` 设为 `public`；公网 IP 查询固定绕过代理，并绑定 `DDNS_INTERFACE`。配置方法见 DDNS reference。
 
 ## 资源使用
 

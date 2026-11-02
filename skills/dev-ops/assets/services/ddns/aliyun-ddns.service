@@ -1,0 +1,21 @@
+[Unit]
+Description=Synchronize selected public IP addresses to Alibaba Cloud DNS
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/aliyun-ddns
+Environment=PATH=/opt/aliyun-ddns/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=HOME=/var/lib/aliyun-ddns
+# Point credentials.env to an existing root-only secrets file; do not copy keys.
+EnvironmentFile=/opt/aliyun-ddns/credentials.env
+EnvironmentFile=/opt/aliyun-ddns/ddns.env
+ExecStart=/usr/bin/bash /opt/aliyun-ddns/scripts/run.sh service ddns aliyun_ddns.sh
+StateDirectory=aliyun-ddns
+UMask=0077
+TimeoutStartSec=180
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict

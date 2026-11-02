@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Alibaba Cloud DDNS every five minutes
+
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=5min
+AccuracySec=10s
+Unit=aliyun-ddns.service
+
+[Install]
+WantedBy=timers.target

@@ -21,7 +21,7 @@ hy2_domain=""
 hy2_password=""
 hy2_acme_email=""
 hy2_obfs_password=""
-hy2_udp_port_range="20000-30000"
+hy2_udp_port_range="20000:30000"
 hy2_listen_port="443"
 hy2_masquerade_url="http://127.0.0.1:8080"
 
@@ -37,7 +37,7 @@ Options:
   --email ops@example.com
   --version 2.8.1
   --obfs-password secret
-  --udp-range 20000-30000
+  --udp-range 20000:30000
   --listen-port 443
   --masquerade-url http://127.0.0.1:8080
   --help
