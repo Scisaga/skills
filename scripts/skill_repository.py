@@ -369,7 +369,8 @@ def package(root: Path, output: Path) -> dict:
     files = [(Path("plugin.json"), root / "plugin.json")]
     files += [(Path(name), root / name) for name in generated_manifests(root)]
     files += [(Path(name), root / name) for name in
-              ("README.md", "AGENTS.md", "skills.sh.json", "requirements-tools.txt",
+              ("README.md", "README.en.md", "assets/demos/termux-pad7.gif",
+               "AGENTS.md", "skills.sh.json", "requirements-tools.txt",
                "scripts/manage_skills.py", "scripts/skill_repository.py", ".env.example") if (root / name).is_file()]
     files += [(path.relative_to(root), path) for path in (root / "spec").glob("*.md")]
     for name in SKILLS:
