@@ -1,0 +1,32 @@
+#!/usr/bin/python3
+"""Forward native MIME requests to VLC inside the existing managed Xfce cohort."""
+import json
+import os
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+sys.path.insert(0, '/usr/local/lib/tablet-desktop')
+from ipc import request
+
+try:
+    if any(not v or v.startswith('-') or any(ord(c) < 32 for c in v) for v in sys.argv[1:]):
+        raise ValueError('Expected media files or URLs')
+    state = request('desktop.status')
+    if state['phase'] != 'running' or not state['core_alive']:
+        raise RuntimeError('Start the Linux desktop before opening VLC')
+    keys = ('DISPLAY', 'DBUS_SESSION_BUS_ADDRESS', 'XDG_RUNTIME_DIR', 'SESSION_MANAGER')
+    path = Path('/data/data/com.termux/files/home/.local/state/tablet-desktop/session.env')
+    for line in path.read_text().splitlines():
+        tokens = shlex.split(line)
+        if len(tokens) == 2 and tokens[0] == 'export' and '=' in tokens[1]:
+            key, value = tokens[1].split('=', 1)
+            if key in keys:
+                os.environ[key] = value
+    subprocess.run(['gdbus', 'call', '--session', '--dest', 'org.xfce.FileManager', '--object-path', '/org/xfce/FileManager',
+                    '--method', 'org.xfce.FileManager.Execute', '/home/developer', 'file:///usr/local/bin/vlc-tablet',
+                    json.dumps(sys.argv[1:]), os.environ['DISPLAY'], 'tablet-vlc-open'],
+                   stdin=subprocess.DEVNULL, check=True, capture_output=True, timeout=8)
+except (OSError, RuntimeError, ValueError, KeyError, subprocess.SubprocessError) as error:
+    print(str(error), file=sys.stderr)
+    raise SystemExit(1)

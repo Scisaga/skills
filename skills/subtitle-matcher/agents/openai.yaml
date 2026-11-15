@@ -1,6 +1,6 @@
 interface:
   display_name: "Subtitle Matcher"
-  short_description: "Find, score, validate, normalize Chinese subtitles, and render HTML reports"
+  short_description: "批量匹配中文字幕，按片源筛选、下载并校验时间轴，规范命名并生成可播放报告"
   icon_small: "./assets/logo.svg"
   icon_large: "./assets/logo.svg"
   brand_color: "#38BDF8"

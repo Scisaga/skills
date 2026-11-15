@@ -1,6 +1,6 @@
 interface:
   display_name: "Dev Ops"
-  short_description: "Maintain standardized deployment scripts, service assets, and rollout workflows"
+  short_description: "管理 Compose、服务配置与远程发布，覆盖代理、VPN、DNS、证书和数据服务"
   icon_small: "./assets/logo.svg"
   icon_large: "./assets/logo.svg"
   brand_color: "#34D399"

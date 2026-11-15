@@ -1,0 +1,39 @@
+#!/usr/bin/python3
+from pathlib import Path
+import socket,json,sys,re,subprocess
+request=next((a for a in sys.argv[1:] if not a.startswith('--')),'toggle')
+if request not in ['toggle','status','touch','direct','trackpad']:raise SystemExit('Use toggle, status, direct, touch or trackpad')
+s=socket.socket(socket.AF_UNIX);s.settimeout(30)
+try:
+ s.connect('/data/data/com.termux/files/home/.local/state/tablet-desktop/touch-control.sock');s.sendall((request+'\n').encode());result=json.loads(s.makefile('r').readline(4096))
+finally:s.close()
+if not result.get('ok'):raise SystemExit(result.get('error','Unable to switch X11 input mode'))
+labels={'direct':'\u539f\u751f\u89e6\u5c4f','touch':'\u6a21\u62df\u89e6\u5c4f','trackpad':'\u89e6\u63a7\u677f'}
+label=labels.get(result['mode'], result.get('label','Touch mode'))
+name=label+'\u21c4'
+icon=str(Path.home()/'.local/share/icons'/('tablet-trackpad.svg' if result['mode']=='trackpad' else 'tablet-touch.svg'))
+for rel in ['Desktop/TouchMode.desktop','.local/share/applications/tablet-touch-toggle.desktop','.config/xfce4/panel/launcher-22/tablet-touch.desktop','.config/xfce4/panel/launcher-25/tablet-touch.desktop']:
+ p=Path.home()/rel
+ if p.exists():
+  text=p.read_text(encoding="utf-8")
+  if 'X-Tablet-Touch-Control=true' in text:
+   old=text
+   text=re.sub(r'(?m)^Name=.*$',lambda _: 'Name='+name,text,count=1)
+   text=re.sub(r'(?m)^Icon=.*$',lambda _: 'Icon='+icon,text,count=1)
+   actions={'TabletDirectTouch':('direct',labels['direct']),'TabletSimulatedTouch':('touch',labels['touch']),'TabletTrackpad':('trackpad',labels['trackpad'])}
+   boundary=text.find('\n[')
+   head,tail=(text[:boundary],text[boundary:]) if boundary>=0 else (text,'')
+   match=re.search(r'(?m)^Actions=(.*)$',head)
+   ids=[value for value in (match.group(1).split(';') if match else []) if value]
+   ids.extend(key for key in actions if key not in ids)
+   line='Actions='+';'.join(ids)+';'
+   head=re.sub(r'(?m)^Actions=.*$',lambda _:line,head) if match else head.rstrip()+'\n'+line+'\n'
+   text=head+tail
+   for key,(action,title) in actions.items():
+    if '[Desktop Action '+key+']' not in text:
+     text+='\n[Desktop Action '+key+']\nName='+title+'\nExec=/usr/local/bin/tablet-touch-toggle '+action+'\n'
+   if text!=old:p.write_text(text)
+if request!='status' and '--quiet' not in sys.argv:
+ try:subprocess.run(['gdbus','call','--session','--dest','org.freedesktop.Notifications','--object-path','/org/freedesktop/Notifications','--method','org.freedesktop.Notifications.Notify','Touch Mode','0',icon,'\u89e6\u63a7\u6a21\u5f0f\u5df2\u5207\u6362',label,'[]','{}','2500'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=3)
+ except (OSError,subprocess.TimeoutExpired):pass
+print(json.dumps(result))

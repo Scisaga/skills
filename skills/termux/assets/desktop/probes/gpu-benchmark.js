@@ -1,0 +1,19 @@
+(async()=>{
+if(window.__tablet_gpu_stop)window.__tablet_gpu_stop();const old=document.getElementById('tablet-gpu-check');if(old)old.remove();
+const box=document.createElement('div');box.id='tablet-gpu-check';box.style='position:fixed;z-index:2147483647;left:20px;top:20px;background:#071226;color:#fff;padding:16px;border:2px solid #57c0ff;font:20px sans-serif';
+const label=document.createElement('div');label.textContent='GPU: WebGL2 draw and pixel verification';box.appendChild(label);
+const c=document.createElement('canvas');c.width=1280;c.height=720;c.style='display:block;width:640px;height:360px';box.appendChild(c);document.documentElement.appendChild(box);
+let lost=false,hidden=document.visibilityState!=='visible';const visibility=()=>{if(document.visibilityState!=='visible')hidden=true;};document.addEventListener('visibilitychange',visibility);c.addEventListener('webglcontextlost',()=>{lost=true;});
+const gl=c.getContext('webgl2',{preserveDrawingBuffer:true,antialias:false});if(!gl)throw Error('WebGL2 unavailable');
+const ext=gl.getExtension('WEBGL_debug_renderer_info');
+const renderer=ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);
+function shader(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;}
+const vs=shader(gl.VERTEX_SHADER,'#version 300 es\nin vec2 p;uniform float angle;out vec3 color;void main(){float cs=cos(angle),sn=sin(angle);gl_Position=vec4(p.x*cs-p.y*sn,p.x*sn+p.y*cs,0.,1.);color=vec3(p.x*.4+.5,p.y*.4+.5,.85);}');
+const fs=shader(gl.FRAGMENT_SHADER,'#version 300 es\nprecision highp float;in vec3 color;out vec4 outColor;void main(){outColor=vec4(color,1.);}');
+const program=gl.createProgram();gl.attachShader(program,vs);gl.attachShader(program,fs);gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));gl.useProgram(program);
+const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-.8,-.6,.8,-.6,0,.8]),gl.STATIC_DRAW);const p=gl.getAttribLocation(program,'p');gl.enableVertexAttribArray(p);gl.vertexAttribPointer(p,2,gl.FLOAT,false,0,0);
+const a=gl.getUniformLocation(program,'angle');let frames=0;const started=performance.now();let running=true;let id=0;let sampling=false;let previous=0;const intervals=[];
+function draw(now){if(!running)return;gl.viewport(0,0,c.width,c.height);gl.clearColor(.02,.03,.08,1);gl.clear(gl.COLOR_BUFFER_BIT);gl.uniform1f(a,(now-started)*.0005);gl.drawArrays(gl.TRIANGLES,0,3);if(sampling){frames++;if(previous)intervals.push(now-previous);previous=now;}id=requestAnimationFrame(draw);}id=requestAnimationFrame(draw);
+await new Promise(r=>setTimeout(r,4000));frames=0;sampling=true;const measured=performance.now();await new Promise(r=>setTimeout(r,10000));sampling=false;const seconds=(performance.now()-measured)/1000;gl.finish();intervals.sort((a,b)=>a-b);const pixel=new Uint8Array(4);gl.readPixels(640,360,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);const error=gl.getError();const result={renderer,version:gl.getParameter(gl.VERSION),pixel:Array.from(pixel),error,frames,seconds,fps:frames/seconds,frameTimeMedianMs:intervals[Math.floor(intervals.length*.5)],frameTimeP95Ms:intervals[Math.floor(intervals.length*.95)],canvas:[c.width,c.height],viewport:[innerWidth,innerHeight],dpr:devicePixelRatio,visibility:hidden?'changed':document.visibilityState,contextLost:lost||gl.isContextLost(),warmup_seconds:4};
+label.textContent=renderer+' | frames '+frames+' | pixel '+pixel;window.__tablet_gpu=result;window.__tablet_gpu_stop=()=>{running=false;cancelAnimationFrame(id);box.remove();document.removeEventListener('visibilitychange',visibility);};window.__tablet_gpu_stop();return result;
+})()

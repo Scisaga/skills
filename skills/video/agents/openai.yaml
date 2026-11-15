@@ -1,6 +1,6 @@
 interface:
   display_name: "Video Toolkit"
-  short_description: "Frames, subtitles, muxing, and movie lookup"
+  short_description: "提取关键帧与音频、检索或生成字幕、封装并检查同步，以及整理影片简介和评价"
   icon_small: "./assets/logo.svg"
   icon_large: "./assets/logo.svg"
   brand_color: "#FBBF24"

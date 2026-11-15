@@ -1,7 +1,7 @@
 interface:
   display_name: "PDF"
-  short_description: "Watermark, rearrange, batch-process, and convert PDFs locally"
+  short_description: "本地合并拆分与编排 PDF，添加水印和骑缝章，支持目录批处理及图片互转"
   icon_small: "./assets/logo.svg"
   icon_large: "./assets/logo.svg"
-  brand_color: "#FB7185"
+  brand_color: "#F43F5E"
   default_prompt: "Use $scisaga:pdf to add a visible watermark while keeping this PDF searchable and selectable."

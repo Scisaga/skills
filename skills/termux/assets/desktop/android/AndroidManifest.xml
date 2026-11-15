@@ -1,0 +1,19 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.scisaga.tabletdesktop" android:versionCode="5" android:versionName="1.3">
+  <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />
+  <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+  <queries><package android:name="com.termux" /><package android:name="com.termux.x11" /></queries>
+  <application android:label="桌面管理" android:icon="@drawable/app_icon" android:allowBackup="false">
+    <activity android:name=".ManagerActivity" android:exported="true" android:launchMode="singleTop" android:theme="@android:style/Theme.DeviceDefault.Dialog.NoActionBar">
+      <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+    </activity>
+    <activity-alias android:name=".DesktopEntry" android:targetActivity=".ManagerActivity" android:exported="true" android:label="Linux 桌面" android:icon="@drawable/linux_desktop">
+      <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+    </activity-alias>
+    <receiver android:name=".ResultReceiver" android:exported="false" />
+    <receiver android:name=".BootReceiver" android:enabled="false" android:exported="true">
+      <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
+    </receiver>
+    <receiver android:name=".BootResultReceiver" android:exported="false" />
+  </application>
+</manifest>

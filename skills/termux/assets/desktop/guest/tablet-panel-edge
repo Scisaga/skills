@@ -1,0 +1,162 @@
+#!/usr/bin/python3
+"""Hide only the tablet dock's thin input window; repair its edge on X events."""
+import json
+import os
+import select
+import signal
+from pathlib import Path
+
+
+def main():
+    try:
+        from Xlib import X, Xatom, display, error
+        from Xlib.ext import composite
+    except ImportError:
+        raise SystemExit('Missing python-xlib. In the guest as root: apt-get install -y python3-xlib')
+
+    connection = display.Display()
+    screen = connection.screen()
+    root = screen.root
+    if not connection.has_extension('Composite'):
+        raise SystemExit('The X11 server needs the Composite extension for an invisible dock edge')
+    version = connection.composite_query_version()
+    if (version.major_version, version.minor_version) < (0, 4):
+        raise SystemExit('The invisible dock edge requires Composite 0.4 or newer')
+    # One connection per display, including after an accidental duplicate autostart.
+    selection = connection.intern_atom('_SCISAGA_TABLET_PANEL_EDGE')
+    if connection.get_selection_owner(selection) != X.NONE:
+        connection.close()
+        return
+    sentinel = root.create_window(0, 0, 1, 1, 0, screen.root_depth,
+                                  X.InputOutput, X.CopyFromParent, override_redirect=True)
+    sentinel.set_selection_owner(selection, X.CurrentTime)
+    connection.sync()
+    if connection.get_selection_owner(selection).id != sentinel.id:
+        connection.close()
+        return
+
+    atoms = {name: connection.intern_atom(name) for name in (
+        '_NET_CLIENT_LIST', '_NET_WM_WINDOW_TYPE', '_NET_WM_WINDOW_TYPE_DOCK',
+        '_NET_WM_PID', '_NET_WM_CM_S' + str(connection.get_default_screen()))}
+    root.change_attributes(event_mask=X.SubstructureNotifyMask | X.StructureNotifyMask | X.PropertyChangeMask)
+    state = Path(os.environ.get('XDG_RUNTIME_DIR', '/tmp')) / 'tablet-panel-edge.json'
+    redirected = {}
+    last_report = None
+    moves = 0
+
+    def property_values(window, name, kind):
+        value = window.get_full_property(atoms[name], kind)
+        return list(value.value) if value and value.format == 32 else []
+
+    def candidates():
+        found = []
+        for ident in property_values(root, '_NET_CLIENT_LIST', Xatom.WINDOW):
+            try:
+                client = connection.create_resource_object('window', int(ident))
+                if client.get_wm_class() != ('xfce4-panel', 'Xfce4-panel'):
+                    continue
+                size = client.get_geometry()
+                if not (1 <= size.height <= 16 and size.width >= 100):
+                    continue
+                if atoms['_NET_WM_WINDOW_TYPE_DOCK'] not in property_values(client, '_NET_WM_WINDOW_TYPE', Xatom.ATOM):
+                    continue
+                pids = property_values(client, '_NET_WM_PID', Xatom.CARDINAL)
+                if not pids:
+                    continue
+                command = Path('/proc', str(int(pids[0])), 'cmdline').read_bytes().split(b'\0')[0].split(b' ')[0]
+                if Path(os.fsdecode(command)).name != 'xfce4-panel':
+                    continue
+                frame = client
+                for _ in range(8):
+                    parent = frame.query_tree().parent
+                    if parent.id == root.id:
+                        break
+                    frame = parent
+                else:
+                    continue
+                geometry = frame.get_geometry()
+                if 1 <= geometry.height <= 32:
+                    found.append((client, frame))
+            except (error.XError, OSError, ValueError):
+                continue
+        # The tablet layout has one auto-hidden dock. Ambiguous new panels stay untouched.
+        if len(found) > 1:
+            found = [(c, f) for c, f in found if f.id in redirected]
+        return found
+
+    def reconcile():
+        nonlocal last_report, moves
+        for ident, frame in list(redirected.items()):
+            try:
+                frame.get_geometry()
+            except error.XError:
+                redirected.pop(ident, None)
+        geometry = root.get_geometry()
+        compositor = connection.get_selection_owner(atoms['_NET_WM_CM_S' + str(connection.get_default_screen())])
+        if compositor != X.NONE:
+            for frame in redirected.values():
+                frame.composite_unredirect_window(composite.RedirectManual, onerror=lambda *_: None)
+            redirected.clear()
+        handles = []
+        for client, frame in candidates():
+            try:
+                size = frame.get_geometry()
+                if size.width > geometry.width:
+                    continue
+                target = ((geometry.width - size.width) // 2, geometry.height - size.height)
+                if (size.x, size.y) != target:
+                    # Ask the window manager to move its client; moving its frame directly
+                    # leaves stale WM/GTK coordinates and can cause a configure-event loop.
+                    client.configure(x=target[0], y=target[1])
+                    moves += 1
+                if compositor == X.NONE and frame.id not in redirected:
+                    errors = []
+                    frame.composite_redirect_window(composite.RedirectManual, onerror=lambda *a: errors.append(a))
+                    connection.sync()
+                    if not errors:
+                        redirected[frame.id] = frame
+                handles.append({'client': client.id, 'frame': frame.id, 'x': target[0], 'y': target[1],
+                                'width': size.width, 'height': size.height})
+            except error.XError:
+                continue
+        connection.flush()
+        report = {'pid': os.getpid(), 'moves': moves, 'redirected_frames': sorted(redirected),
+                  'screen': [geometry.width, geometry.height], 'handles': handles}
+        if report != last_report:
+            state.parent.mkdir(parents=True, exist_ok=True)
+            temp = state.with_suffix('.new')
+            temp.write_text(json.dumps(report) + '\n')
+            temp.chmod(0o600)
+            temp.replace(state)
+            last_report = report
+
+    def stop(*_):
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    try:
+        reconcile()
+        while True:
+            if not connection.pending_events():
+                select.select([connection.fileno()], [], [])
+            while connection.pending_events():
+                event = connection.next_event()
+                if event.type == X.SelectionClear and getattr(event, 'atom', getattr(event, 'selection', None)) == selection:
+                    return
+            reconcile()
+    except error.ConnectionClosedError:
+        pass
+    finally:
+        try:
+            connection.close()  # Releases just our redirects; input windows belong to the panel.
+        finally:
+            try:
+                if json.loads(state.read_text()).get('pid') == os.getpid():
+                    state.unlink()
+            except (OSError, ValueError):
+                pass
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,9 @@
+#!/bin/sh
+# Standard per-component GTK input setting; application launchers clear it.
+export GDK_GL=disable LIBGL_ALWAYS_INDIRECT=1 NO_AT_BRIDGE=1
+export GDK_CORE_DEVICE_EVENTS=1
+case "${1:-}" in
+    panel) shift; exec /usr/bin/xfce4-panel "$@" ;;
+    desktop) shift; exec /usr/bin/xfdesktop "$@" ;;
+    *) printf '%s\n' 'Usage: tablet-xfce-pointer panel|desktop [options]' >&2; exit 2 ;;
+esac

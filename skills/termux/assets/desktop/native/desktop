@@ -1,0 +1,131 @@
+#!/data/data/com.termux/files/usr/bin/python
+"""Native terminal/Widget entry point. Desktop is owned by runit, not this terminal."""
+import json
+import os
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path.home() / '.local/lib/tablet-desktop'))
+from desktop_config import PREFIX, STATE as BASE
+os.environ['PREFIX'] = str(PREFIX)
+os.environ['PATH'] = str(PREFIX / 'bin') + ':/system/bin:' + os.environ.get('PATH', '')
+
+
+def request(action, session=None):
+    data = {'action': action}
+    if session:
+        data['session'] = session
+    for attempt in range(2):
+        try:
+            with socket.socket(socket.AF_UNIX) as s:
+                s.settimeout(25)
+                s.connect(str(BASE / 'touch-control.sock'))
+                s.sendall((json.dumps(data) + '\n').encode())
+                result = json.loads(s.makefile().readline(65536))
+            if not result.get('ok'):
+                raise RuntimeError(result.get('error', 'Desktop control failed'))
+            return result
+        except (FileNotFoundError, ConnectionRefusedError):
+            if attempt:
+                raise RuntimeError('\u684c\u9762\u7ba1\u7406\u670d\u52a1\u672a\u542f\u52a8\u3002')
+            subprocess.run([str(PREFIX / 'bin/bash'), '-c',
+                'export SVDIR="$PREFIX/var/service"; . "$PREFIX/etc/profile.d/start-services.sh"; sv up tablet-touch'],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8)
+            time.sleep(1)
+
+
+def show_x11():
+    subprocess.run([str(PREFIX / 'bin/am'), 'start', '--user', '0', '-n',
+                    'com.termux.x11/com.termux.x11.MainActivity'], stdin=subprocess.DEVNULL,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+
+
+def start():
+    show_x11()
+    result = request('desktop.start')
+    deadline = time.monotonic() + 45
+    while result['phase'] == 'starting' and time.monotonic() < deadline:
+        time.sleep(.5)
+        result = request('desktop.status')
+    show_x11()
+    if result['phase'] not in ('running', 'closing'):
+        raise RuntimeError('\u684c\u9762\u542f\u52a8\u5c1a\u672a\u5b8c\u6210\uff0c\u8bf7\u6253\u5f00\u684c\u9762\u7ba1\u7406\u67e5\u770b\u3002')
+    return result
+
+
+def status_text(result):
+    labels = {'running': '\u8fd0\u884c\u4e2d', 'stopped': '\u5df2\u7ed3\u675f',
+              'starting': '\u542f\u52a8\u4e2d', 'closing': '\u7b49\u5f85\u5173\u95ed\u5e94\u7528',
+              'stopping': '\u6b63\u5728\u7ed3\u675f', 'degraded': '\u9700\u8981\u68c0\u67e5'}
+    return labels.get(result['phase'], result['phase'])
+
+
+def manage_terminal():
+    while True:
+        state = request('desktop.status')
+        print('\nLinux \u684c\u9762\u7ba1\u7406\n\u72b6\u6001\uff1a' + status_text(state))
+        print('1  \u542f\u52a8 / \u8fd4\u56de\u684c\u9762\n2  \u6b63\u5e38\u7ed3\u675f\u684c\u9762\n3  \u5f3a\u5236\u7ed3\u675f\u684c\u9762\n4  \u67e5\u770b\u68c0\u67e5\u8bb0\u5f55\n0  \u5173\u95ed\u7ba1\u7406\u7a97\u53e3')
+        try:
+            choice = input('\u9009\u62e9\uff1a').strip()
+            if choice == '0':
+                return
+            if choice == '1':
+                start()
+                return
+            if choice == '2':
+                request('desktop.launch-stop')
+                show_x11()
+                return
+            if choice == '3':
+                print('\u5c06\u7ed3\u675f\u672c\u6b21\u684c\u9762\u53ca\u6240\u5c5e\u5e94\u7528\uff0c\u672a\u4fdd\u5b58\u5185\u5bb9\u53ef\u80fd\u4e22\u5931\u3002')
+                if input('\u8f93\u5165 STOP \u786e\u8ba4\uff1a').strip() == 'STOP':
+                    request('desktop.force-stop', state['session'])
+            if choice == '4':
+                for line in request('desktop.events')['events']:
+                    print(line)
+        except RuntimeError as e:
+            print(str(e))
+
+
+
+try:
+    command = next((a for a in sys.argv[1:] if not a.startswith('--')), 'start')
+    if command == 'start':
+        result = start()
+    elif command == 'status':
+        result = request('desktop.status')
+    elif command == 'stop':
+        result = request('desktop.launch-stop')
+        show_x11()
+    elif command == 'manage':
+        if '--terminal' in sys.argv:
+            manage_terminal()
+        else:
+            subprocess.run([str(PREFIX / 'bin/am'), 'start', '--user', '0', '-n',
+                            'com.scisaga.tabletdesktop/.ManagerActivity'], stdin=subprocess.DEVNULL,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        raise SystemExit(0)
+    elif command == 'force-stop':
+        if '--confirmed' not in sys.argv or '--session' not in sys.argv:
+            raise RuntimeError('Force stop requires a confirmed management action and current session')
+        session = sys.argv[sys.argv.index('--session') + 1]
+        result = request('desktop.force-stop', session)
+    elif command == 'events':
+        result = request('desktop.events')
+    else:
+        raise RuntimeError('Use: desktop [start|stop|status|manage|events] [--json]')
+    if 'phase' in result:
+        try:
+            battery = json.loads((BASE / 'battery.json').read_text(encoding="utf-8"))
+            if time.time() - battery['updated'] < 180:
+                result['battery_percentage'] = int(battery['percentage'])
+        except (OSError, ValueError, KeyError):
+            pass
+    print(json.dumps(result, ensure_ascii=False) if '--json' in sys.argv else
+          status_text(result) if 'phase' in result else '\n'.join(result.get('events', [])))
+except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as e:
+    print(str(e), file=sys.stderr)
+    raise SystemExit(1)

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Termux"
+  short_description: "搭建 Android 工作站：Termux、SSH、Linux 桌面与应用，适配触控、GPU、网络和功耗"
+  icon_small: "./assets/logo.svg"
+  icon_large: "./assets/logo.svg"
+  brand_color: "#3B82F6"
+  default_prompt: "使用 $scisaga:termux 按需部署或维护 Android Termux 与 Linux 桌面，保留用户数据和偏好，将已知故障纳入验收；主动读取可获取的现场状态，区分应用 GPU、窗口重绘和最终呈现，按安装版本核对源码，先试官方外观选项并做单变量对照，分别验证真实功能、实际性能与日常入口，记录事实、假设及未解决项。"

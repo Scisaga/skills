@@ -99,7 +99,7 @@ Windows 状态默认位于 `%LOCALAPPDATA%/Scisaga/skills`，其他平台位于 
 
 ## 旧安装迁移
 
-`build-narrated-presentation` 对应 `slides`，`android-termux-ssh` 对应 `termux-ssh`。旧名称的无来源副本不会被按名称自动删除。能确定同源、旧内容未修改的已登记安装可以迁移；未知来源或已修改副本保持原样并报告，确认后手动移除旧安装，再使用新名称安装。
+`build-narrated-presentation` 对应 `slides`；`termux-ssh` 和更早的 `android-termux-ssh` 都直接对应 `termux`，标准独立安装为 `ss-termux`，CLI 的 `--skill` 也接受这两个旧名称。用户自定义别名保留。旧名称的无来源副本不会被按名称自动删除。能确定同源、旧内容未修改的已登记安装可以迁移；未知来源或已修改副本保持原样并报告，确认后手动移除旧安装，再使用新名称安装。同一来源登记多个历史版本时停止并报告，避免覆盖遗漏。
 
 Termux 远端设备的 `~/.config/android-termux-ssh`、SSH 配置文件及托管标记属于既有部署协议，改名时继续兼容；Slides 项目 schema、Qwen 的 `compatibility` 固定值和 provider ID 也保持原值。
 

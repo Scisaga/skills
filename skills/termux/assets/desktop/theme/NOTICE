@@ -1,0 +1,4 @@
+Tablet-Touch derives from the Xfwm4 Default-xhdpi theme.
+Upstream: https://gitlab.xfce.org/xfce/xfwm4/-/tree/master/themes/Default-xhdpi
+Original artwork remains copyright its upstream authors. See COPYING.
+Local changes adjust titlebar and button geometry for the optional tablet profile.

@@ -1,0 +1,25 @@
+#!/usr/bin/python3
+"""Open fixed native Chromium through the existing private desktop controller."""
+import os
+import subprocess
+import sys
+import time
+sys.path.insert(0, '/usr/local/lib/tablet-desktop')
+from ipc import request
+
+try:
+    state = request('desktop.status')
+    result = request('browser.open', state['session'], urls=sys.argv[1:])
+    if result.get('native_browser_pid'):
+        os.environ.setdefault('DISPLAY', result['display'])
+        for _ in range(10):
+            windows = subprocess.run(['wmctrl', '-lp'], capture_output=True, text=True, timeout=3)
+            matches = [line.split()[0] for line in windows.stdout.splitlines()
+                       if len(line.split()) >= 3 and line.split()[2] == str(result['native_browser_pid'])]
+            if matches:
+                subprocess.run(['wmctrl', '-ia', matches[0]], check=True, timeout=3)
+                break
+            time.sleep(.2)
+except (OSError, RuntimeError, ValueError) as error:
+    print(str(error), file=sys.stderr)
+    raise SystemExit(1)

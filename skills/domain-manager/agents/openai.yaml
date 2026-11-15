@@ -1,6 +1,6 @@
 interface:
   display_name: "Domain Manager"
-  short_description: "安全管理 Gandi 与 Dynadot 的域名和 DNS"
+  short_description: "管理 Gandi 与 Dynadot 的域名、DNS、DNSSEC、续费及转移，变更先预览"
   icon_small: "./assets/logo.svg"
   icon_large: "./assets/logo.svg"
   brand_color: "#2563EB"

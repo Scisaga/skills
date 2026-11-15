@@ -1,0 +1,24 @@
+#!/usr/bin/python3
+"""Send common GUI office requests to the fixed native office launcher."""
+import sys
+from pathlib import Path
+from urllib.parse import urlsplit
+sys.path.insert(0, '/usr/local/lib/tablet-desktop')
+from ipc import request
+
+try:
+    args = sys.argv[1:]
+    mode = 'writer'
+    for flag in ('--writer', '--calc', '--impress'):
+        if flag in args:
+            mode = flag[2:]
+            args.remove(flag)
+            break
+    if any(v.startswith('-') for v in args):
+        raise ValueError('Use libreoffice-tablet-guest for advanced command-line options')
+    args = [str(Path(v).absolute()) if not urlsplit(v).scheme and not v.startswith('/') else v for v in args]
+    state = request('desktop.status')
+    request('office.open', state['session'], mode=mode, urls=args)
+except (OSError, RuntimeError, ValueError) as error:
+    print(str(error), file=sys.stderr)
+    raise SystemExit(1)

@@ -1,6 +1,6 @@
 interface:
   display_name: "Slides"
-  short_description: "按用途制作音频与演示，提供专业技术图示参考，支持 Qwen3 优先配音与 Azure 回退"
+  short_description: "从讲稿制作技术图示、动画与旁白演示，支持模板复用、术语发音、逐页 MP3、PPTX 和视频"
   icon_small: "./assets/logo.svg"
   icon_large: "./assets/logo.svg"
   brand_color: "#A78BFA"

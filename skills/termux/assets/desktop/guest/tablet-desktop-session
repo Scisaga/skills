@@ -1,0 +1,14 @@
+#!/bin/bash
+set -eu
+export DISPLAY=:1
+export BROWSER=/usr/local/bin/chromium-tablet
+export PULSE_SERVER=127.0.0.1
+export PULSE_COOKIE=/data/data/com.termux/files/home/.config/pulse/cookie
+export GDK_GL=disable LIBGL_ALWAYS_INDIRECT=1 NO_AT_BRIDGE=1
+export LANG=en_US.UTF-8 TZ=Asia/Shanghai
+export XDG_RUNTIME_DIR=/tmp/runtime-developer
+export XDG_SESSION_TYPE=x11 XDG_CURRENT_DESKTOP=XFCE
+unset SESSION_MANAGER DBUS_SESSION_BUS_ADDRESS GDK_CORE_DEVICE_EVENTS
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
+exec dbus-run-session -- xfce4-session

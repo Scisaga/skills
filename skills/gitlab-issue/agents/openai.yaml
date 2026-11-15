@@ -1,6 +1,6 @@
 interface:
   display_name: "GitLab Issue"
-  short_description: "安全管理当前自托管 GitLab 仓库的 issue 与评论"
+  short_description: "检索、创建和更新当前自托管 GitLab 议题，管理标签、评论、关闭与重开"
   icon_small: "./assets/logo.svg"
   icon_large: "./assets/logo.svg"
   brand_color: "#FC6D26"

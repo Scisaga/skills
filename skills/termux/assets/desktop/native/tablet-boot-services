@@ -1,0 +1,28 @@
+#!/data/data/com.termux/files/usr/bin/sh
+set -eu
+umask 077
+export PREFIX=/data/data/com.termux/files/usr
+export HOME=/data/data/com.termux/files/home
+export PATH="$PREFIX/bin:/system/bin"
+export SVDIR="$PREFIX/var/service"
+mkdir -p "$HOME/.local/state/tablet-desktop"
+exec >"$HOME/.local/state/tablet-desktop/boot-services.log" 2>&1
+printf 'Boot service recovery started: %s\n' "$(date -Iseconds)"
+termux-wake-lock
+. "$PREFIX/etc/profile.d/start-services.sh"
+# Restore only services already installed and enabled; never enable SSH here.
+python "$HOME/.local/lib/tablet-desktop/service_ready.py" --controller --timeout 20
+sv status tablet-touch
+python - <<'PY'
+import json, os, time
+from pathlib import Path
+state = Path.home() / ".local/state/tablet-desktop"
+state.mkdir(parents=True, exist_ok=True)
+target = state / "boot-services.json"
+temp = target.with_suffix(".tmp")
+temp.write_text(json.dumps({"boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
+                            "completed_at": time.time(),
+                            "uptime_seconds": time.clock_gettime(getattr(time, "CLOCK_BOOTTIME", time.CLOCK_MONOTONIC))}) + "\n")
+temp.chmod(0o600)
+os.replace(temp, target)
+PY

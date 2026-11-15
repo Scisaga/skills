@@ -21,6 +21,7 @@ from skill_repository import (
     DEFAULT_SOURCE,
     DEPENDENCIES,
     LEGACY,
+    canonical_skill,
     MARKER,
     MARKETPLACE,
     NAME,
@@ -311,7 +312,7 @@ class Manager:
 
     @staticmethod
     def canonical(entry):
-        return next((new for new, old in LEGACY.items() if entry["skill"] == old), entry["skill"])
+        return canonical_skill(entry["skill"])
 
     def standalone(self, agent: str, source: dict, selected: list[str] | None,
                    overrides: dict[str, str], copy: bool = False):
@@ -319,8 +320,16 @@ class Manager:
         summary = validate_repository(root)
         self.runner.check_budget()
         selected = skill_closure(selected)
-        existing = {self.canonical(e): e for e in self.records(agent, "standalone")
-                    if e["source"]["identity"] == source["identity"]}
+        existing = {}
+        for entry in self.records(agent, "standalone"):
+            if entry["source"]["identity"] != source["identity"]:
+                continue
+            name = self.canonical(entry)
+            if name in existing:
+                if name in selected:
+                    raise RuntimeError(f"同一技能存在多个已登记版本，保留现状，请先整理: {name}")
+                continue
+            existing[name] = entry
         aliases = {name: existing[name]["name"] if name in existing else "ss-" + name for name in SKILLS}
         for name, entry in existing.items():
             if entry["skill"] != name and entry["name"] in {entry["skill"], "ss-" + entry["skill"]}:
@@ -354,8 +363,8 @@ class Manager:
             occupied = expected.exists() or expected.is_symlink()
             if conflicts or (occupied and (not old or Path(old["target"]) != expected)):
                 raise RuntimeError(f"名称/路径冲突: {aliases[name]}；使用 --alias {name}=另一名称；已有内容未改动")
-        for name, legacy in LEGACY.items():
-            for legacy_name in (legacy, "ss-" + legacy):
+        for name, old_names in LEGACY.items():
+            for legacy_name in (variant for old in old_names for variant in (old, "ss-" + old)):
                 legacy_path = target_dir / legacy_name
                 if name in selected and legacy_path.exists() and not any(Path(e["target"]) == legacy_path for e in existing.values()):
                     print(f"WARN 旧安装来源未登记，保留原副本: {legacy_path}", file=sys.stderr)
@@ -630,6 +639,7 @@ class Manager:
         return {"updated": results}
 
     def uninstall(self, agent, mode, selected, names=None):
+        selected = [canonical_skill(name) for name in selected] if selected else selected
         entries = [e for e in self.records(agent, mode) if (not names or e["name"] in names)
                    and (mode == "plugin" or not selected or self.canonical(e) in selected)]
         if names and set(names) - {entry["name"] for entry in entries}:
@@ -684,7 +694,7 @@ def parser():
         command = commands.add_parser(name, parents=[common])
         command.add_argument("--agent", choices=("codex", "claude-code"), default="codex")
         command.add_argument("--mode", choices=("plugin", "standalone"), default="plugin")
-        command.add_argument("--skill", choices=SKILLS, action="append")
+        command.add_argument("--skill", type=canonical_skill, choices=SKILLS, action="append")
         if name != "install":
             command.add_argument("--name", action="append", help="只处理指定安装名称/别名，可重复")
         if name == "install":
@@ -783,6 +793,7 @@ def main(argv=None):
                     if "=" not in value:
                         raise ValueError("--alias 格式为 SKILL=NAME")
                     name, alias = value.split("=", 1)
+                    name = canonical_skill(name)
                     if name in overrides:
                         raise ValueError("重复的 --alias")
                     overrides[name] = alias

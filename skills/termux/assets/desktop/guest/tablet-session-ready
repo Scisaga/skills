@@ -1,0 +1,19 @@
+#!/usr/bin/python3
+import os
+import shlex
+import sys
+from pathlib import Path
+sys.path.insert(0, '/usr/local/lib/tablet-desktop')
+from ipc import request
+
+p = Path('/data/data/com.termux/files/home/.local/state/tablet-desktop/session.env')
+keys = ('DISPLAY', 'DBUS_SESSION_BUS_ADDRESS', 'XDG_RUNTIME_DIR', 'SESSION_MANAGER')
+text = ''.join('export ' + key + '=' + shlex.quote(os.environ[key]) + '\n' for key in keys if key in os.environ)
+tmp = p.with_name('session.env.new')
+tmp.write_text(text)
+tmp.chmod(0o600)
+tmp.replace(p)
+try:
+    request('desktop.ready')
+except (OSError, RuntimeError):
+    pass

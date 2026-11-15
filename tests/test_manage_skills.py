@@ -1,5 +1,6 @@
 """Behavioral installation tests; no real client configuration or network access."""
 import os
+import hashlib
 import shutil
 import sys
 import tempfile
@@ -18,7 +19,9 @@ import skill_repository as repo
 
 def fixture(root):
     root.mkdir()
-    repo.write_json(root / "plugin.json", repo.read_json(repo.ROOT / "plugin.json"))
+    manifest = repo.read_json(repo.ROOT / "plugin.json")
+    manifest["version"] = "0.1.0"
+    repo.write_json(root / "plugin.json", manifest)
     for name in repo.SKILLS:
         directory = root / "skills" / name
         (directory / "agents").mkdir(parents=True)
@@ -198,8 +201,94 @@ class InstallTests(unittest.TestCase):
         unknown = current.parent / "android-termux-ssh"
         unknown.mkdir()
         (unknown / "SKILL.md").write_text("unknown local copy")
-        self.install(["termux-ssh"])
+        self.install(["termux"])
         self.assertEqual((unknown / "SKILL.md").read_text(), "unknown local copy")
+
+    def legacy_termux_record(self, legacy, installed_name):
+        entry = next(e for e in self.manager.records() if self.manager.canonical(e) == "termux")
+        current = Path(entry["target"])
+        target = current.parent / installed_name
+        if current != target:
+            current.rename(target)
+        document = target / "SKILL.md"
+        document.write_text(document.read_text(encoding="utf-8").replace("name: " + entry["name"], "name: " + installed_name), encoding="utf-8")
+        identifier = hashlib.sha256(("codex" + self.source["identity"] + "/skills/" + legacy).encode()).hexdigest()
+        marker = repo.read_json(target / repo.MARKER)
+        marker["owner"] = identifier
+        repo.write_json(target / repo.MARKER, marker)
+        entry.update(id=identifier, skill=legacy, name=installed_name, target=str(target), snapshot=repo.view_snapshot(target))
+        self.manager.save()
+        return entry, target
+
+    def test_both_termux_legacy_generations_migrate_with_real_old_owner_identity(self):
+        self.install(["termux"])
+        for legacy in ("termux-ssh", "android-termux-ssh"):
+            for prefix in ("", "ss-"):
+                with self.subTest(legacy=legacy, prefix=prefix):
+                    entry, old = self.legacy_termux_record(legacy, prefix + legacy)
+                    notes = old / ".env"
+                    notes.write_text("LOCAL-CONFIG")
+                    self.manager.update("codex", "standalone")
+                    current = self.home / ".agents/skills/ss-termux"
+                    self.assertTrue(current.is_dir())
+                    self.assertFalse(old.exists())
+                    self.assertEqual((current / ".env").read_text(), "LOCAL-CONFIG")
+                    self.assertEqual(self.manager.records()[0]["skill"], "termux")
+
+    def test_termux_legacy_custom_alias_is_retained(self):
+        self.install(["termux"], {"termux": "tablet-admin"})
+        self.legacy_termux_record("termux-ssh", "tablet-admin")
+        self.manager.update("codex", "standalone")
+        self.assertEqual(self.manager.records()[0]["name"], "tablet-admin")
+
+    def test_modified_termux_legacy_install_is_not_overwritten(self):
+        self.install(["termux"])
+        _, old = self.legacy_termux_record("termux-ssh", "ss-termux-ssh")
+        document = old / "SKILL.md"
+        document.write_text(document.read_text() + "\nUser change\n")
+        before = document.read_bytes()
+        with self.assertRaisesRegex(RuntimeError, "本地修改"):
+            self.manager.update("codex", "standalone")
+        self.assertEqual(document.read_bytes(), before)
+        self.assertFalse((old.parent / "ss-termux").exists())
+
+    def test_unknown_termux_legacy_copies_are_preserved(self):
+        folder = self.home / ".agents/skills"
+        for name in ("termux-ssh", "ss-termux-ssh", "android-termux-ssh", "ss-android-termux-ssh"):
+            path = folder / name
+            path.mkdir(parents=True)
+            (path / "SKILL.md").write_text("Unknown origin")
+        self.install(["termux"])
+        self.assertTrue(all((folder / name / "SKILL.md").read_text() == "Unknown origin" for name in
+                            ("termux-ssh", "ss-termux-ssh", "android-termux-ssh", "ss-android-termux-ssh")))
+
+    def test_termux_old_cli_names_resolve_directly(self):
+        for old in ("termux-ssh", "android-termux-ssh"):
+            self.assertEqual(cli.parser().parse_args(["install", "--mode", "standalone", "--skill", old]).skill, ["termux"])
+            self.assertEqual(repo.skill_closure([old]), ["termux"])
+
+    def test_linked_legacy_resources_migrate_after_local_source_directory_rename(self):
+        source = self.root / "skills/termux"
+        legacy_source = source.with_name("termux-ssh")
+        original = (source / "SKILL.md").read_text(encoding="utf-8")
+        source.rename(legacy_source)
+        (legacy_source / "SKILL.md").write_text(original.replace("termux", "termux-ssh"), encoding="utf-8")
+        target = self.home / ".agents/skills/ss-termux-ssh"
+        identifier = hashlib.sha256(("codex" + self.source["identity"] + "/skills/termux-ssh").encode()).hexdigest()
+        repo.render_view(legacy_source, target, "termux-ssh", {"termux-ssh": "ss-termux-ssh"}, {}, identifier, copy=False)
+        if not (target / "scripts").is_symlink():
+            self.skipTest("Host cannot create directory symlinks; run this case under Linux/WSL")
+        entry = {"id": identifier, "agent": "codex", "mode": "standalone", "skill": "termux-ssh", "name": "ss-termux-ssh", "target": str(target), "source": self.source,
+                 "version": "0.1.0", "source_sha256": "old", "snapshot": repo.view_snapshot(target), "local_paths": [], "resources": ["scripts", "references", "assets"], "copy": False}
+        self.manager.registry["installations"].append(entry)
+        self.manager.save()
+        legacy_source.rename(source)
+        (source / "SKILL.md").write_text(original, encoding="utf-8")
+        self.assertFalse((target / "scripts").exists())
+        self.manager.update("codex", "standalone")
+        current = self.manager.records()[0]
+        self.assertEqual(current["name"], "ss-termux")
+        self.assertTrue(self.manager.usable(current))
 
     def test_archive_is_installable_and_never_contains_local_configuration(self):
         for relative in (".env", "skills/speech/.env", "skills/speech/scripts/.env",

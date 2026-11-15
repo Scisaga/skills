@@ -1,0 +1,46 @@
+#!/usr/bin/python3
+"""Select the configured app GPU path without changing the desktop environment."""
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+try:
+    config = json.loads(Path('/data/data/com.termux/files/home/.config/tablet-desktop/gpu.json').read_text())
+    profile_path = Path('/data/data/com.termux/files/home/.config/tablet-desktop/config.json')
+    profile = json.loads(profile_path.read_text()) if profile_path.exists() else {}
+    os.environ.update(XCURSOR_THEME=profile.get('cursor_theme', 'Adwaita'), XCURSOR_SIZE=str(profile.get('cursor_size', 48)))
+    backend = config.get('backend')
+    os.environ.pop('GDK_CORE_DEVICE_EVENTS', None)
+    os.environ.update(GDK_GL='disable', NO_AT_BRIDGE='1')
+    os.environ.pop('LIBGL_ALWAYS_INDIRECT', None)
+    if backend == 'virgl-android':
+        # Mesa's software winsys transports commands; the native server renders.
+        os.environ.update(LIBGL_DRI3_DISABLE='1', LIBGL_ALWAYS_SOFTWARE='1', GALLIUM_DRIVER='virpipe',
+                          VTEST_SOCKET_NAME='/tmp/.tablet-desktop-gpu')
+        if not Path(os.environ['VTEST_SOCKET_NAME']).is_socket():
+            raise RuntimeError('Desktop GPU server unavailable; run desktop start in native Termux')
+    elif backend == 'freedreno-kgsl':
+        root = config.get('driver_root', '')
+        if not re.fullmatch(r'/opt/tablet-mesa-[A-Za-z0-9._-]+', root):
+            raise RuntimeError('Invalid isolated GPU driver directory')
+        directory = Path(root)
+        library = directory / 'usr/lib/aarch64-linux-gnu'
+        if not (library / 'dri/kgsl_dri.so').is_file():
+            raise RuntimeError('Direct GPU bundle missing; reapply the reviewed desktop profile')
+        for name in ('LIBGL_ALWAYS_SOFTWARE', 'LIBGL_DRI3_DISABLE', 'GALLIUM_DRIVER', 'VTEST_SOCKET_NAME'):
+            os.environ.pop(name, None)
+        os.environ.update(LD_LIBRARY_PATH=str(library) + (':' + os.environ['LD_LIBRARY_PATH'] if os.environ.get('LD_LIBRARY_PATH') else ''),
+                          LIBGL_DRIVERS_PATH=str(library / 'dri'), MESA_LOADER_DRIVER_OVERRIDE='kgsl',
+                          __EGL_VENDOR_LIBRARY_FILENAMES=str(directory / 'usr/share/glvnd/egl_vendor.d/50_mesa.json'),
+                          VK_DRIVER_FILES=str(directory / 'usr/share/vulkan/icd.d/freedreno_icd.aarch64.json'),
+                          VK_ICD_FILENAMES=str(directory / 'usr/share/vulkan/icd.d/freedreno_icd.aarch64.json'))
+    else:
+        raise RuntimeError('No accelerated GPU backend selected')
+    if not sys.argv[1:]:
+        raise RuntimeError('Specify the application to run')
+    os.execvp(sys.argv[1], sys.argv[1:])
+except (OSError, ValueError, RuntimeError) as error:
+    print(str(error), file=sys.stderr)
+    raise SystemExit(1)

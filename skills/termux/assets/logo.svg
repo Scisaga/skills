@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none" role="img" aria-labelledby="termux-title termux-desc" stroke-linecap="round" stroke-linejoin="round">
+  <title id="termux-title">Termux</title>
+  <desc id="termux-desc">A smiling blue tablet with a mint terminal prompt on its screen.</desc>
+  <path d="M31 19c22-3 51-3 72 0 6 1 9 5 10 11 2 18 2 43 0 61-1 7-4 11-11 12H35c-8 0-12-5-12-12V32c0-7 2-11 8-13Z" fill="#CDE7FB"/>
+  <path d="M25 27c22-3 49-3 70 0 7 1 11 5 11 12 2 16 2 36 0 52-1 8-5 12-13 13-21 2-44 2-65 0-9-1-13-5-14-13-2-16-2-36 0-51 1-8 4-12 11-13Z" fill="#83BDF0"/>
+  <path d="M28 58c20-2 42-2 62 0 4 0 6 3 6 7v23c0 4-2 6-6 7-20 2-42 2-62 0-4-1-6-3-6-7V65c0-4 2-7 6-7Z" fill="#354963"/>
+  <path d="m35 68 10 8-10 8m22 0h14" stroke="#BEE9AF" stroke-width="4.5"/>
+  <path d="M111 48v15" stroke="#5585C5" stroke-width="3.5"/>
+      <circle cx="48" cy="39" r="5.8" fill="#FFFFFF"/>
+    <circle cx="48.5" cy="39.5" r="2.55" fill="#483653"/>
+    <circle cx="70" cy="39" r="5.8" fill="#FFFFFF"/>
+    <circle cx="70.5" cy="39.5" r="2.55" fill="#483653"/>
+    <path d="M53.5 48h11c-0.8 7.5-10.2 7.5-11 0Z" fill="#483653"/>
+</svg>

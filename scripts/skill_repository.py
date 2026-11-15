@@ -18,10 +18,11 @@ ROOT = Path(__file__).resolve().parent.parent
 PLUGIN = "scisaga"
 MARKETPLACE = "scisaga-skills"
 DEFAULT_SOURCE = "https://github.com/Scisaga/skills.git"
-SKILLS = ("termux-ssh", "slides", "dev-ops", "domain-manager", "gitlab-issue",
+SKILLS = ("termux", "slides", "dev-ops", "domain-manager", "gitlab-issue",
           "pdf", "speech", "subtitle-matcher", "video")
 DEPENDENCIES = {"video": ("speech",)}
-LEGACY = {"slides": "build-narrated-presentation", "termux-ssh": "android-termux-ssh"}
+LEGACY = {"slides": ("build-narrated-presentation",),
+          "termux": ("termux-ssh", "android-termux-ssh")}
 MARKER = ".scisaga-install.json"
 NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 DENIED = {".git", ".venv", ".venv-win", "venv", "env", "__pycache__",
@@ -202,9 +203,14 @@ def validate_repository(root: Path) -> dict[str, Any]:
         raise ValueError(f"{exc}; input_repository={root}; input_sha256={digest}") from exc
 
 
+def canonical_skill(name: str) -> str:
+    return next((new for new, old_names in LEGACY.items() if name in old_names), name)
+
+
 def skill_closure(selected: list[str] | None) -> list[str]:
     result = []
     def visit(name):
+        name = canonical_skill(name)
         if name not in SKILLS:
             raise ValueError(f"Unknown skill: {name}")
         for dependency in DEPENDENCIES.get(name, ()):
@@ -330,7 +336,10 @@ def view_snapshot(root: Path) -> dict[str, str]:
             rel = path.relative_to(root)
             if rel.as_posix() == MARKER or not allowed(rel):
                 continue
-            result[rel.as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+            # os.walk classifies a dangling directory link as a file. Retain its
+            # identity so a registered legacy view can migrate after a source rename.
+            result[rel.as_posix()] = ("link:" + str(path.resolve()) if path.is_symlink()
+                                    else hashlib.sha256(path.read_bytes()).hexdigest())
     return result
 
 

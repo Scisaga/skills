@@ -1,0 +1,5 @@
+#!/bin/sh
+case "${1-}" in
+  ''|--logout|-l) exec /usr/local/bin/tablet-desktop-end ;;
+  *) exec /usr/bin/xfce4-session-logout "$@" ;;
+esac

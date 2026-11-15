@@ -1,0 +1,30 @@
+#!/usr/bin/python3
+"""Fast cached panel display; Android battery API is queried by the native controller."""
+from pathlib import Path
+import json
+import time
+from html import escape
+
+path = Path('/data/data/com.termux/files/home/.local/state/tablet-desktop/battery.json')
+try:
+    d = json.loads(path.read_text(encoding="utf-8"))
+    level = max(0, min(100, int(d['percentage'])))
+    stale = time.time() - d['updated'] > 180
+    connected = d.get('plugged') not in (None, 'UNPLUGGED', 'UNKNOWN')
+    suffix = '-charging' if connected else ''
+    strength = 'full' if level >= 90 else 'good' if level >= 50 else 'low' if level >= 20 else 'caution'
+    icon = 'battery-' + strength + suffix + '-symbolic'
+    label = str(level) + '%'
+    statuses = {'CHARGING': '\u6b63\u5728\u5145\u7535', 'DISCHARGING': '\u4f7f\u7528\u7535\u6c60',
+                'FULL': '\u5df2\u5145\u6ee1', 'NOT_CHARGING': '\u5df2\u63a5\u7535\u6e90\uff0c\u672a\u5145\u7535'}
+    detail = '\u7535\u91cf\uff1a' + label + '\n\u72b6\u6001\uff1a' + statuses.get(d.get('status'), str(d.get('status', '--')))
+    if isinstance(d.get('temperature'), (int, float)):
+        detail += '\n\u7535\u6c60\u6e29\u5ea6\uff1a' + str(d['temperature']) + '\u2103'
+    detail += '\n\u66f4\u65b0\uff1a' + time.strftime('%H:%M:%S', time.localtime(d['updated']))
+    if stale:
+        icon = 'battery-missing-symbolic'
+        label = '\u2014'
+        detail += '\n\u6570\u636e\u6682\u672a\u5237\u65b0'
+except (OSError, ValueError, KeyError, TypeError):
+    icon, label, detail = 'battery-missing-symbolic', '\u2014', '\u6b63\u5728\u8bfb\u53d6 Android \u7535\u6c60\u72b6\u6001\u2026'
+print('<icon>' + icon + '</icon><txt>' + label + '</txt><tool>' + escape(detail) + '</tool>')

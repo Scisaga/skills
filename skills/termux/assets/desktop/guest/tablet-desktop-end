@@ -1,0 +1,137 @@
+#!/usr/bin/python3
+"""Request ordinary window closes; never discard edits or force-close an application."""
+import fcntl
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+os.environ.update(GDK_GL='disable', LIBGL_ALWAYS_INDIRECT='1', NO_AT_BRIDGE='1')
+sys.path.insert(0, '/usr/local/lib/tablet-desktop')
+from ipc import request
+import gi
+gi.require_version('Gtk', '3.0')
+from gi.repository import Gtk, GLib, Gdk
+
+GLib.set_prgname('tablet-desktop-end')
+lock = open('/tmp/tablet-desktop-end.lock', 'a')
+try:
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    subprocess.run(['wmctrl', '-xa', 'tablet-desktop-end'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    raise SystemExit(0)
+
+
+def windows():
+    p = subprocess.run(['wmctrl', '-lp'], capture_output=True, text=True, timeout=3)
+    result = []
+    for line in p.stdout.splitlines():
+        fields = line.split(None, 4)
+        if len(fields) < 5:
+            continue
+        xid, _, pid, _, title = fields
+        if int(pid) == os.getpid():
+            continue
+        types = subprocess.run(['xprop', '-id', xid, '_NET_WM_WINDOW_TYPE'],
+                               capture_output=True, text=True, timeout=2).stdout
+        if '_NET_WM_WINDOW_TYPE_NORMAL' in types:
+            result.append((xid, title))
+    return result
+
+
+class EndDesktop(Gtk.Window):
+    def __init__(self, session):
+        super().__init__(title='\u7ed3\u675f\u684c\u9762')
+        self.set_wmclass('tablet-desktop-end', 'tablet-desktop-end')
+        self.set_default_size(460, 170)
+        self.set_position(Gtk.WindowPosition.CENTER)
+        self.set_border_width(22)
+        self.session = session
+        self.waiting = None
+        self.closed = False
+        self.finished = False
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        self.add(box)
+        self.label = Gtk.Label(label='\u6b63\u5728\u8bf7\u6c42\u5e94\u7528\u6b63\u5e38\u5173\u95ed\u2026')
+        self.label.set_line_wrap(True)
+        self.label.set_max_width_chars(45)
+        box.pack_start(self.label, True, True, 0)
+        text = Gtk.Label(label='\u8bf7\u5904\u7406\u5e94\u7528\u4e2d\u7684\u4fdd\u5b58\u63d0\u793a\uff0c\u4e5f\u53ef\u53d6\u6d88\u7ed3\u675f\u3002')
+        text.set_line_wrap(True)
+        box.pack_start(text, False, False, 0)
+        cancel = Gtk.Button(label='\u53d6\u6d88\u7ed3\u675f')
+        cancel.connect('clicked', self.cancel)
+        box.pack_start(cancel, False, False, 0)
+        self.connect('delete-event', self.cancel)
+        self.connect('key-press-event', lambda w, e: self.cancel() if e.keyval == Gdk.KEY_Escape else False)
+        self.connect('destroy', Gtk.main_quit)
+        self.show_all()
+        GLib.timeout_add(650, self.step)
+
+    def cancel(self, *_):
+        if not self.finished:
+            try:
+                request('desktop.cancel-stop', self.session)
+            except (OSError, RuntimeError):
+                pass
+        self.closed = True
+        self.destroy()
+        return True
+
+    def step(self):
+        if self.closed or self.finished:
+            return False
+        try:
+            current = windows()
+            ids = {x[0] for x in current}
+            if self.waiting and self.waiting[0] in ids:
+                return True
+            self.waiting = None
+            if current:
+                self.waiting = current[0]
+                xid, title = self.waiting
+                self.label.set_text('\u6b63\u5728\u5173\u95ed\uff1a' + title +
+                                    '\n\u5982\u6709\u4fdd\u5b58\u63d0\u793a\uff0c\u8bf7\u5728\u5e94\u7528\u4e2d\u5904\u7406\u3002')
+                subprocess.run(['wmctrl', '-ia', xid], timeout=3)
+                subprocess.run(['wmctrl', '-ic', xid], timeout=3)
+                return True
+            request('desktop.logout-ready', self.session)
+            self.finished = True
+            self.label.set_text('\u5e94\u7528\u5df2\u5173\u95ed\uff0c\u6b63\u5728\u7ed3\u675f Xfce \u4f1a\u8bdd\u2026')
+            p = subprocess.run(['/usr/bin/xfce4-session-logout', '--logout'],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=12)
+            if p.returncode:
+                raise RuntimeError('\u6ce8\u9500\u8bf7\u6c42\u672a\u5b8c\u6210\uff0c\u684c\u9762\u4ecd\u4fdd\u7559\u3002')
+            return False
+        except (OSError, RuntimeError, subprocess.SubprocessError) as e:
+            self.finished = False
+            self.label.set_text(str(e))
+            try:
+                request('desktop.cancel-stop', self.session)
+            except (OSError, RuntimeError):
+                pass
+            return False
+
+
+try:
+    state = request('desktop.status')
+    if not state['core_alive']:
+        raise RuntimeError('\u5f53\u524d\u6ca1\u6709\u8fd0\u884c\u4e2d\u7684 Xfce \u684c\u9762\u3002')
+    dialog = Gtk.MessageDialog(message_type=Gtk.MessageType.QUESTION, buttons=Gtk.ButtonsType.NONE,
+                              text='\u7ed3\u675f\u672c\u6b21 Linux \u684c\u9762\uff1f')
+    dialog.set_title('\u7ed3\u675f\u684c\u9762')
+    dialog.format_secondary_text('\u5c06\u6b63\u5e38\u5173\u95ed\u5e94\u7528\uff0c\u7531\u5e94\u7528\u63d0\u793a\u4fdd\u5b58\u672a\u4fdd\u5b58\u7684\u6587\u4ef6\u3002\n\u672c\u6b21\u684c\u9762\u4e2d\u7684\u540e\u53f0\u4efb\u52a1\u4e5f\u4f1a\u7ed3\u675f\uff1bSSH \u670d\u52a1\u4f1d\u7559\u3002')
+    dialog.add_button('\u8fd4\u56de\u684c\u9762', Gtk.ResponseType.CANCEL)
+    dialog.add_button('\u7ed3\u675f\u684c\u9762', Gtk.ResponseType.OK)
+    dialog.set_default_response(Gtk.ResponseType.CANCEL)
+    answer = dialog.run()
+    dialog.destroy()
+    if answer == Gtk.ResponseType.OK:
+        request('desktop.begin-stop', state['session'])
+        window = EndDesktop(state['session'])
+        Gtk.main()
+except (OSError, RuntimeError, ValueError) as e:
+    dialog = Gtk.MessageDialog(message_type=Gtk.MessageType.INFO, buttons=Gtk.ButtonsType.CLOSE, text=str(e))
+    dialog.run()
+    dialog.destroy()
