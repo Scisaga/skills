@@ -22,9 +22,9 @@
 
 ### Termux 实机演示
 
-小米平板 7 实机快览：YouTube（3Blue1Brown）→ GitHub → VLC 视频播放 → 全屏 VS Code，在底部终端运行 Python 贪吃蛇。片段经过剪辑，9 秒循环，GIF 约 1.5 MB。
+小米平板 7 实机快览：YouTube（3Blue1Brown）→ GitHub → VLC 视频播放 → 全屏 VS Code，右侧 Codex 为贪吃蛇添加最高分，再从底部终端启动游戏。保留左侧文件栏，展示真实 AI 改码与运行结果。片段经过剪辑，9 秒循环，GIF 约 2 MB。
 
-<img src="assets/demos/termux-pad7.gif" alt="小米平板 7 的 Xfce 桌面快速切换 YouTube、GitHub、VLC 视频播放、全屏 VS Code 内置终端和 Python 贪吃蛇" width="1120">
+<img src="assets/demos/termux-pad7.gif" alt="小米平板 7 的 Xfce 桌面快速切换 YouTube、GitHub、VLC，以及带左侧文件栏、右侧 Codex 改码结果和底部终端的全屏 VS Code，启动 Python 贪吃蛇" width="1120">
 
 [贪吃蛇示例源码](skills/termux/assets/demo/snake.py) · 在 Debian/Xfce 中运行 `python3 snake.py`；缺少 Tk 时安装 `python3-tk`。方向键或 WASD 移动，空格暂停，R 重开。
 

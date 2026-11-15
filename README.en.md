@@ -22,9 +22,9 @@ Open a skill to find its workflow, commands, and configuration guide. Detailed s
 
 ### Termux device demo
 
-Recorded on a Xiaomi Pad 7: YouTube (3Blue1Brown) → GitHub → VLC video playback → maximized VS Code, running a Python Snake game from the integrated terminal. Edited into a 9-second loop; approximately 1.5 MB.
+Recorded on a Xiaomi Pad 7: YouTube (3Blue1Brown) → GitHub → VLC video playback → maximized VS Code. Codex in the right sidebar adds a best score to Snake, then the game runs from the integrated terminal, with Explorer visible on the left. Shows a real AI edit and its running result. Edited into a 9-second loop; approximately 2 MB.
 
-<img src="assets/demos/termux-pad7.gif" alt="Xiaomi Pad 7 Xfce desktop switching between YouTube, GitHub, VLC, maximized VS Code with its integrated terminal, and a running Python Snake game" width="1120">
+<img src="assets/demos/termux-pad7.gif" alt="Xiaomi Pad 7 Xfce desktop switching between YouTube, GitHub, VLC, and maximized VS Code with Explorer, real Codex edits in the right sidebar, and its integrated terminal launching Python Snake" width="1120">
 
 [Snake example source](skills/termux/assets/demo/snake.py) · Run `python3 snake.py` inside Debian/Xfce; install `python3-tk` if Tk is missing. Use arrow keys or WASD to move, Space to pause, and R to restart.
 

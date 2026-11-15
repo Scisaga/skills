@@ -61,6 +61,7 @@ class Snake:
 class App:
     def __init__(self):
         self.game = Snake()
+        self.best_score = 0
         self.root = tk.Tk()
         self.root.title("Snake | Python on Termux")
         self.root.configure(bg=BG)
@@ -99,6 +100,7 @@ class App:
         self.label(60, 47, "SCISAGA  /  PYTHON DEMO", 23, MUTED)
         self.label(60, 111, "Snake", 60, bold=True)
         self.label(width - 60, 102, f"SCORE   {g.score:02d}", 37, MINT, "e", True)
+        self.label(width - 60, 148, f"BEST   {self.best_score:02d}", 24, MUTED, "e", True)
         top, left = 180, 60
         c.create_rectangle(left, top, left + COLS * CELL, top + ROWS * CELL,
                            fill=BOARD, outline=GRID, width=2)
@@ -134,6 +136,7 @@ class App:
 
     def update(self):
         self.game.tick()
+        self.best_score = max(self.best_score, self.game.score)
         self.draw()
         self.root.after(170, self.update)
 
