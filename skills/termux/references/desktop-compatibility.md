@@ -131,6 +131,10 @@
 
 拖动残影另做合成对照。原先合成关闭；auto 启用时出现 GLX 上下文失败与 BadValue，窗口管理器由会话恢复，已关闭合成并还原辅助。热改 XPresent 仍沿用旧进程的启动模式；核对源码后，在合成关闭、底栏辅助已释放资源的条件下，受控替换为 `xfwm4 --replace --vblank=xpresent` 再开启合成。实际 compositor selection 生效，用户确认“残影消失、没有闪烁，保留”，随后取消超时回退并保留配置。Code/浏览器 GLES 参数、字体、缩放和网络未改；底栏局部重定向辅助保持禁用，回退可恢复。未做重启恢复、长时功耗或固定负载性能比较。
 
+2026-11-17 后续界面调整：合成器重载后，原自动隐藏 dock 和触发窗缓存到了左上 `(0,0)`；一次正常面板刷新后恢复底部居中，实测呼出为 `y=2454`、隐藏触发为 `y=2554`，自动隐藏仍为 2，没有新增重复 dock。虚拟桌面从 4 减到 2；所有原窗口均在第 1 个，未迁移或关闭。
+
+按用户选择新增“桌面CPU＋整机内存”两行小组件，每 2 秒刷新。CPU 是 Termux UID 可读取进程的核平均采样，内存依据 Android 整机可用量；Y900 可计内存约 11.11 GiB。已核对来源、连续显示及运行插件，未把 guest 静态 `/proc/stat` 当作整机 CPU。Thunar 工具栏上下分隔线变细，去除叠加的深边；运行态偏好为 dark，故派生主题 `Greybird-dark-ThunarThin` 同时修改两个 CSS 变体，并给 native GTK 提供同名主题路径。未修改其他应用的 CSS、字体或缩放。
+
 ### Y900 整窗移动的呈现短样本
 
 同日，日常 Chromium 的真实 GPU 页面仍报告硬件 Canvas/Compositing/Rasterization/WebGL/WebGPU，GL_RENDERER 为 Adreno 830 / ANGLE GLES / Zink / Turnip；Code 有 GLES、独立驱动映射及 KGSL FD 证据，但同实例 `--status` 输出为空，未取得新的 GPUFeatureStatus。两者的硬件证据强度不同；原有终端 DOM 和 Chromium mailbox 保留，不据此推定整体软件回退。

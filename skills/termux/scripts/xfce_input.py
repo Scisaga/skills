@@ -17,8 +17,15 @@ import tempfile
 import time
 from pathlib import Path
 
+def display_identity(display):
+    # DISPLAY=:1 and :1.0 refer to the same screen, including in Xfce autostart.
+    if display and ':' in display and '.' not in display.rsplit(':', 1)[1]:
+        return display + '.0'
+    return display
+
+
 def menu_paths():
-    key = hashlib.sha256(os.environ.get('DISPLAY', '').encode()).hexdigest()[:12]
+    key = hashlib.sha256(display_identity(os.environ.get('DISPLAY', '')).encode()).hexdigest()[:12]
     base = Path.home() / '.local/state/tablet-desktop'
     return base / ('menu-key-' + key + '.lock'), base / ('menu-key-' + key + '.json')
 
@@ -79,7 +86,7 @@ def menu_restore_identity(state):
     identity = json.loads(record.read_text(encoding='utf-8'))
     expected = [str(Path.home() / '.local/lib/tablet-desktop/menu-key'),
                 str(Path.home() / '.local/bin/tablet-window-action')]
-    if identity.get('display') != os.environ.get('DISPLAY') or identity.get('argv') != expected:
+    if display_identity(identity.get('display', '')) != display_identity(os.environ.get('DISPLAY', '')) or identity.get('argv') != expected:
         raise ValueError('Menu-key record belongs to another display or command; inspect before restoring')
     return identity
 

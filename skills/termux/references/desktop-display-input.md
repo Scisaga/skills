@@ -177,7 +177,35 @@ Xfce 桌面/面板的单击、双击还需单独验收。启用该适配时，�
 
 GTK 下拉框必须包含带 Motion 更新的真实点按。`adb input tap` 的瞬时按下/抬起可能通过，而 80–650ms 的静止 `swipe` 和实机手指会使菜单立刻收回。检查选择值、控件回显及桌面重绘，不能只看菜单可选。用户允许暂缓时，将该项保留为未解决；不以事件注入掩盖失败。黑桌面先查桌面进程和 X11 错误，`MIT-SHM BadAccess` 的处理见 GPU 参考。
 
+
+## Thunar 分隔线与资源小组件
+
+Thunar 地址工具栏需上下细线时，使用随附 `gtk_thunar_lines.py` 和 `assets/desktop/theme/thunar-thin-lines.css` 派生用户 GTK 主题，所有规则限定 `.thunar`，不改字体、缩放或系统主题原件。默认预览，加 `--apply` 执行。GTK 的用户 `gtk.css` 在运行进程中不会因保存自动重新加载；新主题名可让已有窗口热切，无需关闭文件窗口。必须同时处理 `gtk.css` 与 `gtk-dark.css`，核对实际 `gtk-application-prefer-dark-theme` 与屏幕；只改普通变体会在深色偏好下无效。native GTK 应用也需能读取同名主题，按设备实际 rootfs 路径提供受管链接，不能只让 guest 找到新名字。
+
+```bash
+python3 /path/to/termux/scripts/gtk_thunar_lines.py apply \
+  --state "$HOME/.local/state/tablet-desktop/thunar-lines.json"
+python3 /path/to/termux/scripts/gtk_thunar_lines.py restore \
+  --state "$HOME/.local/state/tablet-desktop/thunar-lines.json" --apply
+```
+
+顶部资源小组件用 `panel_resources.py`，依赖已有 `xfconf-query`、`xfce4-panel`、`xfce4-genmon-plugin`。它每 2 秒采样同一真实 UID 下可读取的进程 CPU ticks，按逻辑核数平均到 0–100%；标签明确为“桌面CPU”，不冒充 Android 整机 CPU。PID 与启动 ticks 共同绑定，首次或过期采样显示不可用；短于采样周期的进程可能漏计。内存使用真实 `/proc/meminfo` 的 `MemTotal − MemAvailable`，不是 `MemTotal − MemFree`。先与 Android 端实数核对来源，不能把 PRoot 替代的 `/proc/stat`、`loadavg` 用作整机实时数据。
+
+```bash
+python3 /path/to/termux/scripts/panel_resources.py install \
+  --state "$HOME/.local/state/tablet-desktop/resources-widget.json"
+# 核对口径与计划后加 --apply；只移除本组件并保留后来新增的其他插件
+python3 /path/to/termux/scripts/panel_resources.py restore \
+  --state "$HOME/.local/state/tablet-desktop/resources-widget.json" --apply
+```
+
+安装器选择未占用 ID、保留原插件顺序，并正常刷新面板、核对对应 genmon 运行进程。直接写 `plugin-ids` 数组只持久保存配置，不能保证动态实例已加载。验收标签连续更新、详细提示和底栏位置；回退前检查文件摘要，遇到用户后续修改即停止覆盖。小组件没有额外常驻 Python 采样器，由 genmon 定时运行短命令；退出本轮诊断不应移除用户保留的小组件。
+
+虚拟桌面数量按本机需求单独记录与调整 `xfwm4 /general/workspace_count`。减少前读取每个窗口的 `_NET_WM_DESKTOP`，必要时先迁移被删除桌面的窗口；不关闭应用，也不把设备选择的 2 个变成所有安装的默认值。
+
 ## 自动隐藏底栏的横线
+
+替换窗口管理器或重新配置合成后，若左上出现一排被顶栏遮住的图标，先核对实际 dock 客户端和触发窗的几何。它可能是原底栏缓存为 `(0,0)`，不是多出一个面板。保留 `/panels/panel-2/autohide-behavior=2`、原插件与输出，沿当前 Xfce 终端按兼容环境正常 `xfce4-panel --restart` 一次；等待插件加载，验证底部居中呼出、离开后隐藏及薄触发窗，不以重启命令返回代替验收。有完整合成时保持局部重定向辅助禁用。
 
 自动隐藏面板会保留触发边缘。若灰色细横线出现在页面中部，用 `xwininfo -root -tree`、`xprop -id WINDOW WM_CLASS _NET_WM_WINDOW_TYPE` 确认归属；可能是错位的 xfce4-panel 小高度 dock 窗口，而非浏览器内容。
 

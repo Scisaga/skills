@@ -117,6 +117,14 @@ class InputTests(unittest.TestCase):
         stop.assert_not_called()
         self.assertEqual(self.values, before)
 
+    def test_default_screen_alias_uses_the_same_menu_record(self):
+        with patch.dict(settings.os.environ, {'DISPLAY': ':7'}):
+            short = settings.menu_paths()
+        with patch.dict(settings.os.environ, {'DISPLAY': ':7.0'}):
+            explicit = settings.menu_paths()
+        self.assertEqual(short, explicit)
+        self.assertNotEqual(settings.display_identity(':7.1'), settings.display_identity(':7'))
+
 
 if __name__ == '__main__':
     unittest.main()
