@@ -71,6 +71,8 @@ Chromium 标签栏空白处右键的 **Use system title bar and borders** 会增
 
 外观选项通过实际菜单切换，核对 profile 保存值、屏幕和窗口行为；已有运行实例不要直接改 Preferences 文件，避免被浏览器内存状态覆盖。运行中切换后 `_GTK_FRAME_EXTENTS` 可能暂留旧值，不能只看该属性判失败，应结合 `_NET_FRAME_EXTENTS` 与屏幕。不把设备的外观选择固化为全局默认，也不把最大化后的效果视为浮动窗口边缘已修复。
 
+切换合成后又出现实心阴影或“窗口套窗口”，还要比较旧窗口与当前新建窗口的 depth/visual。[Chromium 的 X11 窗口](https://github.com/chromium/chromium/blob/157.0.8103.50/ui/ozone/platform/x11/x11_window.cc) 在创建时选择 visual，[透明 visual 的可用性](https://github.com/chromium/chromium/blob/157.0.8103.50/ui/gfx/x/visual_manager.cc) 与 compositor owner 有关。Y900 曾出现既有 depth24 窗口配上新的透明阴影范围，而当前新窗口 depth32 正常；这是窗口生命周期问题的证据，不应据此切换应用 GPU 后端或撤回已验收的 XPresent。临时窗口只开一个，先记录原窗口、标签和进程身份；关闭时复核目标并确认原窗口仍在。若发生意外退出，先备份会话并恢复原标签，不把“进程 died”日志当成内存回收的原因证明。
+
 应用 GPU 和窗口合成是不同路径。未合成的 X11 在移动前景窗口时会向露出的背景窗口发送 Expose，造成重绘；用自建窗口、相同轨迹和尺寸比较重绘次数、native CPU 与呈现时间戳，再单独复测浏览器固定 WebGL 负载。主题变薄不等于消除重绘。
 
 先用 `window_probe.py inspect` 或 `desktop_verify.py window-report` 检查运行态：实际 Xfwm 设置、`_NET_WM_CM_S<n>` owner、底栏辅助的 selection、进程身份、状态文件与触发窗实际位置。仅存在两个进程不证明冲突；辅助已让出手动重定向时不能报为接管冲突。状态文件只是证据之一，需排除陈旧 PID 和失效窗口。安装时禁用自启动也不代表旧实例已退出。
@@ -100,6 +102,8 @@ python3 /path/to/termux/scripts/xfwm_border.py restore \
 按钮上方出现矩形深浅块时，检查同名 PNG 与 XPM 的尺寸。Xfwm 4.20 [先载入 XPM，再按 1:1 叠加 PNG](https://github.com/xfce-mirror/xfwm4/blob/xfwm4-4.20.0/src/mypixmap.c)，不会自动缩放旧覆盖层。80×80 底图配 44×58 覆盖层会只覆盖部分按钮；只检查 XPM 或主题名会漏掉此问题。随附素材已对齐；旧安装可选 `--normalize-overlays`，仅在派生主题中校正 PNG，保留 XPM 图标。实际需要调整时依赖 Pillow，缺失会提示安装命令。核对活动、非活动、悬停、按下和最大化/还原各状态，边框属性不能替代截图验收。
 
 顶部深色线还可能来自 PNG 自带的多行半透明黑色覆盖，而非 `frame_border_top`。随附主题已把这部分收为单行；保留其下渐变、标题和按钮底图。它与拖动残影分别验收，主题变薄不能作为重绘修复证据。
+
+需要 Chromium 风格的平面深灰标题栏时，可用 `xfwm_palette.py apply --state /private/palette.json` 预览，确认后加 `--apply`，`restore --state ... --apply` 恢复原选择。Xfwm 主题对终端等窗口统一生效，先明确这个范围。脚本从当前主题派生，不改变 XPM 字形网格、窗框尺寸或 PNG 画布；仅接受具有 XPM 底图的黑白渐变覆盖，彩色素材须另行审阅。执行端依赖 Pillow，缺失会给出 `apt-get install python3-pil`；也可在有 Pillow 的主机生成素材，校验来源与结果摘要后部署。核对正常、非活动、悬停及按下状态，不能只看主标题条。
 
 Xfwm 4.20 的 [`vblank_mode` 仅在启动时读取](https://github.com/xfce-mirror/xfwm4/blob/xfwm4-4.20.0/src/settings.c)。热改成 `xpresent` 后立即开启合成，旧进程仍可能沿用 auto/GLX；属性回读不代表运行路径改变。遇到 `Could not create GLX context` 和 GLX BadValue 时先关闭合成、保留日志，勿反复热切或重启整个桌面。按用户需求试 XPresent 时，先停用并复核释放底栏辅助的局部重定向，记录原设置和应用窗口；在合成关闭时保存 `vblank_mode=xpresent`，做一次受控的 `xfwm4 --replace --vblank=xpresent`，确认新 WM 就绪后再开启合成。必须有独立超时回退，核对原应用窗口、拖动残影、闪烁、Code/Codex 和底栏；保留后持久禁用局部重定向辅助，回退时关闭合成并恢复辅助与原设置。不要改应用 GPU 后端来掩盖 WM 同步失败。
 
@@ -148,6 +152,10 @@ python3 /path/to/termux/scripts/xfce_input.py restore \
 
 双击困难先分开检查 `/Net/DoubleClickTime` 和 `/Net/DoubleClickDistance`。用同一空文件夹、相同两次触摸，只改变第二次落点来区分时间不足和手指偏移；不能只增大间隔或擅自改为单击打开。可用 `xfce_input.py apply --double-click-time MILLISECONDS --double-click-distance PIXELS --state /private/click.json` 预览，加 `--apply` 执行，`restore --state ... --apply` 回退。保留原输入模式，并复验单击、双击、拖动、长按和滚动。Y900 的 650ms/24px 是设备案例，不是安装默认值。
 
+阈值正确仍打不开时，读取 `Gtk.Settings` 的实际值，并对比同一图标的标准鼠标双击和真实 Android 触摸。[Exo 4.20 的图标视图](https://github.com/xfce-mirror/exo/blob/exo-4.20.0/exo/exo-icon-view.c) 依赖按钮多击事件激活项目；不能把收到两组 TouchBegin/End 当成已经收到双击。Y900 的鼠标可开、触屏只选中，改为 Thunar 单独使用 `GDK_CORE_DEVICE_EVENTS=1` 后，触屏及用户手指均能打开。维护入口为 `thunar_core.py apply --state /private/thunar-core.json`，默认预览，加 `--apply` 写入；`restore --state ... --apply` 回退。它只配置 `tablet-thunar-core`、文件管理器入口和实际识别的会话槽位，不关闭现有窗口。
+
+修改启动入口不会改变已运行的 Thunar/D-Bus 服务。先记录窗口 URI、几何、PID、启动时间和会话，排除复制/重命名等操作对话框；正常退出旧实例，再通过受管入口启动并恢复窗口。核对新进程环境和实际触摸，而非反复启动入口复用旧进程。需要隔离对照时可用单个 `dbus-run-session -- env GDK_CORE_DEVICE_EVENTS=1 thunar /private/test-folder`，记录并正常关闭这一测试会话。Thunar 的原生单指滚动须单独验收，不能从双击通过推定；Code/Chromium/Office/VLC 入口继续清除该变量，其他自定义应用入口按需核对。
+
 X11 提供三种输入模式：Direct touch（原生触屏）、Simulated touchscreen（模拟鼠标的兼容触屏）和 Trackpad（触控板）。需要单指拖动内容滚动时先验证 Direct touch，它把真实触摸事件交给应用。Chromium 和 GTK ScrolledWindow 已实测单指滚动，Xfwm 标题栏仍能单指拖动；不保证所有桌面应用都支持同样的触控手势。
 
 桌面、应用菜单、底部栏、顶部栏的主按钮在原生触屏和触控板之间切换，四份标签/图标同步。模拟触屏仍可通过 X11 设置或 `tablet-touch-toggle touch` 选择；支持 Desktop Actions 的启动器也会显示三个固定模式动作。不要假定所有 Xfce 面板版本都把 Desktop Actions 显示在右键菜单中。
@@ -171,7 +179,7 @@ Direct touch 不自动提供鼠标右键；[上游说明](https://github.com/ter
 
 `tablet-touch-longpress` 只观察 XInput2 原始触摸，不抓取键盘，不抢占触摸事件。单指静止达到阈值，松手后在 Xfdesktop/Thunar 中发出一次右键；移动、多指、窗口切换或旋转取消。Chromium/Code 等窗口不补偿，保持应用自身的触摸处理。显示内 selection 保证单实例，无触摸时阻塞等待，不高频轮询。
 
-Xfce 桌面/面板的单击、双击还需单独验收。启用该适配时，受管启动项通过 `tablet-xfce-pointer` 启动，只对这两个组件设置 GTK 标准的 `GDK_CORE_DEVICE_EVENTS=1`；应用和 GPU 包装器清除此变量，保留应用原生触摸。此路径无需预加载输入库。不要同时再合成左键，否则会把单击误识别成双击。自定义 Xfce 启动项不能按固定编号覆盖，安装器从已有配置/发行版默认项识别组件；未知会话先检查。已有保存会话也应核对实际启动命令。
+Xfce 桌面/面板的单击、双击还需单独验收。启用该适配时，这两个组件通过 `tablet-xfce-pointer` 启动，Thunar 通过 `tablet-thunar-core` 启动，分别使用 GTK 标准的 `GDK_CORE_DEVICE_EVENTS=1`；Code/Chromium/Office/VLC 包装器清除此变量，保留其原生触摸。此路径无需预加载输入库。不要同时再合成左键，否则会把单击误识别成双击。自定义 Xfce 启动项不能按固定编号覆盖，安装器从已有配置/发行版默认项识别组件；未知会话先检查。已有保存会话也应核对实际启动命令。
 
 验收同时覆盖：菜单打开和菜单项、单击仅选中、双击打开、图标/窗口拖动、空白与文件右键、多指取消、浏览器单指滚动、切换触控板后鼠标点击，以及再次进入会话。仅看到右键菜单不能宣布输入修复完成。热重启壳层后可用一次 `xrefresh` 确认重绘，不将高频刷新当作修复。
 
@@ -180,7 +188,7 @@ GTK 下拉框必须包含带 Motion 更新的真实点按。`adb input tap` 的�
 
 ## Thunar 分隔线与资源小组件
 
-Thunar 地址工具栏需上下细线时，使用随附 `gtk_thunar_lines.py` 和 `assets/desktop/theme/thunar-thin-lines.css` 派生用户 GTK 主题，所有规则限定 `.thunar`，不改字体、缩放或系统主题原件。默认预览，加 `--apply` 执行。GTK 的用户 `gtk.css` 在运行进程中不会因保存自动重新加载；新主题名可让已有窗口热切，无需关闭文件窗口。必须同时处理 `gtk.css` 与 `gtk-dark.css`，核对实际 `gtk-application-prefer-dark-theme` 与屏幕；只改普通变体会在深色偏好下无效。native GTK 应用也需能读取同名主题，按设备实际 rootfs 路径提供受管链接，不能只让 guest 找到新名字。
+Thunar 地址工具栏需调整背景、输入框和细分隔线时，使用随附 `gtk_thunar_lines.py` 和 `assets/desktop/theme/thunar-thin-lines.css` 派生用户 GTK 主题，所有规则限定 `.thunar`，不改字体、缩放或系统主题原件。当前素材去掉工具栏上边框，保留下方细线；输入框只覆盖普通边框颜色，保留聚焦样式。默认预览，加 `--apply` 执行。GTK 的用户 `gtk.css` 在运行进程中不会因保存自动重新加载；新主题名可让已有窗口热切，无需关闭文件窗口。必须同时处理 `gtk.css` 与 `gtk-dark.css`，核对实际 `gtk-application-prefer-dark-theme` 与屏幕；只改普通变体会在深色偏好下无效。native GTK 应用也需能读取同名主题，按设备实际 rootfs 路径提供受管链接，不能只让 guest 找到新名字。
 
 若工具栏下沿仍显得粗，逐行检查截图中的颜色，区分工具栏分隔线与文件视图自身的上边框。[Thunar 的标准视图](https://github.com/xfce-mirror/thunar/blob/thunar-4.20.2/thunar/thunar-standard-view.c) 是带内凹边框的 `GtkScrolledWindow`，另有 `.standard-view` 类；仅清除 notebook 或侧栏边框不会消除它。随附 CSS 同时去掉 `.thunar .standard-view` 的上边框，保留工具栏的一条线。DPR 2 时一条 1 逻辑像素线占 2 个物理像素；以实机像素和现有窗口热切结果验收，避免把两条相邻边框误当成同一条线的颜色问题。
 

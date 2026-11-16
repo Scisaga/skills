@@ -181,6 +181,7 @@ class DesktopTests(unittest.TestCase):
                            '<property name="Client7_Command" type="array"><value type="string" value="xfdesktop"/></property>'
                            '<property name="Client9_Command" type="array"><value type="string" value="xfce4-panel"/><value type="string" value="--disable-wm-check"/></property>'
                            '<property name="Client3_Command" type="array"><value type="string" value="custom-application"/></property>'
+                           '<property name="Client12_Command" type="array"><value type="string" value="Thunar"/><value type="string" value="--daemon"/></property>'
                            '</property></property></channel>')
         path = self.root / 'home/developer/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml'
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -197,6 +198,7 @@ class DesktopTests(unittest.TestCase):
         self.assertEqual(commands['Client7_Command'], ['/usr/local/bin/tablet-xfce-pointer','desktop'])
         self.assertEqual(commands['Client9_Command'], ['/usr/local/bin/tablet-xfce-pointer','panel','--disable-wm-check'])
         self.assertNotIn('Client3_Command',commands)
+        self.assertEqual(commands['Client12_Command'], ['/usr/local/bin/tablet-thunar-core', '--daemon'])
         self.assertEqual(tree.find("property[@name='sessions']/property[@name='FailsafeWayland']/property[@name='Client7_Command']/value").get('value'), 'custom-wayland-shell')
         self.assertTrue((self.root/'usr/local/share/tablet-desktop/tablet-touch-longpress.c').is_file())
         self.assertFalse((self.root/'usr/local/bin/tablet-touch-longpress.c').exists())
@@ -208,6 +210,7 @@ class DesktopTests(unittest.TestCase):
         setup.configure_xfce_pointer(self.root,'developer',False,self.writer)
         tree = ET.parse(path)
         self.assertEqual(tree.find("property[@name='sessions']/property[@name='Failsafe']/property[@name='Client7_Command']/value").get('value'),'xfdesktop')
+        self.assertEqual(tree.find("property[@name='sessions']/property[@name='Failsafe']/property[@name='Client12_Command']/value").get('value'),'Thunar')
 
     def test_unknown_shell_startup_is_not_overwritten_to_enable_touch(self):
         with self.assertRaisesRegex(RuntimeError,'Custom Xfce startup'):

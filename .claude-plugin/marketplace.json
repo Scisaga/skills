@@ -9,7 +9,7 @@
     {
       "name": "scisaga",
       "source": "./",
-      "version": "0.2.5",
+      "version": "0.2.6",
       "description": "本地演示、语音、文档、视频和运维技能工具箱。"
     }
   ]

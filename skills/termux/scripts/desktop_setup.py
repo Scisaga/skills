@@ -112,7 +112,15 @@ def configure_xfce_pointer(root, user, enabled, writer):
     for name, command in candidates.items():
         if not command or not isinstance(command[0], str):
             continue
-        if command[0] == '/usr/local/bin/tablet-xfce-pointer' and len(command) >= 2:
+        if command[0] == '/usr/local/bin/tablet-thunar-core':
+            executable = None
+            replacement = command if enabled else ['Thunar', *command[1:]]
+        elif Path(command[0]).name.lower() == 'thunar':
+            if not enabled:
+                continue
+            executable = None
+            replacement = ['/usr/local/bin/tablet-thunar-core', *command[1:]]
+        elif command[0] == '/usr/local/bin/tablet-xfce-pointer' and len(command) >= 2:
             role = command[1]
             executable = next((name for name, value in roles.items() if value == role), None)
             if not executable:
@@ -125,7 +133,8 @@ def configure_xfce_pointer(root, user, enabled, writer):
             replacement = ['/usr/local/bin/tablet-xfce-pointer', roles[executable], *command[1:]]
         else:
             continue
-        found.add(executable)
+        if executable is not None:
+            found.add(executable)
         sessions = property_(tree.getroot(), 'sessions', 'empty')
         failsafe = property_(sessions, 'Failsafe', 'empty')
         property_(failsafe, name, 'array', replacement)
@@ -172,12 +181,18 @@ def configure_guest(root: Path, native_home: Path, p: dict, writer: Writer):
         data = data.replace("LANG=en_US.UTF-8 TZ=Asia/Shanghai", f"LANG={p['language']} TZ={p['timezone']}")
         if not p["software_rendering"]:
             data = data.replace("export GDK_GL=disable LIBGL_ALWAYS_INDIRECT=1 NO_AT_BRIDGE=1", "export NO_AT_BRIDGE=1")
+        if src.name == 'tablet-thunar-core' and not p['touch_long_press']:
+            data = data.replace('export GDK_CORE_DEVICE_EVENTS=1', 'unset GDK_CORE_DEVICE_EVENTS')
         if src.name == "tablet-desktop-session":
             if "chromium" not in p["applications"]:
                 data = data.replace("export BROWSER=/usr/local/bin/chromium-tablet\n", "")
             data = data.replace("export LANG=", f"export GDK_SCALE={p['scale']} GDK_DPI_SCALE=1\nexport LANG=", 1)
         location = "usr/local/share/tablet-desktop/" + src.name if src.suffix == ".c" else ("usr/local/lib/tablet-desktop/ipc.py" if src.name == "ipc.py" else "usr/local/bin/" + src.name)
         writer.put(root / location, data, 0o644 if src.name == "ipc.py" or src.suffix == ".c" else 0o755)
+    if p['touch_long_press'] and any((root / 'usr/share/applications' / n).is_file() for n in ('thunar.desktop', 'org.xfce.Thunar.desktop')):
+        from thunar_core import launcher_files
+        for path, text in launcher_files(root, home).items():
+            writer.put(path, text)
     software = "unset GDK_CORE_DEVICE_EVENTS\n" + ("export GDK_GL=disable LIBGL_ALWAYS_INDIRECT=1 NO_AT_BRIDGE=1\n" if p["software_rendering"] else "")
     hardware = p["gpu_backend"] in ("virgl-android", "freedreno-kgsl")
     gpu = " --disable-gpu" if p["software_rendering"] and not hardware else ""
@@ -383,7 +398,7 @@ def context(home: Path, root: Path, p: dict, writer: Writer):
 - Touch toggle: desktop, application menu, bottom dock and top panel synchronize. Main action switches direct touch/trackpad. Simulated touch remains available in X11 preferences, CLI `tablet-touch-toggle touch`, and launchers that support Desktop Actions. Startup preserves the selected mode. Dock auto-hide={p['dock_autohide']}, hidden indicator={p['dock_hide_indicator']}, output={p['dock_output']}. The panel-edge helper is enabled only without whole-desktop compositing; release its existing manual redirect before enabling a full compositor.
 - Window theme={p['titlebar_theme']}; Xfwm compositing={p['window_compositing']}, vblank={p['window_vblank_mode']}, shadows={p['window_shadows']}. Verify visible output, drag redraws and application performance separately; XPresent or a GL library name is not proof of accelerated composition.
 - Direct-touch secondary click={p['touch_long_press']}: hold {p['touch_long_press_ms']}ms then release in Xfdesktop/Thunar; movement beyond {p['touch_long_press_move_px']} physical pixels or multiple contacts cancels. Other applications retain their native touch handling. The helper observes only raw touch events, uses an X selection for a single instance, and exits with its X11 session.
-- Legacy desktop/panel pointer setting active={p['touch_long_press']}: tablet-xfce-pointer uses the standard per-component GDK_CORE_DEVICE_EVENTS setting; GPU/application launchers clear it. No preloaded input library is used. The long-press observer never synthesizes ordinary left clicks.
+- GTK core pointer active={p['touch_long_press']}: desktop/panel use tablet-xfce-pointer; Thunar uses tablet-thunar-core so its Exo icon view receives button multiclicks. Code/Chromium/Office/VLC launchers clear GDK_CORE_DEVICE_EVENTS. No preloaded input library is used. The long-press observer never synthesizes ordinary left clicks.
 - X11 MIT-SHM enabled={p['x11_mitshm']}. When disabled for a proven PRoot/shared-memory failure, only this X11 extension is disabled; DRI3/Present and GPU application drivers remain separately configured and must be retested.
 - Battery comes from native Termux:API with a 60-second cache; stale data is marked unavailable.
 - Hardware video policy: {p['media_hardware_policy']}. With h264-baseline, only verified local Baseline/8-bit/1080p30 files use hardware decode; other inputs use software decode with GPU presentation. Reopen VLC to select a different path; do not describe the compatibility path as hardware decoding.

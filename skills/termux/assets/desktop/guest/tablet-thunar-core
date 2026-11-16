@@ -1,0 +1,5 @@
+#!/bin/sh
+# Thunar's Exo icon view needs button multiclicks for double-touch activation.
+# Keep this per application; Code/Chromium/Office/VLC launchers clear the flag.
+export GDK_CORE_DEVICE_EVENTS=1
+exec /usr/bin/thunar "$@"

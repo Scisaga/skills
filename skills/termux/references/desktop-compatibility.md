@@ -137,6 +137,14 @@
 
 随后逐行像素复查发现，地址栏下方仍有文件标准视图自身的深色上边框：2 个物理像素的工具栏线后紧跟 2 个物理像素的 `#1d1f1f` 边框。新增 `.thunar .standard-view` 规则移除重复上边框，保留一条 `#242828` 分隔线；两个 CSS 变体一并更新并热切，原文件窗口保留。
 
+按用户后续偏好，去掉地址栏上方横线，整行及输入框背景参考当前 Chromium 取色为 `#363840`，输入框普通边框为 `#656773`；保留聚焦样式，下方仍为一条 `#242828` 细线。
+
+菜单栏随后改为 Chromium 标签栏的 `#26282e`。用户明确选择统一 Xfce 标题栏配色，从当前细边框主题派生 `Tablet-Chromium-Line`，保留 80px 标题/按钮画布、XPM 字形、1px 外框和字体，仅替换配色及渐变覆盖。素材在主机生成并校验源文件、字形网格和 PNG 尺寸后部署；没有切换合成或 GPU 后端。
+
+同轮 Chromium 外缘回归时，Classic 仍为 0，实际 XPresent owner 正常；旧窗口 depth24、GTK extents 为 32/32/20/64，新建对照窗口 depth32 且阴影正常。对照期间全部浏览器窗口退出，profile 记录 Normal，日志没有证明退出首因为低内存；未据此归因。已备份原会话、恢复四个原标签，清理新增空白窗口，日常窗口为 depth32；浮动边缘实查正常，随后恢复检查前的窗口几何。页面重新加载，未证明所有页面的内存表单状态保留。
+
+用户又报告 Thunar 触屏双击失效。GTK 实际值仍为 650ms/24px，Direct touch 保留；同一文件夹用标准鼠标可打开，真实触屏只选中。libexo 4.20.0/GTK 3.24.49 的隔离 Thunar 加 `GDK_CORE_DEVICE_EVENTS=1` 后，同样触摸可打开，用户手指复验通过。已配置日常文件管理器入口、Xfce helper 与识别到的 Thunar 会话命令，正常重开并恢复两个文件窗口的 URI/实际几何；新进程环境回读正确。日常实例单击仅选中、第二次偏移 16px 的双击打开、650ms 长按右键通过。完整拖动、多指取消、Thunar 单指滚动与 Android 重启恢复仍须分别复验。
+
 ### Y900 整窗移动的呈现短样本
 
 同日，日常 Chromium 的真实 GPU 页面仍报告硬件 Canvas/Compositing/Rasterization/WebGL/WebGPU，GL_RENDERER 为 Adreno 830 / ANGLE GLES / Zink / Turnip；Code 有 GLES、独立驱动映射及 KGSL FD 证据，但同实例 `--status` 输出为空，未取得新的 GPUFeatureStatus。两者的硬件证据强度不同；原有终端 DOM 和 Chromium mailbox 保留，不据此推定整体软件回退。
