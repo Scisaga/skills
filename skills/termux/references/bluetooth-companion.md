@@ -43,7 +43,7 @@ bash skills/termux/scripts/build-bluetooth-companion.sh \
 
 ## 首次部署
 
-ADB 只用于安装 APK 和授予 Android 权限。部署前必须已有不经 ADB forward 的局域网 SSH：
+以下部署脚本使用 ADB 安装 APK、授予 Android 权限，并要求已有不经 ADB forward 的局域网 SSH。这是该脚本的适用条件，不是普通 USB/Xfce 任务的要求。用户只允许 USB 时不要为了调用此脚本建立 SSH，按 [执行位置与现有通道](execution-context.md) 选择可用的本机步骤。
 
 ```bash
 bash skills/termux/scripts/deploy-bluetooth-companion.sh \

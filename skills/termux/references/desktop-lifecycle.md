@@ -24,6 +24,8 @@ desktop manage --terminal
 
 入口在 Xfce 桌面、菜单与顶部栏，Android 管理器也提供“正常结束”。流程：
 
+主菜单只显示标准 `xfce4-session-logout.desktop`，同样调用受管的 `tablet-desktop-end`。兼容 ID `tablet-desktop-end.desktop` 保留但设 `NoDisplay=true`，避免两个同名菜单项；桌面快捷方式和面板按钮保持可见。现场调整先在 Xfce 中打开菜单，再从该桌面终端检查用户级 desktop 文件，不为此切到原生 Termux。
+
 1. 用户确认；取消立即返回当前桌面。
 2. 按窗口顺序发送普通 WM_DELETE 请求；应用自己的保存提示由用户处理。
 3. 未关闭的窗口继续阻塞退出，可随时取消。不能自动选择“不保存”。

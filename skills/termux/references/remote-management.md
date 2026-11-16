@@ -1,5 +1,9 @@
 # 远程管理功能
 
+## 先选择当前通道
+
+先按 [执行位置与现有通道](execution-context.md) 判断任务属于 Android、原生 Termux 还是 Xfce guest。以下 SSH 说明用于确需 SSH 的远程管理/部署；已有 USB/ADB 足以完成的桌面任务，不额外连接 SSH。Xfce 菜单、文件管理器和桌面设置直接在当前 Xfce 界面或终端处理，不以原生 Termux 为中转。
+
 ## SSH 连接模型
 
 Termux OpenSSH 默认监听 8022。Android 下的 Termux OpenSSH 是单用户模型，会忽略客户端提供的用户名并映射到当前 Termux UID，因此可以写：

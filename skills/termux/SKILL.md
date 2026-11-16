@@ -11,9 +11,16 @@ description: 在 Android 上安装、迁移和维护 Termux 原生 SSH/API/Boot 
 
 SSH 用户名、提示符或 PRoot 中显示的 `root` 都不赋予 Android UID 0。无需把 Root 作为安装桌面的前置条件。Docker 与硬件加速另行评估，见 [能力与部署边界](references/desktop-setup.md)。
 
+## 执行环境与连接
+
+- 先按问题所属环境选择操作位置：Xfce 菜单、Thunar、桌面设置及 guest 应用，直接在当前 Xfce 界面或其终端处理；原生 Termux 服务才使用 native 环境；Android 系统设置使用已有 ADB/系统界面。不要把技能名称、旧脚本或 ADB shell 的权限限制当作跳到 Termux 的理由。
+- 沿用用户指定且已确认的设备和通道。USB/ADB 已连接时，不额外尝试 LAN SSH、校验/登记主机密钥或改网络。只有任务明确涉及 SSH，或现场证据证明当前通道无法完成必要步骤时，才处理相应连接需求；不得先换通道再找理由。
+- 仅问“是否应该”且不依赖现场状态时直接给建议，不自行展开设备诊断；用户要求“调整”“看看菜单”时，实际查看目标界面、完成修改并在原界面复核，不停在建议。
+- 用户纠正执行环境或连接方式后立即按纠正路径继续任务，不再尝试已拒绝的路径。具体位置、权限与终端选择见 [执行位置与现有通道](references/execution-context.md)。
+
 ## 工作流
 
-1. 盘点设备 ABI、Android/ROM、已安装包及签名来源、已有数据、Termux 服务、X11 与桌面会话。维护现有环境时先读取设备 `~/AGENTS.md`；保留当前输入模式、文档和窗口。
+1. 核对当前设备、问题所属环境及已有连接，只盘点本次任务需要的状态。维护现有环境时读取目标环境的 `~/AGENTS.md`；Xfce 任务先读 guest 指引，涉及 native 操作时再读原生指引。保留当前输入模式、文档和窗口，不为读取无关上下文切换终端或建立新连接。
 2. 选择本次需要的模块。仅远程管理走原生流程；仅本机桌面可直接使用桌面安装流程，不强制启用 SSH。桌面应用、外设、Android 文件夹整理按需求选择。
    把用户已知故障列为本次验收条件；记录必需检查及用户明确跳过的项目。配置、真实功能与性能分别验收，未执行不能计为通过。
 3. 首装或迁移先读 [安装与迁移](references/installation-and-migration.md)。Termux/Boot/API/Widget 使用同一签名来源；X11 同时需要 Android APK 与 native CLI。插件安装/更新可能中断 Termux 进程，应在保存并结束桌面后安排，随后复查存储权限。
@@ -26,7 +33,7 @@ SSH 用户名、提示符或 PRoot 中显示的 `root` 都不赋予 Android UID 
    优先使用上游支持的配置；出现控件回显或桌面回归时先撤回实验并查日志。用户允许暂缓的兼容问题如实保留，不继续叠加事件拦截或预加载注入。
    内存任务按 [应用内存诊断](references/desktop-memory.md) 区分驻留 PSS、非映射图形、SwapPss 与 ZRAM 物理量；保留工作与网络，固定负载比较，优先浏览器正式设置及身份合格的缓存/残留进程。
 7. 需要 Android 图形管理、双应用入口、同系列图标或桌面文件夹时，读取 [Android 集成与图标分组](references/android-desktop-integration.md)。管理器从随附源码构建；签名私钥留在主机外部目录。仅整理当前启动器的实际图标，不直接改其数据库。
-8. 按 [桌面验收](references/desktop-verification.md) 与 [原生验收](references/verification-and-troubleshooting.md) 完成本次相关检查。更新原生和 guest 的 AGENTS 受管区块；保留未通过及未执行的测试。使用过 ADB 时，交付前清理转发、停止/断开 ADB，并再次直接 LAN SSH 验证。
+8. 按 [桌面验收](references/desktop-verification.md) 与 [原生验收](references/verification-and-troubleshooting.md) 完成本次相关检查，仅更新涉及的 AGENTS 受管区块。清理本任务的临时文件、进程和转发，沿本次已有通道复核结果；只有任务包含独立 SSH 交付时才做脱离 ADB 的 LAN SSH 验收。保留未通过及未执行的测试。
    重启前先收齐依赖、有效子进程上限、权限与服务就绪检查。重启后使用原检查点，首次解锁后先取证自动恢复与实际上限，再打开图形桌面；不以手动启动代替自启动证明。检查失败先定位并修复对应阶段，减少重复重启与解锁。
 
 ## 命令模式
@@ -72,6 +79,7 @@ bash skills/termux/scripts/run.sh launcher-plan --adb /path/to/adb --serial SERI
 
 ## 资源使用
 
+- 操作前先确定位置与通道：[execution-context.md](references/execution-context.md)。
 - 原生安装/签名/备份：[installation-and-migration.md](references/installation-and-migration.md)。
 - 权限/Boot/Doze/Greeze：[android-permissions-and-power.md](references/android-permissions-and-power.md)。
 - SSH、存储、Bash、API、设备上下文：[remote-management.md](references/remote-management.md)。

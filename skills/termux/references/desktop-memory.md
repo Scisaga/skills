@@ -14,6 +14,8 @@
 
 `memory_report.py` 仅使用标准库和既有 OpenSSH；`--android` 额外使用连接文件中配置的 ADB。不安装常驻采样器、不启动 GUI、不发信号、不写设备配置，也不加载 `.env`。主机缺少 Python/ADB/OpenSSH 时，沿用 `host-tools` 与 [验收入口](desktop-verification.md) 的安装方式。
 
+该主机快照工具的 SSH 需求只适用于选择使用它的任务。用户指定 USB 且已有 Xfce 时，在当前桌面终端采集对应数据，不为调用此工具额外建立 LAN SSH，见 [执行位置与现有通道](execution-context.md)。
+
 ```bash
 # 相同的原有 Code、Codex、终端、浏览器标签与前台状态；先让它们静置
 python scripts/memory_report.py snapshot --connection /private/device.json \
@@ -51,4 +53,4 @@ Memory Saver 的保护规则与重载行为见 [Chrome 官方说明](https://sup
 
 恢复相同应用前台、标签与终端状态后比较至少三个样本；同时报告应用驻留和换出变化，不能仅凭 MemAvailable 一项归因。恢复/切换已有窗口，检查 Code/Codex 可响应、原终端正常、native/guest DNS/TLS/HTTP 与原 VPN 正常；只看到进程或 UI 时不能宣称已完成真实 Codex 请求或消息推送验收。
 
-清理自己创建的设置/诊断标签，不关闭用户标签。没有长期驻留采样器或额外 Code 测试实例；所有诊断连接退出。使用过 ADB 时清理本任务转发，停止/断开 ADB，再用独立 LAN SSH 做最终复查。长息屏、重启、推送到达、主观手感未测的项目单独列明。
+清理自己创建的设置/诊断标签，不关闭用户标签。没有长期驻留采样器或额外 Code 测试实例；所有诊断连接退出。清理本任务的 ADB 转发与临时文件，沿原通道复查；只有任务包含独立 SSH 交付时才断开本任务的 ADB 后验证 LAN SSH。长息屏、重启、推送到达、主观手感未测的项目单独列明。

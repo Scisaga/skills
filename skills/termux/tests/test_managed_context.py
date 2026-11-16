@@ -14,6 +14,31 @@ END = f'<!-- END {NAME} -->'
 
 
 class ContextTests(unittest.TestCase):
+    def test_legacy_transport_migration_is_scoped_and_idempotent(self):
+        name = 'android-termux-ssh managed context'
+        begin, end = f'<!-- BEGIN {name} -->', f'<!-- END {name} -->'
+        # Identical text outside the generated block is user-owned and must survive.
+        prefix = 'User policy\r\n' + context.LEGACY_SSH_RULE + '\r\n'
+        suffix = '\r\nKeep my notes\r\n'
+        original = prefix + begin + '\nSSH port and device metadata stay\n' + context.LEGACY_SSH_RULE + '\n' + context.LEGACY_SSH_RECHECK + '\n' + end + suffix
+        updated = context.migrate_legacy_ssh_rule(original)
+        self.assertTrue(updated.startswith(prefix))
+        self.assertTrue(updated.endswith(suffix))
+        block = updated[len(prefix):-len(suffix)]
+        self.assertNotIn(context.LEGACY_SSH_RULE, block)
+        self.assertNotIn(context.LEGACY_SSH_RECHECK, block)
+        self.assertIn('SSH port and device metadata stay', block)
+        self.assertIn(context.NATIVE_EXECUTION_RULES, block)
+        self.assertEqual(context.migrate_legacy_ssh_rule(updated), updated)
+        self.assertEqual(context.migrate_legacy_ssh_rule(prefix), prefix)
+
+    def test_legacy_transport_migration_rejects_ambiguous_native_blocks(self):
+        begin = '<!-- BEGIN android-termux-ssh managed context -->'
+        end = '<!-- END android-termux-ssh managed context -->'
+        for text in (begin, end, end + begin, begin + end + begin + end):
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                context.migrate_legacy_ssh_rule(text)
+
     def test_chinese_roundtrip_preserves_unmanaged_bytes_and_backup(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

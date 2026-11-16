@@ -18,7 +18,7 @@ from desktop_profile import ASSETS, guest_root, load_profile, profile_digest
 from jsonc_settings import merge as merge_code_settings
 from desktop_gpu_bundle import install_bundle, installed_driver_ready, DRIVER_ROOT
 from desktop_video_bundle import install_video, VLC_ROOT
-from managed_context import replace_block
+from managed_context import migrate_legacy_ssh_rule, replace_block
 
 
 def run(args, *, script=None, check=True, timeout=None):
@@ -32,7 +32,7 @@ def run(args, *, script=None, check=True, timeout=None):
 def require_termux() -> tuple[Path, Path]:
     prefix = Path(os.environ.get("PREFIX", "/data/data/com.termux/files/usr"))
     if sys.platform not in ("linux", "android") or not str(prefix).endswith("/com.termux/files/usr") or not Path("/system/bin/getprop").exists():
-        raise RuntimeError("Run installation/desktop diagnosis inside native Termux, not Windows or the PRoot guest")
+        raise RuntimeError("This native installer/service diagnostic requires native Termux; inspect Xfce menus and settings in the current Xfce UI or terminal")
     return prefix, Path.home()
 
 
@@ -233,7 +233,9 @@ def configure_guest(root: Path, native_home: Path, p: dict, writer: Writer):
         text = desktop_entry(label, command, icon, categories, extra)
         text_by_key[key] = text
         writer.put(home / "Desktop" / (key + ".desktop"), text, 0o755)
-        writer.put(home / ".local/share/applications" / (names.get(key, "tablet-" + key.lower()) + ".desktop"), text, 0o755)
+        # The standard logout desktop ID is the sole menu entry; keep this alias for compatibility.
+        menu_text = text + "NoDisplay=true\n" if key == "EndDesktop" else text
+        writer.put(home / ".local/share/applications" / (names.get(key, "tablet-" + key.lower()) + ".desktop"), menu_text, 0o755)
     writer.put(home / ".local/share/applications/xfce4-session-logout.desktop", text_by_key["EndDesktop"], 0o755)
     # Shadow distro desktop IDs too, so MIME/Open With requests use the same wrappers.
     import re
@@ -372,6 +374,8 @@ def context(home: Path, root: Path, p: dict, writer: Writer):
     block = f"""{begin}
 ## Managed Termux desktop
 - Guest: {p['container']}, user {p['user']}; X11 {p['display']}; native adaptive resolution.
+- Execution location: use the current Xfce UI or its terminal for menus, Thunar, desktop settings and guest applications. Use native Termux only for native services; use the existing ADB/system UI for Android settings. ADB shell restrictions are not a reason to leave a working Xfce terminal.
+- Connection: keep the user's confirmed device and transport. A USB/ADB task does not require an additional LAN SSH connection, host-key registration or network change. Follow the user's correction of environment/transport immediately; independent SSH checks apply only to tasks requiring that delivery.
 - Start/return: native `desktop start` or Android Linux-desktop entry. `start-code` is a compatibility alias. The native runit service `tablet-touch` owns the session; the launch terminal may close.
 - Normal end: Xfce EndDesktop shortcut/menu/top button; ordinary application save dialogs remain interactive. Android desktop manager offers the same action and an explicitly confirmed force-stop scoped to the current session ID. SSH remains available.
 - Screen-off does not intentionally log out Xfce. Android background termination remains possible; report actual sleep/reboot tests separately.
@@ -393,6 +397,7 @@ def context(home: Path, root: Path, p: dict, writer: Writer):
 {end}"""
     for path in (home / "AGENTS.md", root / f"home/{p['user']}/AGENTS.md"):
         old = path.read_text(encoding="utf-8") if path.exists() else ""
+        old = migrate_legacy_ssh_rule(old)
         legacy_begin, legacy_end = "<!-- BEGIN tablet-desktop setup -->", "<!-- END tablet-desktop setup -->"
         if legacy_begin in old or legacy_end in old:
             if old.count(legacy_begin) != 1 or old.count(legacy_end) != 1 or old.index(legacy_begin) > old.index(legacy_end) or begin in old:

@@ -2,6 +2,8 @@
 
 ## 分级验收
 
+本节用于原生 SSH/后台服务部署及其保活验收，按任务选择相关项目。普通 Xfce 菜单、主题或文件管理器修改在当前桌面中验证，不因此新增 SSH 连接或执行息屏/重启矩阵，见 [执行位置与现有通道](execution-context.md)。
+
 ### 设备内
 
 ```bash
@@ -46,7 +48,7 @@ HyperOS 上额外记录 `dumpsys greezer` 中 Termux UID 的最后一次 `FZ/THA
 
 使用 VPN 地址时，静置期间不要从设备主动向 VPN 网关发包；先从主机建立第一条 SSH 会话，再做其他 ping/探测。否则出站流量可能重建 WireGuard 握手或 NAT 映射，产生假阳性。
 
-最终移除全部 `adb forward`、停止 ADB server 或断开 USB，然后再连接一次 `PHONE_IP:8022`。这是“不依赖 ADB”的验收证据。
+仅在任务包含独立 SSH 交付时，移除本任务的 `adb forward`、停止其 ADB server 或断开 USB，然后再连接一次 `PHONE_IP:8022`。这是该项“不依赖 ADB”的验收证据，不是所有 USB 任务的交付条件。
 
 ### 可选 Codex 验收
 

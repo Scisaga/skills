@@ -1,6 +1,7 @@
 """Desktop rendering/ownership tests use temporary roots, never a connected device."""
 import argparse
 import copy
+import configparser
 import json
 import subprocess
 import sys
@@ -127,6 +128,14 @@ class DesktopTests(unittest.TestCase):
         self.assertEqual(panel.find("property[@name='output-name']").get("value"), "builtin")
         self.assertTrue((home / ".config/xfce4/panel/genmon-23.rc").is_file())
         self.assertTrue((home / ".config/xfce4/panel/launcher-24/tablet-end.desktop").is_file())
+        for relative, hidden in ((".local/share/applications/tablet-desktop-end.desktop", True),
+                                 (".local/share/applications/xfce4-session-logout.desktop", False),
+                                 ("Desktop/EndDesktop.desktop", False),
+                                 (".config/xfce4/panel/launcher-24/tablet-end.desktop", False)):
+            entry = configparser.ConfigParser(interpolation=None)
+            entry.read(home / relative, encoding="utf-8")
+            self.assertEqual(entry['Desktop Entry'].getboolean('NoDisplay', fallback=False), hidden)
+            self.assertEqual(entry['Desktop Entry']['Exec'], '/usr/local/bin/tablet-desktop-end')
 
     def test_code_gles_is_opt_in_and_preserves_the_software_fallback(self):
         self.render()
@@ -309,12 +318,16 @@ class DesktopTests(unittest.TestCase):
         self.assertFalse((self.base / "outside").exists())
 
     def test_context_preserves_notes_and_updates_without_duplicates(self):
-        (self.native / "AGENTS.md").write_text("User instructions stay here\n")
+        from managed_context import LEGACY_SSH_RULE
+        old_native = '<!-- BEGIN android-termux-ssh managed context -->\n' + LEGACY_SSH_RULE + '\n<!-- END android-termux-ssh managed context -->\n'
+        (self.native / "AGENTS.md").write_text("User instructions stay here\n" + old_native, encoding="utf-8")
         setup.context(self.native, self.root, self.p, self.writer)
         setup.context(self.native, self.root, self.p, self.writer)
         text = (self.native / "AGENTS.md").read_text(encoding="utf-8")
         self.assertTrue(text.startswith("User instructions stay here"))
         self.assertEqual(text.count("<!-- BEGIN termux desktop -->"), 1)
+        self.assertNotIn(LEGACY_SSH_RULE, text)
+        self.assertIn('<!-- BEGIN android-termux-ssh managed context -->', text)
 
     def test_invalid_profile_is_rejected(self):
         for fields in ({"user": "../../escape"}, {"scale": True}, {"applications": [{}]}, {"display": ":1;kill"}, {"touch_mode": "reset"}, {"media_hardware_policy": "unverified"}):

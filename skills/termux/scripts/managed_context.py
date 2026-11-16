@@ -13,6 +13,14 @@ import uuid
 from pathlib import Path
 
 
+LEGACY_SSH_RULE = '- 日常管理必须通过设备自身的 SSH/IP 完成；ADB 只可用于用户授权的一次性安装、Android 权限配置或诊断。'
+NATIVE_EXECUTION_RULES = '''- 按问题所属环境操作：Xfce 菜单、桌面设置和 guest 应用直接在当前 Xfce 界面或终端处理；原生 Termux 服务才使用 native 环境；Android 系统设置使用已有 ADB/系统界面。
+- 沿用用户指定且已确认的设备和通道。USB/ADB 已连接时不额外尝试 LAN SSH、主机密钥登记或网络配置；只有任务明确涉及 SSH，或当前通道存在已核实的必要能力缺口时才处理相应连接需求。
+- 用户纠正执行环境或通道后立即按纠正路径继续；ADB shell 不能读取 Termux 私有目录，不构成跳离可用 Xfce 终端的理由。'''
+LEGACY_SSH_RECHECK = '- 改变应用、端口、能力或保活策略后，运行 `update-termux-agents` 刷新本节，并重新做纯局域网息屏验收。'
+NATIVE_RECHECK_RULE = '- 改变应用、端口、能力或保活策略后，运行 `update-termux-agents` 刷新本节并验收本次相关功能；仅任务涉及 SSH/后台保活时才重做对应的纯局域网息屏验收。'
+
+
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -37,6 +45,19 @@ def replace_block(original: str, replacement: str, name: str, *, append=False) -
     if start >= stop:
         raise ValueError('Original markers are reversed')
     return original[:start] + replacement + original[stop + len(end):]
+
+
+def migrate_legacy_ssh_rule(original: str) -> str:
+    """Repair only the known generated native block; leave user policies outside it intact."""
+    name = 'android-termux-ssh managed context'
+    begin, end = f'<!-- BEGIN {name} -->', f'<!-- END {name} -->'
+    if begin not in original and end not in original:
+        return original
+    if original.count(begin) != 1 or original.count(end) != 1 or original.index(begin) >= original.index(end):
+        raise ValueError('Incomplete or duplicate native context markers')
+    block = original[original.index(begin):original.index(end) + len(end)]
+    updated = block.replace(LEGACY_SSH_RULE, NATIVE_EXECUTION_RULES).replace(LEGACY_SSH_RECHECK, NATIVE_RECHECK_RULE)
+    return replace_block(original, updated, name) if updated != block else original
 
 
 def update_file(path: Path, block_file: Path, name: str, *, expected_sha256: str,

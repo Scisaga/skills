@@ -5,7 +5,7 @@
 | 场景 | 实现/资源 | 验收重点 |
 |---|---|---|
 | 原生安装、签名与迁移 | 原有 bootstrap、安装/迁移参考 | 已有数据保留；插件同源；不把 Root 标签当权限 |
-| SSH、Boot/runit、Bash、存储 | 原有脚本和 remote-management | 公钥、服务、Downloads、严格指纹；最终脱离 ADB |
+| SSH、Boot/runit、Bash、存储 | 原有脚本和 remote-management | 公钥、服务、Downloads、严格指纹；SSH 交付才验收脱离 ADB |
 | API、蓝牙、本机 Codex | 原有 API/companion/Codex 脚本与参考全部保留 | 按需安装/授权；实际能力与权限边界 |
 | Debian/Xfce 桌面 | desktop_setup.py、profile、guest 安装脚本 | 新建/维护范围、普通用户、X11 APK+CLI、无隐式 reset |
 | Code/Chromium/Office/VLC | 按 applications 选择的包装器与桌面入口 | 真实启动/文件打开/播放；默认浏览器 helper；不自动卸载其他应用 |
@@ -40,6 +40,8 @@ python scripts/manage_skills.py package --sync-manifests --output /path/outside/
 
 按本次改动选择相关检查，不为了文档改名重装整套环境或结束用户桌面。保留当前未保存编辑；需要关闭/重启时先正常结束并处理保存提示。
 
+Xfce 内部问题先在当前桌面及其终端检查，见 [执行位置与现有通道](execution-context.md)。菜单去重只需确认入口来源、保留退出逻辑并重开实际菜单，不因此执行下列重启、退出整桌面或 SSH 验收矩阵。
+
 1. 启动一次再重复返回，核对同一 session UUID、一个配置容器的桌面核心；启动终端可关闭。
 2. 查看 Code、Chromium 和实际网页/文件；浏览器网络失败按网络分层定位。未播放视频不能宣称硬解可用。
 3. X11 根窗口尺寸与 Android 当前视口对应，字体清楚；标题、LibreOffice 字体菜单、Code 滚动条、SVG 图标可见。
@@ -53,11 +55,13 @@ python scripts/manage_skills.py package --sync-manifests --output /path/outside/
 
 亮屏、切回 Android、普通锁屏、真正息屏及重启后首次解锁分别记录。长息屏按原生 verification-and-troubleshooting 的矩阵进行；本次未做的明确写未验证。USB 常亮不是息屏验收。
 
-使用 ADB 后清空 forward 并停止/断开 ADB，再直接设备 LAN SSH。网络代理测试不能只看环境变量、进程或端口存在；保留实际 HTTP/TLS 结果与模式，不保存订阅/密码。
+清理本任务创建的转发和临时文件，沿本次已有通道复核结果。只有任务要求独立 SSH 交付时才停止/断开本任务的 ADB 并验证 LAN SSH；普通 USB/Xfce 修改不建立额外 SSH。网络代理测试不能只看环境变量、进程或端口存在；保留实际 HTTP/TLS 结果与模式，不保存订阅/密码。
 
 ## 可重复执行的验收入口
 
 `scripts/desktop_verify.py` 在主机运行，只依赖 Python 标准库及当前检查所需的 ADB/OpenSSH。`run.sh desktop-verify` 调用同一入口；Windows 可直接执行 Python，不要求 WSL。连接参数与检查点保存在仓库外的私有目录：
+
+这些命令用于任务确需的对应原生/SSH 验收，不是每次桌面修改的必经步骤。用户指定 USB 时优先在当前 Xfce 终端完成内部检查，不为调用某个 SSH 探针换通道。
 
 ```json
 {
@@ -89,7 +93,8 @@ python scripts/desktop_verify.py sleep --connection /private/device.json \
   --state /private/sleep.json --min-cap 128 --require-battery \
   --duration 360 --interval 45 --apply --wake-at-end
 
-# 移除本任务转发并停用/断开 ADB 后；此命令只新建 SSH，绝不调用 ADB
+# 仅限任务要求独立 SSH 交付：移除本任务转发并断开其 ADB 后运行
+# 此命令会新建 SSH；不用于普通 USB/Xfce 修改
 python scripts/desktop_verify.py final-check --connection /private/device.json \
   --state /private/final.json
 ```

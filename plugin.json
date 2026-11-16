@@ -1,9 +1,12 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "scisaga",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "本地演示、语音、文档、视频和运维技能工具箱。",
-  "author": {"name": "Scisaga", "url": "https://github.com/Scisaga"},
+  "author": {
+    "name": "Scisaga",
+    "url": "https://github.com/Scisaga"
+  },
   "repository": "https://github.com/Scisaga/skills",
   "extensions": {
     "com.openai": {
