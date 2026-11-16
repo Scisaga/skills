@@ -71,7 +71,11 @@ Chromium 标签栏空白处右键的 **Use system title bar and borders** 会增
 
 外观选项通过实际菜单切换，核对 profile 保存值、屏幕和窗口行为；已有运行实例不要直接改 Preferences 文件，避免被浏览器内存状态覆盖。运行中切换后 `_GTK_FRAME_EXTENTS` 可能暂留旧值，不能只看该属性判失败，应结合 `_NET_FRAME_EXTENTS` 与屏幕。不把设备的外观选择固化为全局默认，也不把最大化后的效果视为浮动窗口边缘已修复。
 
-切换合成后又出现实心阴影或“窗口套窗口”，还要比较旧窗口与当前新建窗口的 depth/visual。[Chromium 的 X11 窗口](https://github.com/chromium/chromium/blob/157.0.8103.50/ui/ozone/platform/x11/x11_window.cc) 在创建时选择 visual，[透明 visual 的可用性](https://github.com/chromium/chromium/blob/157.0.8103.50/ui/gfx/x/visual_manager.cc) 与 compositor owner 有关。Y900 曾出现既有 depth24 窗口配上新的透明阴影范围，而当前新窗口 depth32 正常；这是窗口生命周期问题的证据，不应据此切换应用 GPU 后端或撤回已验收的 XPresent。临时窗口只开一个，先记录原窗口、标签和进程身份；关闭时复核目标并确认原窗口仍在。若发生意外退出，先备份会话并恢复原标签，不把“进程 died”日志当成内存回收的原因证明。
+切换合成后又出现实心阴影或“窗口套窗口”，还要比较旧窗口与当前新建窗口的 depth/visual。[Chromium 的 X11 窗口](https://github.com/chromium/chromium/blob/157.0.8103.50/ui/ozone/platform/x11/x11_window.cc) 在创建时选择 visual，[透明 visual 的可用性](https://github.com/chromium/chromium/blob/157.0.8103.50/ui/gfx/x/visual_manager.cc) 与 compositor owner 有关。Y900 曾出现既有 depth24 窗口配上新的透明阴影范围，而当前新窗口 depth32 正常；这是窗口生命周期问题的证据，不应据此切换应用 GPU 后端或撤回已验收的 XPresent。
+
+临时浏览器窗口只开一个，实验前记录原窗口、标签和进程身份并保留会话备份；备份不能保证恢复页面内存中的未保存表单。关闭测试窗前再次确认原窗口/标签仍在、测试窗仍只含本次测试内容，关闭后再复核。PID/XID 曾由诊断创建，不足以证明此刻仍可关闭；原窗口消失或测试窗已承载工作内容时，保留剩余窗口并先处理工作恢复，不能由定时器无条件关闭。若发生意外退出，保留证据并恢复原标签；“进程 died”只证明退出，不能证明低内存、GPU 或某个输入动作是首因。
+
+保存窗口位置时区分客户区根坐标、外框坐标和 `_NET_FRAME_EXTENTS`。本轮 Xfwm 中，将客户区位置直接作为 NorthWest gravity 的移动请求会多偏移一段标题栏高度；按当前 WM 语义换算后定位，并回读同一坐标基准的实际位置和尺寸。移动请求成功不等于恢复完成，截图也需核对边缘是否超出可用区域。
 
 应用 GPU 和窗口合成是不同路径。未合成的 X11 在移动前景窗口时会向露出的背景窗口发送 Expose，造成重绘；用自建窗口、相同轨迹和尺寸比较重绘次数、native CPU 与呈现时间戳，再单独复测浏览器固定 WebGL 负载。主题变薄不等于消除重绘。
 
@@ -147,6 +151,8 @@ python3 /path/to/termux/scripts/xfce_input.py restore \
 回退校验设置、文件摘要和进程的 PID、启动 ticks、会话、UID、精确参数及可执行文件；后续用户修改会阻止覆盖。菜单观察器随 Xfce 自启动，每个 display 一个实例。不要额外启动 Code 验收窗口键。
 
 模拟组合键测试结束时释放全部测试修饰键并核对 X11 modifier 状态。向终端输入命令前重新查看焦点；有菜单抓键、输入法遮挡、窗口切换或未释放修饰键时先处理，不能盲目重复输入。取异步结果须用本轮唯一完成标记，不能读取上一次同名结果判成功。
+
+判断 X11 焦点时先检查属性类型、format 与原始值。Y900 本轮 `_NET_ACTIVE_WINDOW` 曾返回 format32 的 `[有效 XID, 0]`；将整个数组直接与 `[目标 XID]` 比较会误报失焦。对这个标量窗口属性解析有效首项并核对其余项只是零填充，同时结合实际输入焦点/界面；不要把此处理套到本来就含多个项目的窗口列表属性。
 
 ## 触屏模式与入口
 
