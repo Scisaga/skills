@@ -182,6 +182,8 @@ GTK 下拉框必须包含带 Motion 更新的真实点按。`adb input tap` 的�
 
 Thunar 地址工具栏需上下细线时，使用随附 `gtk_thunar_lines.py` 和 `assets/desktop/theme/thunar-thin-lines.css` 派生用户 GTK 主题，所有规则限定 `.thunar`，不改字体、缩放或系统主题原件。默认预览，加 `--apply` 执行。GTK 的用户 `gtk.css` 在运行进程中不会因保存自动重新加载；新主题名可让已有窗口热切，无需关闭文件窗口。必须同时处理 `gtk.css` 与 `gtk-dark.css`，核对实际 `gtk-application-prefer-dark-theme` 与屏幕；只改普通变体会在深色偏好下无效。native GTK 应用也需能读取同名主题，按设备实际 rootfs 路径提供受管链接，不能只让 guest 找到新名字。
 
+若工具栏下沿仍显得粗，逐行检查截图中的颜色，区分工具栏分隔线与文件视图自身的上边框。[Thunar 的标准视图](https://github.com/xfce-mirror/thunar/blob/thunar-4.20.2/thunar/thunar-standard-view.c) 是带内凹边框的 `GtkScrolledWindow`，另有 `.standard-view` 类；仅清除 notebook 或侧栏边框不会消除它。随附 CSS 同时去掉 `.thunar .standard-view` 的上边框，保留工具栏的一条线。DPR 2 时一条 1 逻辑像素线占 2 个物理像素；以实机像素和现有窗口热切结果验收，避免把两条相邻边框误当成同一条线的颜色问题。
+
 ```bash
 python3 /path/to/termux/scripts/gtk_thunar_lines.py apply \
   --state "$HOME/.local/state/tablet-desktop/thunar-lines.json"

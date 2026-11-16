@@ -6,8 +6,10 @@
   box-shadow: none;
   background-image: none;
 }
+/* The file view has its own inset frame directly below the toolbar. */
 .thunar .sidebar.frame,
-.thunar notebook {
+.thunar notebook,
+.thunar .standard-view {
   border-top-width: 0;
   box-shadow: none;
 }

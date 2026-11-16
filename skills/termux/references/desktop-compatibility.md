@@ -135,6 +135,8 @@
 
 按用户选择新增“桌面CPU＋整机内存”两行小组件，每 2 秒刷新。CPU 是 Termux UID 可读取进程的核平均采样，内存依据 Android 整机可用量；Y900 可计内存约 11.11 GiB。已核对来源、连续显示及运行插件，未把 guest 静态 `/proc/stat` 当作整机 CPU。Thunar 工具栏上下分隔线变细，去除叠加的深边；运行态偏好为 dark，故派生主题 `Greybird-dark-ThunarThin` 同时修改两个 CSS 变体，并给 native GTK 提供同名主题路径。用户随后要求分隔线比面板底色更深，颜色从 `#616666` 调到 `#242828`，粗细保持不变。未修改其他应用的 CSS、字体或缩放。
 
+随后逐行像素复查发现，地址栏下方仍有文件标准视图自身的深色上边框：2 个物理像素的工具栏线后紧跟 2 个物理像素的 `#1d1f1f` 边框。新增 `.thunar .standard-view` 规则移除重复上边框，保留一条 `#242828` 分隔线；两个 CSS 变体一并更新并热切，原文件窗口保留。
+
 ### Y900 整窗移动的呈现短样本
 
 同日，日常 Chromium 的真实 GPU 页面仍报告硬件 Canvas/Compositing/Rasterization/WebGL/WebGPU，GL_RENDERER 为 Adreno 830 / ANGLE GLES / Zink / Turnip；Code 有 GLES、独立驱动映射及 KGSL FD 证据，但同实例 `--status` 输出为空，未取得新的 GPUFeatureStatus。两者的硬件证据强度不同；原有终端 DOM 和 Chromium mailbox 保留，不据此推定整体软件回退。
