@@ -24,6 +24,7 @@ SSH 用户名、提示符或 PRoot 中显示的 `root` 都不赋予 Android UID 
    窗口问题分开验证应用 GPU、Xserver 重绘、整桌面合成与 Android 最终呈现；在症状发生时核对实际刷新率，不用 Xrandr 或静置快照代替。先只读取证，固定条件做单变量对照；Expose、动画回调、呈现时间戳与像素正确性分别报告。外框先区分客户端装饰和 Xfwm 框架，再试应用自带外观选项，见显示与输入参考。
    能直接读取的窗口、GPU 页面和系统状态主动获取，保留原标签页及几何；用户主要验收真实输入、手感和偏好。源码结论须对应实际安装版本，设备案例不作为全局默认。
    优先使用上游支持的配置；出现控件回显或桌面回归时先撤回实验并查日志。用户允许暂缓的兼容问题如实保留，不继续叠加事件拦截或预加载注入。
+   内存任务按 [应用内存诊断](references/desktop-memory.md) 区分驻留 PSS、非映射图形、SwapPss 与 ZRAM 物理量；保留工作与网络，固定负载比较，优先浏览器正式设置及身份合格的缓存/残留进程。
 7. 需要 Android 图形管理、双应用入口、同系列图标或桌面文件夹时，读取 [Android 集成与图标分组](references/android-desktop-integration.md)。管理器从随附源码构建；签名私钥留在主机外部目录。仅整理当前启动器的实际图标，不直接改其数据库。
 8. 按 [桌面验收](references/desktop-verification.md) 与 [原生验收](references/verification-and-troubleshooting.md) 完成本次相关检查。更新原生和 guest 的 AGENTS 受管区块；保留未通过及未执行的测试。使用过 ADB 时，交付前清理转发、停止/断开 ADB，并再次直接 LAN SSH 验证。
    重启前先收齐依赖、有效子进程上限、权限与服务就绪检查。重启后使用原检查点，首次解锁后先取证自动恢复与实际上限，再打开图形桌面；不以手动启动代替自启动证明。检查失败先定位并修复对应阶段，减少重复重启与解锁。
@@ -78,6 +79,7 @@ bash skills/termux/scripts/run.sh launcher-plan --adb /path/to/adb --serial SERI
 - 桌面预设、安装、应用与边界：[desktop-setup.md](references/desktop-setup.md)。
 - 显示/触控/实体键盘/字体/主题：[desktop-display-input.md](references/desktop-display-input.md)。
 - 服务、退出、CPU 和电池：[desktop-lifecycle.md](references/desktop-lifecycle.md)。
+- Android/Xfce 多进程内存、应用级优化与回退：[desktop-memory.md](references/desktop-memory.md)。
 - GPU 后端、并发应用、真实绘制与回退：[desktop-gpu.md](references/desktop-gpu.md)。
 - 设备兼容记录与测量边界：[desktop-compatibility.md](references/desktop-compatibility.md)，只用于选择待验证路径，不替代当前设备实测。
 - VPN、代理、DNS：[desktop-network.md](references/desktop-network.md)。

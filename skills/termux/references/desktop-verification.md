@@ -17,6 +17,7 @@
 | 触屏/触控板切换 | 同 UID 私有服务 + 四处同步入口 | 双向切换、图标完整、恢复用户模式 |
 | 自动隐藏底栏 | profile、repair-panel | 底部触发区位置、呼出/收起、动态尺寸异常定位 |
 | 会话、正常/强制结束、CPU | session_manager、退出 UI、guard tests | 单会话复用、保存等待/取消、身份范围、SSH 保留 |
+| Android/Xfce 应用内存 | memory-report、memory 参考 | PSS/图形/SwapPss 去重、ZRAM 物理量、同工作负载比较与覆盖缺口 |
 | 电池 | native API 缓存 + genmon | 真实读数/充电状态；过期明确不可用 |
 | Android 图形管理和全部应用 | APK 源码、构建/部署脚本、activity-alias | 两个正式入口、留白、确认、返回复用会话 |
 | 同系列图标与文件夹 | skill/Android SVG、launcher-plan、Android 集成参考 | 深浅背景、实际 UI 分组、全部应用入口与去重 |

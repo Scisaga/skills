@@ -23,6 +23,7 @@ Commands:
   desktop-verify    Gate effective policy, boot, screen-off and GPU evidence
   gpu-probe         Measure only an explicitly isolated Chromium debug instance
   window-probe      Inspect live Xfwm state; explicit --apply allows a reversible redraw comparison
+  memory-report     Read Android/Termux PSS, memtrack and physical ZRAM; compare matched snapshots
   present-report    Analyze saved SurfaceFlinger timestamps offline; never contacts a device
   context-block     Preview/apply one reviewed UTF-8 AGENTS block with backup and readback
   desktop-context   Refresh native and guest managed desktop context
@@ -71,6 +72,7 @@ case "$command_name" in
   desktop-verify) run_python desktop_verify.py "$@" ;;
   gpu-probe) run_python gpu_probe.py "$@" ;;
   window-probe) run_python window_probe.py "$@" ;;
+  memory-report) run_python memory_report.py "$@" ;;
   present-report) run_python presentation_timing.py "$@" ;;
   context-block) run_python managed_context.py "$@" ;;
   desktop-context) run_python desktop_setup.py update-context "$@" ;;

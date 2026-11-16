@@ -52,6 +52,8 @@ desktop manage --terminal
 
 PRoot 调用转换、软件渲染和视频解码会产生开销。看进程 CPU/PSS、idle 活动、刷新率、温度和实际任务时长；亮屏尺寸/亮度通常也影响整机功耗。一次 CPU/PSS 快照不是续航结论，不承诺平板全部性能无损。
 
+Android/Xfce 的多进程内存快照、SwapPss/图形去重、实际 ZRAM 占用与可回退的应用级优化见 [应用内存诊断](desktop-memory.md)。
+
 ## Android 电池桥接
 
 native 控制器在桌面活动时每 60 秒调用一次 `termux-battery-status`；guest genmon 只读取缓存，不高频唤起 API。缓存包含真实百分比、充电/插电状态、温度和更新时间。过期 180 秒显示不可用，不伪造 guest sysfs/UPower 电池。
