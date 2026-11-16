@@ -22,7 +22,9 @@
 
 ### Termux 实机演示
 
-小米平板 7 实机快览：YouTube（3Blue1Brown）→ GitHub → VLC 视频播放 → 全屏 VS Code，右侧 Codex 为贪吃蛇添加最高分，再从底部终端启动游戏。保留左侧文件栏，展示真实 AI 改码与运行结果。片段经过剪辑，9 秒循环，GIF 约 2 MB。
+已在 **小米平板 7** 和 **联想 Y900** 上完成 Termux/Xfce 工作站部署与实机适配，覆盖开发、办公、影音及键鼠交互。
+
+下方 GIF 录制于小米平板 7：YouTube（3Blue1Brown）→ GitHub → VLC 视频播放 → 全屏 VS Code，右侧 Codex 为贪吃蛇添加最高分，再从底部终端启动游戏。保留左侧文件栏，展示真实 AI 改码与运行结果。片段经过剪辑，9 秒循环，GIF 约 2 MB。
 
 <img src="assets/demos/termux-pad7.gif" alt="小米平板 7 的 Xfce 桌面快速切换 YouTube、GitHub、VLC，以及带左侧文件栏、右侧 Codex 改码结果和底部终端的全屏 VS Code，启动 Python 贪吃蛇" width="1120">
 

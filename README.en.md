@@ -22,6 +22,8 @@ Open a skill to find its workflow, commands, and configuration guide. Detailed s
 
 ### Termux device demo
 
+Termux/Xfce workstations have been deployed and tested on both the **Xiaomi Pad 7** and **Lenovo Y900**, covering coding, office apps, media playback, and keyboard/mouse input.
+
 Recorded on a Xiaomi Pad 7: YouTube (3Blue1Brown) → GitHub → VLC video playback → maximized VS Code. Codex in the right sidebar adds a best score to Snake, then the game runs from the integrated terminal, with Explorer visible on the left. Shows a real AI edit and its running result. Edited into a 9-second loop; approximately 2 MB.
 
 <img src="assets/demos/termux-pad7.gif" alt="Xiaomi Pad 7 Xfce desktop switching between YouTube, GitHub, VLC, and maximized VS Code with Explorer, real Codex edits in the right sidebar, and its integrated terminal launching Python Snake" width="1120">
