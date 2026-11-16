@@ -125,6 +125,8 @@ Code 的真实 GPU 绘制通过后，仍须测试边栏调整、编辑器滚动�
 
 已验证设备可设置 `"code_angle_backend": "gles"`，由原 `code-tablet` 入口向微软 VS Code 加入 `--use-gl=angle --use-angle=gles`；它要求已选硬件 `gpu_backend`，继续使用同一受管驱动。默认 `default` 保留原来的 ANGLE 选择，不推广为所有设备的开关。软件兼容入口移除这些强制后端参数，仍是明确的软件回退。正常重开日常 Code 后核对实际参数、GPU 驱动及原扩展/工作区中的操作；不改扩展打包代码、不把隔离测试的调试端口带入日常实例。
 
+小米后续隔离测试中的 ANGLE/Skia Vulkan 虽缩短交换等待、提高了边栏更新，但日常实例出现用户可见闪动，未通过画面稳定性验收，已恢复 GLES。该实验未加入可安装 profile 的枚举。真实 shader/像素、吞吐量与画面稳定性须分别验证，不能凭更快的计数推广路径，见[兼容记录](desktop-compatibility.md#小米-vs-code-与-codex-面板)。
+
 2026-11-15 此前在 Adreno 830 上，微软 VS Code 保留原版本、扩展、工作区与字体；隔离实例实测 ANGLE/freedreno Adreno 830v1、OpenGL 4.6、加速 Compositing/Raster/WebGL，WebGL2 绘制读取像素成功。随后同条件边栏对照确认 GLES 更快，日常入口已按设备选择 GLES，详见兼容记录。日常 Code 的 GPU 子进程也加载隔离驱动并打开 `/dev/kgsl-3d0`。真实 GPU 路径证明与编辑器响应测试分别记录，不宣称获得浏览器同样倍率的提升。
 
 若独立 Code 已顺畅，日常工作区仍慢，保持后端与窗口条件，分别收起终端和扩展侧栏做对照。Y900 的一次实测中，主要剩余开销来自可见终端；官方设置 `"terminal.integrated.gpuAcceleration": "off"` 切换终端 DOM 渲染后，保留终端及原扩展也显著改善了边栏拖动，编辑器仍用 GLES 加速。这是该终端负载的选择，不能推广为终端都应禁用 WebGL；[官方文档](https://code.visualstudio.com/docs/terminal/appearance#_gpu-acceleration) 说明 DOM 与 WebGL 的取舍。标准用户设置会由安装器保留，无需增加全局 GPU 开关或修改打包代码。记录备份、原值、真实终端绘制和用户操作结果；无收益时恢复原值。
