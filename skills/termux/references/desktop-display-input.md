@@ -85,6 +85,24 @@ Xfwm 的 `xpresent`/`glx` 是呈现与同步选择，不能仅凭 GLX 名称宣�
 
 VLC 的 Qt 界面单独按 profile 的 `scale` 设置 `QT_SCALE_FACTOR`，同时关闭 Qt 自动倍率，避免高分辨率屏幕上控件过小或重复缩放。软件兼容入口使用 `--avcodec-hw=none --vout=xcb_x11`，不让视频输出依赖尚未配置的 OpenGL/Vulkan 驱动；调整后应正常退出已有 VLC，再实测画面和播放进度。
 
+### 保留标题栏的细边框与覆盖层校正
+
+仅把 Xfwm 四周缩成细线、保留标题和按钮时，在当前 Xfce 终端使用 `xfwm_border.py`。脚本复制当前主题到未使用的用户主题名，原主题不动；侧边和底边改为 1 像素，标题和按钮素材尺寸保留。默认预览；用户后续自行换主题时停止回退。
+
+```bash
+python3 /path/to/termux/scripts/xfwm_border.py apply \
+  --name Tablet-Touch-Line --state "$HOME/.local/state/tablet-desktop/border.json"
+# 核对计划后加 --apply；旧主题覆盖层尺寸不匹配时加 --normalize-overlays
+python3 /path/to/termux/scripts/xfwm_border.py restore \
+  --state "$HOME/.local/state/tablet-desktop/border.json" --apply
+```
+
+按钮上方出现矩形深浅块时，检查同名 PNG 与 XPM 的尺寸。Xfwm 4.20 [先载入 XPM，再按 1:1 叠加 PNG](https://github.com/xfce-mirror/xfwm4/blob/xfwm4-4.20.0/src/mypixmap.c)，不会自动缩放旧覆盖层。80×80 底图配 44×58 覆盖层会只覆盖部分按钮；只检查 XPM 或主题名会漏掉此问题。随附素材已对齐；旧安装可选 `--normalize-overlays`，仅在派生主题中校正 PNG，保留 XPM 图标。实际需要调整时依赖 Pillow，缺失会提示安装命令。核对活动、非活动、悬停、按下和最大化/还原各状态，边框属性不能替代截图验收。
+
+顶部深色线还可能来自 PNG 自带的多行半透明黑色覆盖，而非 `frame_border_top`。随附主题已把这部分收为单行；保留其下渐变、标题和按钮底图。它与拖动残影分别验收，主题变薄不能作为重绘修复证据。
+
+Xfwm 4.20 的 [`vblank_mode` 仅在启动时读取](https://github.com/xfce-mirror/xfwm4/blob/xfwm4-4.20.0/src/settings.c)。热改成 `xpresent` 后立即开启合成，旧进程仍可能沿用 auto/GLX；属性回读不代表运行路径改变。遇到 `Could not create GLX context` 和 GLX BadValue 时先关闭合成、保留日志，勿反复热切或重启整个桌面。按用户需求试 XPresent 时，先停用并复核释放底栏辅助的局部重定向，记录原设置和应用窗口；在合成关闭时保存 `vblank_mode=xpresent`，做一次受控的 `xfwm4 --replace --vblank=xpresent`，确认新 WM 就绪后再开启合成。必须有独立超时回退，核对原应用窗口、拖动残影、闪烁、Code/Codex 和底栏；保留后持久禁用局部重定向辅助，回退时关闭合成并恢复辅助与原设置。不要改应用 GPU 后端来掩盖 WM 同步失败。
+
 ## VS Code 与主机字体一致
 
 先读取主机 VS Code 的 editor.fontFamily/fontSize/fontLigatures 等实际设置，再在 guest 用 `fc-match` 确认字体存在。只复制用户有权使用的字体到 guest `~/.local/share/fonts/`，执行 `fc-cache -f`；不把主机字体文件打包进技能。随后合并相关设置，保留其他 Code 配置和账户。
@@ -102,7 +120,33 @@ VLC 的 Qt 界面单独按 profile 的 `scale` 设置 `QT_SCALE_FACTOR`，同时
 
 ZUI 若在蓝牙键盘打字时自动进入“无限工作台”，先记录相关设置及手动入口状态。当前 ROM 的自动进入项是 `settings get system keyboard_enter_desktop_mode`，仅将该项设为 `0`。同属 system 的 `zui_ov_desktop_mode` 是工作台状态；将其一起清零会影响手动进入，不作为禁用自动切换的通用步骤。不同 ROM 先查实际键名及命名空间；global/secure 读到 null 不等于设置已丢失。验收必须包含真实键盘输入不再切换、手动按钮仍可进入；本次两项均经用户确认。
 
+### Win 快捷键与 Android 拦截
+
+先区分 Android 系统消费、Termux:X11 转发、Xfce 绑定冲突。只读 Xfconf 值不能证明真实按键生效。需要把 Win 组合交给 Xfce 时，使用当前版本 Termux:X11 官方键盘拦截功能；先核对实际版本和组件，保留已有辅助功能服务列表。不要在 Lenovo 上启用仅适用于 Samsung DeX 的选项，也不要为了开启组件授予整个应用 WRITE_SECURE_SETTINGS。
+
+1. Android 侧检查 `enabled_accessibility_services`、`accessibility_enabled`，以及 X11 的 `filterOutWinkey`。本次版本的组件是 `com.termux.x11/com.termux.x11.utils.KeyInterceptor`；它[仅在 X11 窗口有焦点时转发](https://github.com/termux/termux-x11/blob/488dbbd559acd24f62da0add3182b9c953782cfe/lorie/src/main/java/com/termux/x11/utils/KeyInterceptor.java)。修改前记录原值，回退只撤回本次新增组件，不能清空其他服务。
+2. guest 的 `xfce_input.py` 按需设置 Win 菜单开关、Win+D 显示/恢复 Xfce 桌面、左右半屏、上最大化、下先还原再最小化。保留正常 Alt+F4 保存协议、Alt+Tab、反向切换，以及 Win+E、Ctrl+Alt+T、Alt+F2。只改列出的自定义键，保留其他输入法和快捷键。
+3. 不把裸 `Super_L`/`Super_R` 直接绑定为 xfsettingsd 命令，再让另一提供方处理 Win 组合；该抓键会导致菜单可用但组合失效。脚本采用一个命令提供方执行窗口动作，裸 Win 由随附小型 C 观察器在单独松开时触发；组合、其他按键或长按取消菜单触发。观察器不抓键、不保存输入，空闲阻塞等待；需要 XInput 2.2，以便菜单持有键盘抓取时仍收到松键事件。
+4. 验证 Win 两次开/关菜单、组合不误弹菜单、Win+D 两次显示/恢复、左右半屏、重复向上不还原、向下先还原再最小化。XTest 只证明 Xfce 层；Android `input keycombination` 可能绕过硬件辅助功能路径，不能据此宣布真实键盘失败。最终使用实体键盘，或限时 UHID 测试键盘验证 Android InputReader 路径；虚拟设备测试后关闭其 FD。
+
+在当前 Xfce 终端执行，依赖 guest 的 `xfconf-query`、`python3-xlib`、gcc、libx11-dev 和 libxi-dev；已有依赖无需重复安装。只传脚本时需同时传入 C 源码路径。
+
+```bash
+python3 /path/to/termux/scripts/xfce_input.py apply --windows-shortcuts \
+  --menu-source /path/to/termux/assets/desktop/guest/tablet-menu-key.c \
+  --state "$HOME/.local/state/tablet-desktop/input.json"
+# 默认预览；核对后加 --apply
+python3 /path/to/termux/scripts/xfce_input.py restore \
+  --state "$HOME/.local/state/tablet-desktop/input.json" --apply
+```
+
+回退校验设置、文件摘要和进程的 PID、启动 ticks、会话、UID、精确参数及可执行文件；后续用户修改会阻止覆盖。菜单观察器随 Xfce 自启动，每个 display 一个实例。不要额外启动 Code 验收窗口键。
+
+模拟组合键测试结束时释放全部测试修饰键并核对 X11 modifier 状态。向终端输入命令前重新查看焦点；有菜单抓键、输入法遮挡、窗口切换或未释放修饰键时先处理，不能盲目重复输入。取异步结果须用本轮唯一完成标记，不能读取上一次同名结果判成功。
+
 ## 触屏模式与入口
+
+双击困难先分开检查 `/Net/DoubleClickTime` 和 `/Net/DoubleClickDistance`。用同一空文件夹、相同两次触摸，只改变第二次落点来区分时间不足和手指偏移；不能只增大间隔或擅自改为单击打开。可用 `xfce_input.py apply --double-click-time MILLISECONDS --double-click-distance PIXELS --state /private/click.json` 预览，加 `--apply` 执行，`restore --state ... --apply` 回退。保留原输入模式，并复验单击、双击、拖动、长按和滚动。Y900 的 650ms/24px 是设备案例，不是安装默认值。
 
 X11 提供三种输入模式：Direct touch（原生触屏）、Simulated touchscreen（模拟鼠标的兼容触屏）和 Trackpad（触控板）。需要单指拖动内容滚动时先验证 Direct touch，它把真实触摸事件交给应用。Chromium 和 GTK ScrolledWindow 已实测单指滚动，Xfwm 标题栏仍能单指拖动；不保证所有桌面应用都支持同样的触控手势。
 

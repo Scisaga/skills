@@ -119,6 +119,18 @@
 
 2026-11-16 后续核对：窗口 depth24、实际 compositor owner 为空，Chromium 157 对应实现采用实色客户端装饰，不应将 GTK extents=10 直接称为 10 像素透明阴影。官方外观页显示 GTK，点击 **Use Classic** 后 `extensions.theme.system_theme` 从 1 变为 0，多层粗边框消失，仍有标准窄边缘/缩放区域；用户确认合适并要求保留。单行标签栏和原窗口几何保留，关闭仅本轮新增的设置标签并返回原 GPU 页；GPU、输入、自动刷新和合成配置未改。该主题选择不自动推广给小米或其他设备，操作方法见 [窗口边框参考](desktop-display-input.md#窗口边框拖动重绘与合成)。
 
+### Y900 Win 快捷键、双击与标题按钮
+
+2026-11-17，沿用已有 USB/ADB，在当前 Xfce 终端调整，未使用 SSH。Android 17、Termux:X11 1.03.01 / 488dbbd、Xfwm 4.20.0 和 libxfce4ui 4.20.1。启用 X11 官方 KeyInterceptor，仅在 X11 有焦点时转发；未启用 Samsung DeX 选项，也未授予 WRITE_SECURE_SETTINGS。
+
+裸 Super 直接绑定导致菜单打开后不能用 Win 收起，且不同提供方的 Win 组合失效。改为随附 C 观察器与同一命令提供方后，XTest 和 Android UHID 输入路径均验证：菜单二次开关、Win+D 显示/恢复、左右半屏、向上重复保持最大化、向下先还原再最小化。测试保留所有原应用窗口；观察器一次 PSS 约 447 KiB，空闲 1 秒 CPU 增量为 0 ticks，不代表长期功耗验收。用户随后确认实际键盘、双击和按钮均正常；重启后行为仍未复验。
+
+原双击 400ms/5px；两次各 80ms 静止触摸原点可打开，第二次偏移 16px 时失败。只把距离改为 24px 后同一偏移成功，再按用户要求把时间调到 650ms。最终单次触摸只选中，较慢且偏移 16px 的两次触摸能打开测试文件夹。仍保留 Direct touch 和双击打开，没有改为单击；完整拖动、长按、滚动和长期手感未在此轮重新验收。
+
+按用户选择保留标题栏和三个按钮，从 Tablet-Touch 派生 Tablet-Touch-Line，左右及底边从 12 缩为 1 像素。随后发现 80×80 XPM 按钮叠有旧 44×58 PNG，造成顶部矩形块；将覆盖层对齐底图后，活动/非活动、悬停/按下、最大化/还原状态的背景连续，按钮点击和正常关闭协议通过。按用户后续反馈将顶部黑色覆盖收成单行。标题及图标 XPM、按钮点击尺寸、字体、分辨率和缩放保留。原主题仍可回退；通用命令见[显示与输入](desktop-display-input.md)。
+
+拖动残影另做合成对照。原先合成关闭；auto 启用时出现 GLX 上下文失败与 BadValue，窗口管理器由会话恢复，已关闭合成并还原辅助。热改 XPresent 仍沿用旧进程的启动模式；核对源码后，在合成关闭、底栏辅助已释放资源的条件下，受控替换为 `xfwm4 --replace --vblank=xpresent` 再开启合成。实际 compositor selection 生效，用户确认“残影消失、没有闪烁，保留”，随后取消超时回退并保留配置。Code/浏览器 GLES 参数、字体、缩放和网络未改；底栏局部重定向辅助保持禁用，回退可恢复。未做重启恢复、长时功耗或固定负载性能比较。
+
 ### Y900 整窗移动的呈现短样本
 
 同日，日常 Chromium 的真实 GPU 页面仍报告硬件 Canvas/Compositing/Rasterization/WebGL/WebGPU，GL_RENDERER 为 Adreno 830 / ANGLE GLES / Zink / Turnip；Code 有 GLES、独立驱动映射及 KGSL FD 证据，但同实例 `--status` 输出为空，未取得新的 GPUFeatureStatus。两者的硬件证据强度不同；原有终端 DOM 和 Chromium mailbox 保留，不据此推定整体软件回退。
