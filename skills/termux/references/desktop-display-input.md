@@ -162,6 +162,8 @@ python3 /path/to/termux/scripts/xfce_input.py restore \
 
 修改启动入口不会改变已运行的 Thunar/D-Bus 服务。先记录窗口 URI、几何、PID、启动时间和会话，排除复制/重命名等操作对话框；正常退出旧实例，再通过受管入口启动并恢复窗口。核对新进程环境和实际触摸，而非反复启动入口复用旧进程。需要隔离对照时可用单个 `dbus-run-session -- env GDK_CORE_DEVICE_EVENTS=1 thunar /private/test-folder`，记录并正常关闭这一测试会话。Thunar 的原生单指滚动须单独验收，不能从双击通过推定；Code/Chromium/Office/VLC 入口继续清除该变量，其他自定义应用入口按需核对。
 
+还要检查桌面设置等子进程是否意外继承此变量。Xfdesktop 4.20.1 的桌面右键菜单通过 PATH 查找 `xfdesktop-settings`；随附同名 `/usr/local/bin/xfdesktop-settings` 包装器在启动系统原程序前清除 `GDK_CORE_DEVICE_EVENTS`，保留桌面图标自身的兼容设置。已有设置窗口需正常关闭重开，不能仅以包装器已安装判成功。复验其文件选择列表的真实单指滑动、单击、进入文件夹和长按，并检查重开后的进程环境。GTK 原生滚动识别器在长按后才让出触摸序列给列表；长按后移动的拖放、长按菜单、松手和取消分别按实测记录。文件选择器的列表内拖放用于选择/导航路径，不执行目录移动，不等于 Android 文件管理器的文件移动操作。用户怀疑误移时，仍须对照实际目录、软件包路径清单和近期目录变动取证；核对 dpkg 的 path-exclude/path-include，避免把精简镜像从未安装的文档误判成丢失。不把没有日志当作没有移动。参见 [GTK 3.24.49 滚动识别器](https://github.com/GNOME/gtk/blob/3.24.49/gtk/gtkscrolledwindow.c)、[文件选择器](https://github.com/GNOME/gtk/blob/3.24.49/gtk/gtkfilechooserwidget.c) 与 [Xfdesktop 4.20.1 启动入口](https://github.com/xfce-mirror/xfdesktop/blob/xfdesktop-4.20.1/src/xfdesktop-file-icon-manager.c)。
+
 X11 提供三种输入模式：Direct touch（原生触屏）、Simulated touchscreen（模拟鼠标的兼容触屏）和 Trackpad（触控板）。需要单指拖动内容滚动时先验证 Direct touch，它把真实触摸事件交给应用。Chromium 和 GTK ScrolledWindow 已实测单指滚动，Xfwm 标题栏仍能单指拖动；不保证所有桌面应用都支持同样的触控手势。
 
 桌面、应用菜单、底部栏、顶部栏的主按钮在原生触屏和触控板之间切换，四份标签/图标同步。模拟触屏仍可通过 X11 设置或 `tablet-touch-toggle touch` 选择；支持 Desktop Actions 的启动器也会显示三个固定模式动作。不要假定所有 Xfce 面板版本都把 Desktop Actions 显示在右键菜单中。

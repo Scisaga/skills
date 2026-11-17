@@ -1,0 +1,4 @@
+#!/bin/sh
+# The desktop's mouse compatibility must not disable GTK dialog touch gestures.
+unset GDK_CORE_DEVICE_EVENTS
+exec /usr/bin/xfdesktop-settings "$@"
