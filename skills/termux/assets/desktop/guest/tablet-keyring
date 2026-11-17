@@ -1,0 +1,92 @@
+#!/usr/bin/python3
+"""Unlock GNOME Keyring through an Android hardware key, without exposing its password."""
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import resource
+import stat
+import subprocess
+
+BASE = Path.home() / '.local/lib/tablet-desktop/android-keyring'
+
+
+def status():
+    owner = subprocess.run([
+        'gdbus', 'call', '--session', '--dest', 'org.freedesktop.DBus',
+        '--object-path', '/org/freedesktop/DBus', '--method',
+        'org.freedesktop.DBus.NameHasOwner', 'org.freedesktop.secrets',
+    ], capture_output=True, text=True, timeout=5)
+    if owner.returncode or owner.stdout.strip() != '(true,)':
+        return False
+    result = subprocess.run([
+        'gdbus', 'call', '--session', '--dest', 'org.freedesktop.secrets',
+        '--object-path', '/org/freedesktop/secrets/aliases/login', '--method',
+        'org.freedesktop.DBus.Properties.Get', 'org.freedesktop.Secret.Collection', 'Locked',
+    ], capture_output=True, text=True, timeout=5)
+    return result.returncode == 0 and result.stdout.strip() == '(<false>,)'
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=('probe', 'initialize', 'unlock', 'info', 'status'))
+    action = parser.parse_args().action
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    os.umask(0o077)
+    if os.environ.get('DBUS_STARTER_ADDRESS'):
+        os.environ['DBUS_SESSION_BUS_ADDRESS'] = os.environ['DBUS_STARTER_ADDRESS']
+    if action == 'status':
+        unlocked = status()
+        print(json.dumps({'ok': unlocked, 'login_unlocked': unlocked}))
+        return 0 if unlocked else 1
+    lock = None
+    if action in ('initialize', 'unlock'):
+        lock_path = Path.home() / '.local/state/tablet-desktop/keyring-unlock.lock'
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        lock = os.fdopen(fd, 'r+')
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077:
+            raise RuntimeError('Private lock file required')
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        if action == 'unlock' and status():
+            print(json.dumps({'ok': True, 'login_unlocked': True, 'already_unlocked': True}))
+            return 0
+    api = subprocess.check_output(['/system/bin/getprop', 'ro.build.version.sdk'], text=True).strip()
+    if int(api) < 35:
+        raise RuntimeError('This bridge requires Android 15+; older unlocked-device key bugs are not supported')
+    env = os.environ.copy()
+    for key in ('LD_PRELOAD', 'LD_LIBRARY_PATH', 'JAVA_HOME'):
+        env.pop(key, None)
+    env['CLASSPATH'] = str(BASE / 'tablet-keyring.jar')
+    if action in ('initialize', 'unlock'):
+        bus = env.get('DBUS_SESSION_BUS_ADDRESS')
+        if not bus:
+            raise RuntimeError('A desktop session bus is required')
+        session = hashlib.sha256(bus.encode()).hexdigest()[:16]
+        control = Path.home() / '.cache/tablet-desktop' / ('keyring-' + session)
+        control.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if control.is_symlink() or control.stat().st_mode & 0o077:
+            raise RuntimeError('Private control directory required')
+        env['GNOME_KEYRING_CONTROL'] = str(control)
+    result = subprocess.run(['/system/bin/app_process', '/system/bin', 'TabletKeyring', action],
+                            env=env, capture_output=True, text=True, timeout=25)
+    try:
+        data = json.loads(result.stdout)
+    except ValueError:
+        data = {'ok': False, 'error': 'AndroidBridgeUnavailable'}
+    if action in ('initialize', 'unlock') and data.get('ok'):
+        data['login_unlocked'] = status()
+        data['ok'] = data['login_unlocked']
+    print(json.dumps(data))
+    return 0 if result.returncode == 0 and data.get('ok') else 1
+
+
+if __name__ == '__main__':
+    try:
+        raise SystemExit(main())
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        print(json.dumps({'ok': False, 'error': type(error).__name__}))
+        raise SystemExit(1)

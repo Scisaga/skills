@@ -16,6 +16,7 @@ from xml.etree import ElementTree as ET
 
 from desktop_profile import ASSETS, guest_root, load_profile, profile_digest
 from jsonc_settings import merge as merge_code_settings
+from keyring_setup import CODE_GUARD
 from desktop_gpu_bundle import install_bundle, installed_driver_ready, DRIVER_ROOT
 from desktop_video_bundle import install_video, VLC_ROOT
 from managed_context import migrate_legacy_ssh_rule, replace_block
@@ -200,7 +201,7 @@ def configure_guest(root: Path, native_home: Path, p: dict, writer: Writer):
     code_angle = " --use-gl=angle --use-angle=gles" if p.get("code_angle_backend") == "gles" else ""
     qt_scale = f"export QT_AUTO_SCREEN_SCALE_FACTOR=0 QT_SCALE_FACTOR={p['scale']}\n"
     wrappers = {
-        "code": ("code-tablet", f'exec {runner}/usr/bin/code --no-sandbox{gpu} --disable-dev-shm-usage --ozone-platform=x11{code_angle} "$@"'),
+        "code": ("code-tablet", CODE_GUARD + f'exec {runner}/usr/bin/code --no-sandbox{gpu} --disable-dev-shm-usage --ozone-platform=x11{code_angle} "$@"'),
         "chromium": ("chromium-tablet", f'exec {runner}/usr/bin/chromium --no-sandbox{gpu} --disable-dev-shm-usage --ozone-platform=x11 --force-device-scale-factor={p["scale"]} --no-first-run --no-default-browser-check "$@"'),
         "office": ("libreoffice-tablet", 'export SAL_USE_VCLPLUGIN=gtk3\nexec /usr/bin/libreoffice "$@"'),
         "vlc": ("vlc-tablet", qt_scale + ('exec /usr/bin/vlc --avcodec-hw=none --vout=xcb_x11 "$@"' if p["software_rendering"] else 'exec /usr/bin/vlc "$@"')),
@@ -357,13 +358,14 @@ def configure_guest(root: Path, native_home: Path, p: dict, writer: Writer):
     writer.put(home / ".config/xfce4/panel/genmon-23.rc", f"Command=/usr/local/bin/tablet-desktop-battery\nUseLabel=0\nUpdatePeriod=60000\nFont={p['font']} {p['font_size']}\n", 0o600)
     css = home / ".config/gtk-3.0/gtk.css"
     old = css.read_text(encoding="utf-8") if css.exists() else ""
-    for block in ("tablet touch", "tablet hidden dock"):
+    for block in ("tablet touch", "tablet hidden dock", "tablet terminal scrollbar"):
         begin, end = f"/* BEGIN {block} */", f"/* END {block} */"
         if begin in old and end in old: old = old[:old.index(begin)] + old[old.index(end) + len(end):]
     contents = (old.strip("\r\n") + "\n\n") if old.strip("\r\n") else ""
     contents += "/* BEGIN tablet touch */\nmenu > menuitem { min-height: 28px; padding: 7px 12px; }\n.xfce4-panel button { min-width: 36px; padding-left: 5px; padding-right: 5px; }\n/* END tablet touch */\n"
     if p["dock_hide_indicator"]:
         contents += "\n/* BEGIN tablet hidden dock */\n.xfce4-panel#XfcePanelWindowHidden.panel-2-hidden { background: transparent; border: none; box-shadow: none; }\n/* END tablet hidden dock */\n"
+    contents += "\n/* BEGIN tablet terminal scrollbar */\n" + (ASSETS / "theme/terminal-scrollbar.css").read_text(encoding="utf-8").rstrip() + "\n/* END tablet terminal scrollbar */\n"
     writer.put(css, contents)
     if "chromium" in p["applications"]:
         helper = "[Desktop Entry]\nVersion=1.0\nType=X-XFCE-Helper\nName=Chromium\nIcon=chromium\nX-XFCE-Category=WebBrowser\nX-XFCE-Commands=/usr/local/bin/chromium-tablet\nX-XFCE-CommandsWithParameter=/usr/local/bin/chromium-tablet \"%s\"\n"

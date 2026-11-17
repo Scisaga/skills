@@ -160,3 +160,17 @@
 误移动核对覆盖 `/usr/share` 的 128,064 条软件包路径、3,101 个系统目录和 5,585 个用户目录。11,702 个缺失路径全部符合已有 dpkg 精简过滤规则，其余无缺失；系统子目录没有近 24 小时的 ctime 变更，背景文件与顶层目录均在原位。没有据此执行猜测性的文件移动，也不把这些结果等同于完整文件操作日志。
 
 日常设置进程中的真实 Android touchscreen 输入复验：350ms 纵向滑动滚动列表；100ms 单次点按只选中；两次点按且第二次横移 16px 可进入 backgrounds；静止约 800ms 后移动出现列表拖放及侧栏接收目标，随后取消选择器并正常重开。文件选择器的路径拖放不执行文件夹移动。以上不代替 Thunar 单指滚动、多指取消、长按菜单或用户长期手感验收；原有 GTK 下拉框自然点按问题仍单独保留，键盘打开选择器可用。未重启桌面或 Android。
+
+### Y900 Terminal 滚动条与凭据提示
+
+同日，Xfce Terminal 1.1.4 原滚动条较宽且带明显边框。用户 GTK CSS 新增仅匹配 `#xfce4-terminal-notebook` 的纵向滚动条规则，轨道 8、滑块 6 逻辑像素，深色背景、圆角灰色滑块和悬停/按下反馈。新建独立终端加载样式后，真实触屏拖动将 200 行测试历史从约第 177 行滚至第 14 行；CSS 解析和 25 项桌面脚本回归通过。保留原 GTK 主题、字体及其他应用样式；已有终端需正常重开加载用户 CSS。
+
+VS Code 同时提示 OS keyring unavailable。初次检查仍为 XFCE，会话 D-Bus 正常，`libsecret-1-0` 已安装，但 `gnome-keyring` 未安装、无 daemon，也无 `org.freedesktop.secrets` owner 或可激活服务。该阶段仅定位；后续按用户不增加密码的要求完成下述修复。不以 `password-store=basic` 代替加密凭据存储。
+
+### Y900 无额外密码的凭据存储
+
+同日，用户明确拒绝额外密码和明文主密码文件。安装 GNOME Keyring 48、libsecret 工具与 Seahorse，使用 Android Keystore 的不可导出 TEE 密钥保护随机主密码，只保存 AES-GCM 密文，解锁时经内存管道交给 GNOME。探针实际确认 API 37、security level 1 和加解密往返；没有安装新 APK 或改变锁屏设置。此配置只保护目录复制，不隔离同一 Termux UID 的程序，也不自动锁定已解锁的密钥环。
+
+冷启动验证曾复现默认 D-Bus 激活先启动锁定 daemon，而终端解锁另起 daemon，出现额外密码框。通过用户 Secret Service 激活入口统一调用桥接、采用 starter bus 地址、明确 HOME、每总线私有控制目录和文件锁串行化后解决。Xfce 启动命令和 D-Bus 冷激活均验证自动解锁，三次并发调用均通过，最终仅一个凭据 daemon。
+
+Git 使用官方固定版本的 libsecret helper；随机 `.invalid` 测试凭据存取、daemon 正常退出后重开读取均通过，所有测试条目删除。日常 Code 正常重开，原工作区恢复；日志实际报告 Encryption is available: true 和 using persisted storage，Secret Service 中存在 Electron Safe Storage 项，仅查询标签，未读取令牌。Code 启动检查保留原 GLES/KGSL 参数，`argv.json` 选用 `gnome-libsecret`。此前未保存的 GitHub 会话可能需要重新登录；本次不冒充真实 GitHub 重新授权测试。164 项脚本回归中 163 通过，1 项 Windows C 环境检查跳过；Android 整机重启、真实锁屏和长时息屏未在此轮验证。实现及回退见 [桌面凭据](desktop-credentials.md)。

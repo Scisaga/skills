@@ -194,6 +194,12 @@ Xfce 桌面/面板的单击、双击还需单独验收。启用该适配时，�
 GTK 下拉框必须包含带 Motion 更新的真实点按。`adb input tap` 的瞬时按下/抬起可能通过，而 80–650ms 的静止 `swipe` 和实机手指会使菜单立刻收回。检查选择值、控件回显及桌面重绘，不能只看菜单可选。用户允许暂缓时，将该项保留为未解决；不以事件注入掩盖失败。黑桌面先查桌面进程和 X11 错误，`MIT-SHM BadAccess` 的处理见 GPU 参考。
 
 
+## Xfce Terminal 滚动条
+
+`assets/desktop/theme/terminal-scrollbar.css` 通过 `#xfce4-terminal-notebook` 限定终端的纵向滚动条，安装器写入 GTK 用户 CSS 的 `tablet terminal scrollbar` 受管区块。当前为 8 逻辑像素轨道、6 像素灰色滑块、深色背景及悬停/按下状态；不改变字体、窗口装饰或滚动行为。选择器已对照 Xfce Terminal 1.1.4 源码与实机，其他版本须复验。
+
+已有 GTK 进程不保证重新加载用户 CSS。保留现有终端任务，可用 `xfce4-terminal --disable-server` 打开单独的新实例，验证滑块、悬停与实际拖动，再正常关闭本次测试窗。既有终端下次正常重开后加载样式，无需重启桌面或改整个 GTK 主题。
+
 ## Thunar 分隔线与资源小组件
 
 Thunar 地址工具栏需调整背景、输入框和细分隔线时，使用随附 `gtk_thunar_lines.py` 和 `assets/desktop/theme/thunar-thin-lines.css` 派生用户 GTK 主题，所有规则限定 `.thunar`，不改字体、缩放或系统主题原件。当前素材去掉工具栏上边框，保留下方细线；输入框只覆盖普通边框颜色，保留聚焦样式。默认预览，加 `--apply` 执行。GTK 的用户 `gtk.css` 在运行进程中不会因保存自动重新加载；新主题名可让已有窗口热切，无需关闭文件窗口。必须同时处理 `gtk.css` 与 `gtk-dark.css`，核对实际 `gtk-application-prefer-dark-theme` 与屏幕；只改普通变体会在深色偏好下无效。native GTK 应用也需能读取同名主题，按设备实际 rootfs 路径提供受管链接，不能只让 guest 找到新名字。

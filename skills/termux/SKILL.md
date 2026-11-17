@@ -85,6 +85,7 @@ bash skills/termux/scripts/run.sh launcher-plan --adb /path/to/adb --serial SERI
 - SSH、存储、Bash、API、设备上下文：[remote-management.md](references/remote-management.md)。
 - 可选蓝牙：[bluetooth-companion.md](references/bluetooth-companion.md)；本机 Codex：[codex-on-termux.md](references/codex-on-termux.md)。
 - 桌面预设、安装、应用与边界：[desktop-setup.md](references/desktop-setup.md)。
+- VS Code/Git 凭据、GNOME Keyring 与无额外密码解锁：[desktop-credentials.md](references/desktop-credentials.md)。
 - 显示/触控/实体键盘/字体/主题：[desktop-display-input.md](references/desktop-display-input.md)。
 - 服务、退出、CPU 和电池：[desktop-lifecycle.md](references/desktop-lifecycle.md)。
 - Android/Xfce 多进程内存、应用级优化与回退：[desktop-memory.md](references/desktop-memory.md)。
