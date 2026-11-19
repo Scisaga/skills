@@ -10,7 +10,7 @@
 
 | 图标 | 技能 | 能做什么 |
 |:---:|---|---|
-| <img src="skills/termux/assets/logo.svg" alt="Termux 终端平板图标" width="64" height="64"> | [`termux`](skills/termux/)<br>Android 工作站 | **原生环境**：安装、迁移 Termux，配置 SSH、开机服务、共享存储、API、蓝牙与本机 Codex。<br>**桌面与应用**：按需部署 X11、Debian/Xfce，以及 VS Code、Chromium、LibreOffice、VLC，提供 Android 图形管理与应用入口。<br>**设备适配**：排查显示、触控、键鼠、GPU、VPN/DNS、后台进程与耗电，验证实际功能及性能。<br>[查看小米平板 7 实机演示 ↓](#termux-实机演示) |
+| <img src="skills/termux/assets/logo.svg" alt="Termux 终端平板图标" width="64" height="64"> | [`termux`](skills/termux/)<br>Android 工作站 | **原生环境**：安装、迁移 Termux，配置 SSH、开机服务、共享存储、API、蓝牙与本机 Codex。<br>**桌面与应用**：按需部署 X11、Debian/Xfce、Chromium、LibreOffice 和 VLC。提供 Android 图形管理与独立 VS Code 主屏快捷方式。<br>**设备适配**：排查显示、触控、键鼠、GPU、VPN/DNS、后台进程与耗电，验证实际功能及性能。<br>[查看小米平板 7 实机演示 ↓](#termux-实机演示) |
 | <img src="skills/slides/assets/logo.svg" alt="Slides 演示板图标" width="64" height="64"> | [`slides`](skills/slides/)<br>演示与逐页配音 | **从文稿到演示**：保真绑定逐页讲稿，结合计划或 Markdown 材料制作技术图示、架构流程与路线图，支持模板复用、动画和单页 SVG 改稿。<br>**自然旁白**：编排语速、停顿与术语读法，支持音色试听、更换声音；优先自托管 Qwen3，不可用时整套回退 Azure。<br>**多种交付**：逐页 MP3、静态／动画／旁白 PPTX，或由 Windows PowerPoint 导出 MP4；按真实音频时长换页，支持增量重建与分级验收。 |
 | <img src="skills/dev-ops/assets/logo.svg" alt="Dev Ops 服务器图标" width="64" height="64"> | [`dev-ops`](skills/dev-ops/)<br>服务部署 | 管理 Compose 栈、配置模板、环境变量与远程发布；覆盖 GitLab、数据库、对象存储、代理、WireGuard、DDNS、DNS 与证书同步，提供统一服务入口和硬编码审计。 |
 | <img src="skills/domain-manager/assets/logo.svg" alt="Domain Manager 域名地球图标" width="64" height="64"> | [`domain-manager`](skills/domain-manager/)<br>域名与解析 | 查询与管理 Gandi、Dynadot 的域名资产、DNS 记录、域名服务器、DNSSEC、联系人、续费及转移；支持沙箱，写操作先预览计划、确认后执行并回读结果。 |
@@ -31,6 +31,10 @@
 [贪吃蛇示例源码](skills/termux/assets/demo/snake.py) · 在 Debian/Xfce 中运行 `python3 snake.py`；缺少 Tk 时安装 `python3-tk`。方向键或 WASD 移动，空格暂停，R 重开。
 
 VLC 演示片段取自 [MDN 的 flower 示例视频](https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4)。
+
+### Android 主屏独立 VS Code
+
+点击 Android 主屏的 **VS Code** 快捷方式即可打开独立编辑器窗口。Xfce 按需启动。编辑器复用 Debian 项目目录，单独管理用户设置和 Codex 等扩展。选装 Office Viewer 时默认只关联 Office 格式。HTML 可从编辑器预览到 Android Chrome。 [安装和配置独立 VS Code](skills/termux/references/standalone-code.md)
 
 ## 安装与更新
 

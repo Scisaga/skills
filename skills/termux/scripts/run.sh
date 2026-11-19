@@ -19,6 +19,7 @@ Commands:
   deploy-bluetooth  Install/provision the Bluetooth companion (initial ADB only)
   desktop-plan      Show the optional desktop profile without changing a device
   desktop-install   Install/configure Debian/Xfce and selected applications in native Termux
+  standalone-code   Set up the Android VS Code shortcut and its isolated profile
   desktop-doctor    Check desktop components without starting a desktop
   desktop-verify    Gate effective policy, boot, screen-off and GPU evidence
   desktop-baseline  Compare desktop readbacks and verify a recovery bundle
@@ -69,6 +70,7 @@ case "$command_name" in
   deploy-bluetooth) exec bash "$SCRIPT_DIR/deploy-bluetooth-companion.sh" "$@" ;;
   desktop-plan) run_python desktop_setup.py plan "$@" ;;
   desktop-install) exec bash "$SCRIPT_DIR/install-desktop.sh" "$@" ;;
+  standalone-code) run_python standalone_code.py "$@" ;;
   desktop-doctor) run_python desktop_setup.py doctor "$@" ;;
   desktop-verify) run_python desktop_verify.py "$@" ;;
   desktop-baseline) run_python desktop_baseline.py "$@" ;;
