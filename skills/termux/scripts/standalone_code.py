@@ -10,6 +10,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from contextlib import contextmanager, nullcontext, suppress
 from pathlib import Path
 from textwrap import indent
 
@@ -30,15 +31,27 @@ OFFICE_EXTRAS = frozenset(
 PDF_ID = "mathematic.vscode-pdf"
 CHROME_ENTRY = "tablet-android-chrome-preview.desktop"
 PROFILE_DIR = ".local/share/tablet-vscode"
+STATE_DIR = ".local/state/tablet-desktop/vscode-standalone"
 EDITOR_SETTING = "workbench.editorAssociations"
 
 
 def scoped_path(path, base):
     if path.is_symlink() or not path.resolve().is_relative_to(base.resolve()):
         raise ValueError(f"Path leaves the isolated profile: {path}")
-    if path.with_name(path.name + ".termux-new").is_symlink():
-        raise ValueError(f"Unsafe staging path for {path}")
     return path
+
+
+@contextmanager
+def exclusive_lock(path, busy_message):
+    import fcntl
+
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with path.open("a") as stream:
+        try:
+            fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ValueError(busy_message) from error
+        yield
 
 
 def replace_config_if_current(path, expected, replacement, mode):
@@ -48,10 +61,11 @@ def replace_config_if_current(path, expected, replacement, mode):
     if replacement is None:
         path.unlink()
         return True
-    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
-        temp = Path(stream.name)
-        stream.write(replacement)
+    fd, staged = tempfile.mkstemp(dir=path.parent)
+    temp = Path(staged)
     try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(replacement)
         temp.chmod(mode)
         if path.is_symlink() or path.read_bytes() != expected:
             return False
@@ -83,6 +97,8 @@ def render_launcher(prefix, profile, display):
         "X11_ARGS": "" if profile["x11_mitshm"] else "-extension MIT-SHM",
         "CODE_ARGS": shlex.join(code_arguments(profile)),
         "CODE_GUARD": indent(CODE_GUARD.rstrip("\n"), "    "),
+        "PROFILE_DIR": PROFILE_DIR,
+        "STATE_DIR": STATE_DIR,
     }
     template = (ASSETS / "standalone-code/launch.sh").read_text(encoding="utf-8")
     return re.sub(r"@([A-Z][A-Z0-9_]+)@", lambda m: values[m[1]], template)
@@ -115,16 +131,9 @@ def shortcut(prefix, home, root, profile, writer, args):
         ):
             raise ValueError("The existing VS Code shortcut belongs to another launcher")
     if args.apply:
-        import fcntl
-
         run([prefix / "bin/bash", "-n"], script=script, timeout=8)
-        lock = scoped_path(home / ".local/state/tablet-desktop/vscode-standalone/session.lock", home)
-        lock.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        with lock.open("a") as stream:
-            try:
-                fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError as error:
-                raise ValueError("Close the standalone Code window normally before updating its shortcut") from error
+        lock = scoped_path(home / STATE_DIR / "session.lock", home)
+        with exclusive_lock(lock, "Close the standalone Code window normally before updating its shortcut"):
             for directory in (shortcuts, entry.parent, image.parent):
                 directory.mkdir(mode=0o700, exist_ok=True)
             writer.put(image, icon, 0o600)
@@ -189,7 +198,11 @@ def office_settings(source, package, pdf):
     if pdf and any(editor["viewType"] == "pdf.view" for editor in pdf.get("contributes", {}).get("customEditors", [])):
         pdf_view = "pdf.view"
     for suffix in sorted(extra):
-        updated.setdefault("*." + suffix, pdf_view if suffix == "pdf" else "default")
+        pattern = "*." + suffix
+        if suffix == "pdf" and updated.get(pattern, "default") == "default":
+            updated[pattern] = pdf_view
+        else:
+            updated.setdefault(pattern, "default")
     return merge_settings(source, {EDITOR_SETTING: updated})
 
 
@@ -204,14 +217,16 @@ def extensions(base, guest_base, guest, writer, args):
     requested = list(dict.fromkeys(value.lower() for value in args.ids))
     if any(not re.fullmatch(r"[\w-]+\.[\w-]+(?:@[0-9][\w.-]*)?", name, re.ASCII) for name in requested):
         raise ValueError("Use Marketplace IDs such as openai.chatgpt or an ID followed by @version")
-    office = [name for name in requested if name.split("@")[0] == OFFICE_ID]
+    identifiers = {name.partition("@")[0] for name in requested}
+    office = [name for name in requested if name.partition("@")[0] == OFFICE_ID]
     if len(office) > 1 or (office and "@" in office[0] and office[0] != f"{OFFICE_ID}@{OFFICE_VERSION}"):
         raise ValueError(f"The reviewed Office Viewer install is {OFFICE_ID}@{OFFICE_VERSION}; use the unversioned ID to scope an existing installation")
     installed = extension_registry(base)
+    scope_office = bool(office) or (PDF_ID in identifiers and OFFICE_ID in installed)
     if office and "@" in office[0] and OFFICE_ID in installed and installed[OFFICE_ID]["version"] != OFFICE_VERSION:
         raise ValueError(f"Use the unversioned {OFFICE_ID} to scope the installed release")
     plan = {"requested": requested, "installed": {name: record["version"] for name, record in installed.items()},
-            "office_associations": "office files only" if office else None}
+            "office_associations": "office files only" if scope_office else None}
     if not args.apply or not requested:
         return plan
     code = guest + ["/usr/bin/code", "--no-sandbox", "--user-data-dir", f"{guest_base}/code",
@@ -219,8 +234,8 @@ def extensions(base, guest_base, guest, writer, args):
     for name in requested:
         if name not in office:
             run(code + ["--install-extension", name], timeout=180)
-    if office:
-        installed = extension_registry(base)
+    installed = extension_registry(base)
+    if office or (PDF_ID in identifiers and OFFICE_ID in installed):
         path = scoped_path(base / "code/User/settings.json", base)
         old = path.read_bytes() if path.is_file() else None
         mode = path.stat().st_mode & 0o777 if old is not None else 0o600
@@ -301,7 +316,7 @@ def chrome(prefix, root, base, guest_base, guest, writer, args):
     fallback = next((f"{where}/{default}" for where in candidates if (root / where.lstrip("/") / default).is_file()), None)
     if fallback is None:
         raise ValueError(f"Cannot resolve the existing Linux browser entry {default}")
-    launcher = (ASSETS / "standalone-code/open-android-chrome-preview.py").read_text(encoding="utf-8")
+    launcher = (ASSETS / "standalone-code/open-android-chrome-preview.py.in").read_text(encoding="utf-8")
     launcher = launcher.replace("@AM@", repr(str(prefix / "bin/am"))).replace("@FALLBACK@", repr(fallback))
     old = config.read_bytes() if config.is_file() else None
     mode = config.stat().st_mode & 0o777 if old is not None else 0o600
@@ -309,14 +324,31 @@ def chrome(prefix, root, base, guest_base, guest, writer, args):
     preferred = update_http_default(source, CHROME_ENTRY)
     if args.apply:
         compile(launcher, str(opener), "exec")
-        writer.put(opener, launcher, 0o700)
-        writer.put(desktop, entry)
-        writer.put(config, preferred, mode)
+        updates = [(opener, launcher.encode("utf-8"), 0o700), (desktop, entry.encode("utf-8"), 0o644),
+                   (config, preferred.encode("utf-8"), mode)]
+        previous = {path: (path.read_bytes(), path.stat().st_mode & 0o777) if path.exists() else (None, file_mode)
+                    for path, _, file_mode in updates}
+        created_dirs = {parent for path, _, _ in updates for parent in path.parents
+                        if parent.is_relative_to(base) and not parent.exists()}
+        attempted = []
         try:
+            for path, data, file_mode in updates:
+                attempted.append((path, data))
+                writer.put(path, data, file_mode)
             if http_default() != CHROME_ENTRY:
                 raise ValueError("The Android Chrome preview entry did not become the HTTP handler")
-        except (ValueError, RuntimeError, OSError, subprocess.SubprocessError):
-            replace_config_if_current(config, preferred.encode("utf-8"), old, mode)
+        except (KeyboardInterrupt, ValueError, RuntimeError, OSError, subprocess.SubprocessError) as error:
+            failed = []
+            for path, data in reversed(attempted):
+                try:
+                    replace_config_if_current(path, data, *previous[path])
+                except OSError:
+                    failed.append(str(path))
+            for directory in sorted(created_dirs, key=lambda path: len(path.parts), reverse=True):
+                with suppress(OSError):
+                    directory.rmdir()
+            if failed:
+                raise RuntimeError(f"{error}\nCould not restore {', '.join(failed)}") from error
             raise
     return {"http_handler": CHROME_ENTRY, "remote_http_handler": fallback}
 
@@ -341,14 +373,17 @@ def main(argv=None):
         if not root.is_dir() or base.is_symlink() or not base.resolve().is_relative_to(root.resolve()):
             raise ValueError("The configured Debian rootfs or standalone profile path is unavailable")
         writer = Writer(home, prefix, root)
-        if args.action == "launcher":
-            result = shortcut(prefix, home, root, profile, writer, args)
-        else:
-            guest = guest_env(prefix, profile, guest_base)
-            if args.action == "extensions":
-                result = extensions(base, guest_base, guest, writer, args)
+        lock = (exclusive_lock(scoped_path(home / STATE_DIR / "setup.lock", home), "Another standalone Code setup is running")
+                if args.apply else nullcontext())
+        with lock:
+            if args.action == "launcher":
+                result = shortcut(prefix, home, root, profile, writer, args)
             else:
-                result = chrome(prefix, root, base, guest_base, guest, writer, args)
+                guest = guest_env(prefix, profile, guest_base)
+                if args.action == "extensions":
+                    result = extensions(base, guest_base, guest, writer, args)
+                else:
+                    result = chrome(prefix, root, base, guest_base, guest, writer, args)
         print(json.dumps({"applied": args.apply, "profile_sha256": profile_digest(profile), **result,
                           "changed": writer.changed, "backup": str(writer.backup) if writer.backup.exists() else None},
                          ensure_ascii=False))

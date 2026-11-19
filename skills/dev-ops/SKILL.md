@@ -53,6 +53,7 @@ DDNS 同时同步 NAT IPv4 与网卡 IPv6 时，将 `DDNS_IPV4_SOURCE` 设为 `p
 - 需要处理 DDNS 或证书同步时，读 `references/ddns-workflows.md`
 - 需要处理 Unbound 本地记录或条件转发时，读 `references/unbound-records.md`
 - 需要处理 WireGuard 服务端、客户端或 wg-easy v15 配置时，读 `references/wireguard-workflows.md`
+- 需要部署 Hysteria 客户端和服务端或更新单个角色的版本时，读 [Hysteria 版本管理](references/deploy-conventions.md#hysteria-版本管理)
 
 ## 输出规则
 

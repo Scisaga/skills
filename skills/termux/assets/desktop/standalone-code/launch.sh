@@ -14,7 +14,7 @@ code_args=(@CODE_ARGS@)
 activity=com.termux.x11/com.termux.x11.MainActivity
 export PATH="$prefix/bin:/system/bin"
 export TMPDIR="$prefix/tmp"
-state="$HOME/.local/state/tablet-desktop/vscode-standalone"
+state="$HOME/@STATE_DIR@"
 socket_path="$TMPDIR/.X11-unix/X${display#:}"
 lock_path="$TMPDIR/.X${display#:}-lock"
 
@@ -78,7 +78,7 @@ remember_display
     /bin/bash -s -- "$display" "$scale" "${code_args[@]}" 9>&- <<'GUEST'
 set -euo pipefail
 umask 077
-root="$HOME/.local/share/tablet-vscode"
+root="$HOME/@PROFILE_DIR@"
 export DISPLAY="$1" GDK_SCALE="$2" GDK_DPI_SCALE=1 XDG_SESSION_TYPE=x11
 shift 2
 export GDK_GL=disable NO_AT_BRIDGE=1

@@ -44,7 +44,7 @@ plan 不改设备，输出模块和配置摘要。新建自己的 profile.json �
 | hardware_keyboard | 实体键盘预设：隐藏 X11 附加键栏；Android 输入法显示仍需系统设置 |
 | dock_autohide / dock_output | 底栏是否自动隐藏、绑定的 X11 输出名；先用 xrandr 确认 |
 | dock_hide_indicator | 隐藏底栏触发横线并通过 X11 事件修正位置；保留边缘输入区，见显示与输入参考 |
-| applications / code_autostart | 应用组合和是否自动打开编辑器 |
+| applications / code_autostart | 应用组合与 Xfce 登录时是否打开 VS Code，默认 `false` |
 | code_version | stable 或明确的 x.y.z；已有 Code 不因重复安装而重新下载/更换版本 |
 | android_folder | Android 桌面分组建议名称，默认 Termux；不直接修改启动器数据库 |
 

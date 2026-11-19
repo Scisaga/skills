@@ -9,13 +9,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=scripts/shared/lib/common.sh
 source "${SCRIPT_DIR}/../../shared/lib/common.sh"
+# shellcheck source=scripts/shared/lib/hysteria.sh
+source "${SCRIPT_DIR}/../../shared/lib/hysteria.sh"
 
 readonly HY2_INSTALL_DIR="/etc/hysteria"
 readonly HY2_CLIENT_CONFIG="/etc/hysteria/client.yaml"
-readonly HY2_BINARY_PATH="/usr/local/bin/hysteria"
 readonly HY2_SYSTEMD_UNIT="/etc/systemd/system/hy2-client.service"
 
-hy2_version="2.8.1"
+hy2_version="${HY2_DEFAULT_VERSION}"
 hy2_domain=""
 hy2_password=""
 hy2_obfs_password=""
@@ -32,39 +33,13 @@ Usage: $(basename "$0") [options]
 Options:
   --domain example.com
   --password secret
-  --version 2.8.1
+  --version ${HY2_DEFAULT_VERSION}
   --obfs-password secret
   --udp-range 20000-30000
   --http-port 10809
   --socks5-port 10808
   --help
 EOF
-}
-
-download_url_for_arch() {
-  local version="$1"
-  local arch
-  arch="$(uname -m)"
-  case "${arch}" in
-    x86_64) echo "https://github.com/apernet/hysteria/releases/download/app%2Fv${version}/hysteria-linux-amd64" ;;
-    aarch64|arm64) echo "https://github.com/apernet/hysteria/releases/download/app%2Fv${version}/hysteria-linux-arm64" ;;
-    *) die "unsupported architecture: ${arch}" ;;
-  esac
-}
-
-prompt_value() {
-  local name="$1"
-  local prompt="$2"
-  local hidden="${3:-false}"
-
-  [ -n "${!name:-}" ] && return 0
-
-  if [ "${hidden}" = "true" ]; then
-    read -r -s -p "${prompt}: " "${name}"
-    printf '\n'
-  else
-    read -r -p "${prompt}: " "${name}"
-  fi
 }
 
 # 单次主机安装直接靠 CLI 参数和默认值驱动。
@@ -121,9 +96,8 @@ server_ip="$(getent ahostsv4 "${hy2_domain}" | awk 'NR==1{print $1}')"
 [ -n "${server_ip}" ] || die "cannot resolve hy2_domain=${hy2_domain}"
 
 # 安装固定版本的独立二进制。
+HY2_BINARY_PATH="$(install_hysteria_binary "${hy2_version}")"
 sudo mkdir -p "${HY2_INSTALL_DIR}"
-sudo curl -fsSL "$(download_url_for_arch "${hy2_version}")" -o "${HY2_BINARY_PATH}"
-sudo chmod +x "${HY2_BINARY_PATH}"
 
 # 同时暴露 HTTP 与 SOCKS5 监听，方便局域网内其他主机复用这个网关。
 sudo tee "${HY2_CLIENT_CONFIG}" >/dev/null <<EOF
@@ -165,4 +139,5 @@ WantedBy=multi-user.target
 EOF
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now hy2-client
+sudo systemctl enable hy2-client
+sudo systemctl restart hy2-client

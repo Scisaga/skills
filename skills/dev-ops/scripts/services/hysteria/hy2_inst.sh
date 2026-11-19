@@ -9,14 +9,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=scripts/shared/lib/common.sh
 source "${SCRIPT_DIR}/../../shared/lib/common.sh"
+# shellcheck source=scripts/shared/lib/hysteria.sh
+source "${SCRIPT_DIR}/../../shared/lib/hysteria.sh"
 
 readonly HY2_INSTALL_DIR="/etc/hysteria"
 readonly HY2_SERVER_CONFIG="/etc/hysteria/config.yaml"
-readonly HY2_BINARY_PATH="/usr/local/bin/hysteria"
 readonly HY2_BBR_SYSCTL="/etc/sysctl.d/90-hysteria-bbr.conf"
 readonly HY2_SYSTEMD_UNIT="/etc/systemd/system/hy2-server.service"
 
-hy2_version="2.8.1"
+hy2_version="${HY2_DEFAULT_VERSION}"
 hy2_domain=""
 hy2_password=""
 hy2_acme_email=""
@@ -35,39 +36,13 @@ Options:
   --domain example.com
   --password secret
   --email ops@example.com
-  --version 2.8.1
+  --version ${HY2_DEFAULT_VERSION}
   --obfs-password secret
   --udp-range 20000:30000
   --listen-port 443
   --masquerade-url http://127.0.0.1:8080
   --help
 EOF
-}
-
-download_url_for_arch() {
-  local version="$1"
-  local arch
-  arch="$(uname -m)"
-  case "${arch}" in
-    x86_64) echo "https://github.com/apernet/hysteria/releases/download/app%2Fv${version}/hysteria-linux-amd64" ;;
-    aarch64|arm64) echo "https://github.com/apernet/hysteria/releases/download/app%2Fv${version}/hysteria-linux-arm64" ;;
-    *) die "unsupported architecture: ${arch}" ;;
-  esac
-}
-
-prompt_value() {
-  local name="$1"
-  local prompt="$2"
-  local hidden="${3:-false}"
-
-  [ -n "${!name:-}" ] && return 0
-
-  if [ "${hidden}" = "true" ]; then
-    read -r -s -p "${prompt}: " "${name}"
-    printf '\n'
-  else
-    read -r -p "${prompt}: " "${name}"
-  fi
 }
 
 # 只保留命令行入口，保证脚本拿出来就能独立执行。
@@ -126,9 +101,8 @@ ensure_value hy2_password
 ensure_value hy2_acme_email
 
 # 上游提供独立二进制，因此这里直接下载固定版本并安装。
+HY2_BINARY_PATH="$(install_hysteria_binary "${hy2_version}")"
 sudo mkdir -p "${HY2_INSTALL_DIR}"
-sudo curl -fsSL "$(download_url_for_arch "${hy2_version}")" -o "${HY2_BINARY_PATH}"
-sudo chmod +x "${HY2_BINARY_PATH}"
 
 # 通过独立的 sysctl drop-in 开启 BBR，重复执行也能保持幂等。
 sudo tee "${HY2_BBR_SYSCTL}" >/dev/null <<EOF
@@ -189,6 +163,7 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
-# 初次安装完成后，后续生命周期交给 systemd 管理。
+# 重启当前角色，载入本次选择的版本与配置。
 sudo systemctl daemon-reload
-sudo systemctl enable --now hy2-server
+sudo systemctl enable hy2-server
+sudo systemctl restart hy2-server

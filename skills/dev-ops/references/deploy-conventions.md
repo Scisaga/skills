@@ -29,6 +29,12 @@
 - 例如 `proxy`、`hysteria`、`letsencrypt`
 - 这类脚本可以直接修改目标主机系统，输出中要明确前置条件和副作用
 
+### Hysteria 版本管理
+
+`hy2_inst.sh` 安装服务端，`hy2_cli_inst.sh` 安装客户端。两者都用 `--version` 固定版本，并将各自的 `ExecStart` 指向 `/usr/local/libexec/scisaga/hysteria/<version>/hysteria`。同机使用相同版本时共用该文件。下载使用临时路径，完成后发布到版本目录。
+
+升级某一角色时运行对应安装脚本。它会重写该角色的配置和单元并重启该服务。已有的 `/usr/local/bin/hysteria` 可供旧部署使用。首次安装时若该命令缺失，脚本会将它链接到首次安装的版本。查看角色的实际可执行文件时，使用 `systemctl show -p ExecStart hy2-server` 或 `systemctl show -p ExecStart hy2-client`。
+
 ## 模板渲染
 
 - 统一走 `scripts/render-template.sh`

@@ -287,9 +287,12 @@ class DesktopTests(unittest.TestCase):
         helper = (home / ".local/share/xfce4/helpers/custom-WebBrowser.desktop").read_text(encoding="utf-8")
         self.assertIn("/usr/local/bin/chromium-tablet", helper)
         self.assertIn("WebBrowser=custom-WebBrowser", (home / ".config/xfce4/helpers.rc").read_text(encoding="utf-8"))
-        self.p["code_autostart"] = False
+        autostart = home / ".config/autostart/tablet-code.desktop"
+        self.assertFalse(autostart.exists())
+        self.render(dict(self.p, code_autostart=True))
+        self.assertIn("Exec=/usr/local/bin/code-tablet", autostart.read_text(encoding="utf-8"))
         self.render()
-        self.assertIn("Hidden=true", (home / ".config/autostart/tablet-code.desktop").read_text(encoding="utf-8"))
+        self.assertIn("Hidden=true", autostart.read_text(encoding="utf-8"))
 
     def test_jsonc_comments_unrelated_values_and_urls_are_preserved(self):
         path = self.root / "home/developer/.config/Code/User/settings.json"

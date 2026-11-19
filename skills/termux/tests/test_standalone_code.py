@@ -5,6 +5,7 @@ from pathlib import Path, PurePosixPath
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -49,7 +50,7 @@ class OfficeAssociationsTests(unittest.TestCase):
     def install(self):
         return code.extensions(self.base, self.guest_base, ["proot-distro"], self.writer, self.args)
 
-    def verify_associations(self):
+    def verify_associations(self, pdf_editor="pdf.view"):
         settings = self.settings.read_text(encoding="utf-8")
         self.assertIn("// Keep the other settings", settings)
         values = code.parse_settings(settings)[0]
@@ -59,7 +60,7 @@ class OfficeAssociationsTests(unittest.TestCase):
                          {"*.docx", "*.dotx", "*.xls", "*.xlsx", "*.xlsm", "*.ods", "*.pptx", "*.pptm"})
         self.assertEqual(associations["*.md"], "default")
         self.assertEqual(associations["*.csv"], "default")
-        self.assertEqual(associations["*.pdf"], "pdf.view")
+        self.assertEqual(associations["*.pdf"], pdf_editor)
         self.assertEqual(associations["*.svg"], "other.viewer")
         self.assertNotIn("*.png", associations)
 
@@ -81,10 +82,12 @@ class OfficeAssociationsTests(unittest.TestCase):
     def test_preview_and_reapply_existing_release(self):
         self.register(code.PDF_ID, "0.2.7", [{"viewType": "pdf.view"}])
         self.register_office()
+        self.settings.write_bytes(code.office_settings(self.original.decode(), None, None).encode())
+        original_settings = self.settings.read_bytes()
         with patch.object(code, "run") as cli:
             self.args.apply = False
             self.install()
-            self.assertEqual(self.settings.read_bytes(), self.original)
+            self.assertEqual(self.settings.read_bytes(), original_settings)
             self.args.apply = True
             self.install()
             self.verify_associations()
@@ -92,6 +95,27 @@ class OfficeAssociationsTests(unittest.TestCase):
             self.install()
             self.assertEqual(self.writer.changed, [])
         cli.assert_not_called()
+
+    def test_installing_pdf_after_office_refreshes_the_fallback(self):
+        self.register_office()
+        self.install()
+        self.verify_associations(pdf_editor="default")
+        self.args.ids = [f"{code.PDF_ID}@0.2.7"]
+
+        def install_pdf(command, **kwargs):
+            self.assertEqual(command[-2:], ["--install-extension", f"{code.PDF_ID}@0.2.7"])
+            self.register(code.PDF_ID, "0.2.7", [{"viewType": "pdf.view"}])
+
+        with patch.object(code, "run", side_effect=install_pdf) as cli:
+            self.install()
+        cli.assert_called_once()
+        self.verify_associations()
+
+    def test_explicit_pdf_viewer_is_preserved(self):
+        source = json.dumps({code.EDITOR_SETTING: {"*.pdf": "custom.viewer"}})
+        pdf = {"contributes": {"customEditors": [{"viewType": "pdf.view"}]}}
+        settings, _ = code.parse_settings(code.office_settings(source, None, pdf))
+        self.assertEqual(settings[code.EDITOR_SETTING]["*.pdf"], "custom.viewer")
 
     def test_failed_install_restores_original_jsonc_bytes(self):
         with patch.object(code, "run", side_effect=RuntimeError("offline")), self.assertRaisesRegex(RuntimeError, "offline"):
@@ -122,6 +146,32 @@ class LauncherAndPreviewTests(unittest.TestCase):
         self.assertEqual(updated, source.replace("\r\n", "\n").replace(
             "x-scheme-handler/http=linux.desktop;", f"x-scheme-handler/http={code.CHROME_ENTRY};", 1))
         self.assertEqual(code.update_http_default(updated, code.CHROME_ENTRY), updated)
+
+    def test_failed_chrome_setup_rolls_back_all_files(self):
+        for has_existing_files in (False, True):
+            with self.subTest(has_existing_files=has_existing_files), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                prefix, guest_root = root / "native", root / "guest"
+                guest_base = f"/home/developer/{code.PROFILE_DIR}"
+                base = guest_root / guest_base.lstrip("/")
+                for path in (prefix / "bin/am", guest_root / "usr/bin/gio", guest_root / "usr/bin/xdg-mime",
+                             guest_root / "usr/bin/python3", guest_root / "usr/share/applications/linux.desktop"):
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(b"fixture")
+                old_files = {}
+                if has_existing_files:
+                    old_files = {base / "bin/open-android-chrome-preview": b"old opener\r\n",
+                                 base / "data/applications" / code.CHROME_ENTRY: b"old desktop entry\r\n",
+                                 base / "config/mimeapps.list": b"[Default Applications]\r\nx-scheme-handler/http=linux.desktop;\r\n"}
+                    for path, data in old_files.items():
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_bytes(data)
+                writer = code.Writer(root / "home", prefix, guest_root)
+                with patch.object(code, "run", return_value=SimpleNamespace(stdout="linux.desktop\n")):
+                    with self.assertRaisesRegex(ValueError, "did not become the HTTP handler"):
+                        code.chrome(prefix, guest_root, base, guest_base, [], writer, SimpleNamespace(apply=True))
+                self.assertEqual({p: p.read_bytes() for p in base.rglob("*") if p.is_file()}, old_files)
+                self.assertEqual(base.exists(), has_existing_files)
 
 
 if __name__ == "__main__":

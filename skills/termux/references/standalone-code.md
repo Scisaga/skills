@@ -11,7 +11,7 @@ bash skills/termux/scripts/run.sh standalone-code launcher
 bash skills/termux/scripts/run.sh standalone-code launcher --apply
 ```
 
-在 Android 主屏的小组件/快捷方式中找到 **Termux shortcut**，进入 **tasks** 选择 **VS Code**，确认添加后点击图标。任务文件在原生 Termux 的 `~/.shortcuts/tasks/VS Code`，图标取自已安装的 Code。Xfce 继续用原来的 **Linux 桌面** 图标或 `desktop start` 按需启动。新建桌面配置时，将 `code_autostart` 设为 `false` 可在手动启动 Xfce 时保持 VS Code 按需打开。
+在 Android 主屏的小组件/快捷方式中找到 **Termux shortcut**，进入 **tasks** 选择 **VS Code**，确认添加后点击图标。任务文件在原生 Termux 的 `~/.shortcuts/tasks/VS Code`，图标取自已安装的 Code。可通过 **Linux 桌面** 图标或 `desktop start` 按需启动 Xfce。桌面预设默认 `code_autostart=false`，需要随 Xfce 打开 VS Code 时可显式设为 `true`。
 
 小米平板 7 的 HyperOS 若拒绝固定图标，在 Termux:Widget 的「其他权限」中临时允许「桌面快捷方式」。完成固定后可恢复该权限并再点一次图标验证。点击后若编辑器已启动但设备仍停在主屏，检查 `ActivityTaskManager` 的后台启动记录。小米平板 7 上要让 Termux 从后台显示 X11 窗口，需在 Termux 的应用权限中允许「后台弹出界面」和「显示在其他应用上层」。若 HyperOS 以小窗打开编辑器，可下拉小窗底部横条切到全屏。
 
@@ -33,7 +33,7 @@ bash skills/termux/scripts/run.sh standalone-code extensions peakchen90.open-htm
 
 - **Codex** 使用 `openai.chatgpt`。该扩展可能随安装带入 `openai.codex-audio`，也可单独检查语音扩展。Y900 上 `26.1111.21308` 的语音扩展 Linux 原生组件只有 x86-64，ARM64 即使装好也没有语音输入。重新排查时先检查所装 VSIX 的架构、扩展输出与 guest 的录音源，再检查按钮和实际录音。
 - **Markdown、表格文本与 PDF** 分别使用 Markdown All in One / Markdown Preview Enhanced、Rainbow CSV 和 `mathematic.vscode-pdf`。验证 Markdown 预览命令、CSV/TSV 的普通编辑以及 PDF 查看器。
-- **Office Viewer** 默认只关联 `.docx`、`.dotx`、`.xls`、`.xlsx`、`.xlsm`、`.ods`、`.pptx`、`.pptm`。首次安装选用已验证的 `4.2.3`，安装前写入 `workbench.editorAssociations`，约束它声明的其他默认文件关联。Markdown、CSV/TSV、压缩包等继续用原有明确选择或内置编辑器。已有 `mathematic.vscode-pdf` 时为 PDF 保留 `pdf.view`。已装 Office Viewer 或升级后重跑同一条无版本号命令，按实际安装的扩展清单校正关联。若工作区覆盖用户设置，验收时用 **Reopen Editor With…** 查看该文件实际的默认编辑器。 [Office Viewer 扩展说明](https://marketplace.visualstudio.com/items?itemName=cweijan.vscode-office)
+- **Office Viewer** 默认只关联 `.docx`、`.dotx`、`.xls`、`.xlsx`、`.xlsm`、`.ods`、`.pptx`、`.pptm`。首次安装选用已验证的 `4.2.3`，安装前写入 `workbench.editorAssociations`，约束它声明的其他默认文件关联。Markdown、CSV/TSV、压缩包等使用已选编辑器或内置编辑器。安装顺序任意，两个扩展都在时会把 PDF 的内置默认值更新为 `pdf.view`，并尊重已选的其他 PDF 查看器。已装 Office Viewer 或升级后重跑同一条无版本号命令，按实际安装的扩展清单校正关联。若工作区覆盖用户设置，验收时用 **Reopen Editor With…** 查看该文件实际的默认编辑器。 [Office Viewer 扩展说明](https://marketplace.visualstudio.com/items?itemName=cweijan.vscode-office)
 
 Marketplace 不可达时，可在 Debian 中安装已核对发布者、版本和目标架构的官方本地 `.vsix`。已有缓存文件缺少后缀时，在私有临时目录建立带 `.vsix` 后缀的链接并在安装后清理。Office Viewer 优先使用上面的默认安装入口。离线安装 Office Viewer 前先关掉独立窗口，安装后执行同一入口写入文件关联，再打开 Code。
 
@@ -46,6 +46,8 @@ code --no-sandbox --user-data-dir "$code_root/code" --extensions-dir "$code_root
 ## 在 Android Chrome 预览 HTML
 
 安装 **Open In Default Browser** 后可选配独立实例的 HTTP 路由。先确认 Android Chrome 已安装，且隔离配置已有可用的 Linux HTTP 浏览器。脚本保留这个处理程序，供普通 HTTP URL 使用。Debian 中缺少浏览器路由工具时安装 `libglib2.0-bin`、`xdg-utils` 和 `python3`。
+
+安装过程中若 HTTP 默认项校验失败，已有的 MIME 配置、启动脚本和 `.desktop` 文件会恢复到安装前的状态。
 
 ```bash
 bash skills/termux/scripts/run.sh standalone-code android-chrome

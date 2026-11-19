@@ -40,7 +40,7 @@
   "dock_hide_indicator": true,
   "dock_output": "builtin",
   "applications": ["code", "chromium", "office", "vlc"],
-  "code_autostart": true,
+  "code_autostart": false,
   "code_version": "stable",
   "hardware_keyboard": true,
   "android_folder": "Termux"

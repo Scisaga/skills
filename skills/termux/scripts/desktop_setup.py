@@ -59,10 +59,15 @@ class Writer:
             shutil.copy2(path, destination)
             destination.chmod(0o600)
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(path.name + ".termux-new")
-        tmp.write_bytes(data)
-        tmp.chmod(mode)
-        tmp.replace(path)
+        fd, staged = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+        tmp = Path(staged)
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(data)
+            tmp.chmod(mode)
+            tmp.replace(path)
+        finally:
+            tmp.unlink(missing_ok=True)
         if path.read_bytes() != data:
             raise RuntimeError(f"Write readback failed; inspect the retained backup: {path}")
         self.changed.append(str(path))

@@ -4,4 +4,4 @@ interface:
   icon_small: "./assets/logo.svg"
   icon_large: "./assets/logo.svg"
   brand_color: "#34D399"
-  default_prompt: "Use $scisaga:dev-ops to update service scripts and assets, configure wg-easy host routes or Alibaba Cloud DDNS for interface IPv6 and direct NAT IPv4, or refine a deployment workflow in this repository."
+  default_prompt: "Use $scisaga:dev-ops to update service scripts and assets, pin Hysteria role versions, configure wg-easy host routes or Alibaba Cloud DDNS for interface IPv6 and direct NAT IPv4, or refine a deployment workflow in this repository."
