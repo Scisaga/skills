@@ -1,0 +1,27 @@
+{
+  "termux_x11_commit": "e35f1c4a01a5bc572fb3968c2440207ca6aa17cd",
+  "xserver_commit": "65d790bd208ec380b196eb98f144abb0b32e334d",
+  "adapted_gles_fixes": "https://github.com/PietroCav501/termux_on_dex/blob/191b9319b2332c24a5cb5bea749c665469872ecc/x11/patch/xserver-glamor.patch",
+  "patches": {
+    "termux-x11-glamor-native.patch": "d3d36db7b8f4da7b4a0037c443b0733aab56a4c3b2e7d2e77a1ba5a85de5a7c8",
+    "xserver-gles-adreno.patch": "708c4c76bbb8c7ee803203fa909eea0cbb18f9df5b694959086f49a5968fdae8"
+  },
+  "source_files": {
+    "lorie/src/main/cpp/lorie/InitOutput.c": "45050914a3314c2ea1a68af16244559087a6a632f3e2099f0c443b9520dde024",
+    "lorie/src/main/cpp/lorie/renderer.cpp": "ce1c781d8e73e5510257e7bbf678b01ad475940724d3f446fac16c47095e53e3",
+    "lorie/src/main/cpp/lorie/glamor_support.c": "bf54940093449995d7c1f80ec7d5c5138357e3108edd79eccb223feb39bb78b4",
+    "lorie/src/main/cpp/lorie/epoxy/epoxy/gl.h": "820bee7d30cdf8b06b72fee739081dcba97edc3feb9e89f2ee5284cf872fae39"
+  },
+  "xserver_files": {
+    "glamor/glamor.c": "49ccadc88b9c51b8bba272cd04740d38b3ed533a3cee04baebeacb3ac105b66d",
+    "glamor/glamor_copy.c": "2c4c6e4a03c63a7a08ae700eb862ed049a2c16eb239d18f666eeaeb230b76e0d",
+    "glamor/glamor_picture.c": "864fb7b34c7f55bff09b394c9b8864f65e7885a76e5424d3f9c9ebe190549aa0",
+    "glamor/glamor_pixmap.c": "221072d6dc75c0777fe74e448b3e925ad6ad635b4261005e6400f57d4a587605",
+    "glamor/glamor_priv.h": "544aa0874835ac9de4569c3bc44336e79f671f0bad2a3eae1ec92f1b70c53c4e",
+    "glamor/glamor_trapezoid.c": "80d36e56e242d329d2e0a299afa8f78e7deef6928cec0094baece02e543cb130",
+    "glamor/glamor_vbo.c": "ce8789fc6f69a7a1e177e9a725dd738a53c0930b04f8b26c8adb2bcbdf846cb3"
+  },
+  "built_library_sha256": "db096c68fb915d75d5f2d4dcdd1af5cc0a010fcbc73559f1642e28d51f5b9ad2",
+  "apk_sha256": "4fc6ade80a5030cf5e4b73670073956c718d89aa2095543961513971f98bcd07",
+  "roundtrip_patch_check": true
+}

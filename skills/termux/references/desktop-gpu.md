@@ -2,6 +2,8 @@
 
 设备结果按 [兼容记录](desktop-compatibility.md) 分开。可复用探针和失败退出的性能门禁见 [验收入口](desktop-verification.md#gpu-探针与性能门禁)；真实 renderer、有效绘制、同负载性能和日常入口分别取证。
 
+原桌面普通2D合成成为瓶颈时，可评估显式 `x11_glamor` 开关；默认关闭，仅配合已核对的支持APK使用。Adreno上还需处理GPU根缓冲、DRI3导入、GLES上传与纹理同步，不能只加 `-glamor`。已验证补丁、构建基线与回滚方法见 [Glamor 原桌面修复](desktop-glamor.md)。
+
 ## 分层证据与版本对应
 
 | 层次 | 要读取的证据 | 不能据此推断 |
@@ -79,6 +81,12 @@ GPU 渲染不等于零损耗：PRoot 系统调用转换、VirGL 命令传输/拷
 
 帧率低时确认具体页面、当前画质、画布尺寸、实际 renderer 与 native CPU 增量。网页自己的高画质可能成倍增加粒子数量；降低网页动画负载和降低整个 X11 分辨率是不同选择。`requestAnimationFrame` 采样表示页面动画节奏，不等于 SurfaceFlinger 的实际呈现帧数。
 
+后续开启桌面合成时，应在同一负载重新测量浏览器，不把此前无合成时的性能沿用。Y900 的 Xfwm/XPresent 曾明显降低 Chromium 节奏；同设备的外置 Picom/xrender 对照改善了性能，见[合成性能复查](desktop-compatibility.md#y900-chromium-合成性能复查)。GLX 进程、驱动映射、像素读取和较高内部计数仍可能伴随 Android 实际白屏，必须核对外部画面；恒定区域的稳定性分析也要校验预期图案确实存在。不得仅为提高计数保留失败候选，或为外置 compositor 重新打开有明确故障的 X11 扩展。
+
+用户仍反馈 Web3D 慢时，应在相同网址、画质、画布、DPR 和动画阶段与 Android 原生浏览器比较，记录两者实际 renderer，并避免后台测试实例争用 GPU。Y900 后续相同 1920×1152 高画质的 Android Chrome 仍约 60，而桌面路径约 25～32；不能仅建议降低粒子数来解释这一差距，也不能把已改善的窗口交互写成 Web3D 已解决。候选启用 Vulkan 后若合成变为软件、WebGL 走 readback，须作为回退失败记录，见[同网址对照](desktop-compatibility.md#y900-同网址-web3d-与-android-chrome-对照)。
+
+SurfaceFlinger 呈现事件与录屏编码帧也可能反复携带旧像素。需要区分真实更新时，可在性能采样后给 DOM 和同一个 WebGL framebuffer 加帧编号，录屏解码并分别统计新编号、重复与错误；不把录屏期间的结果冒充先前无录屏采样窗口。Y900 的隔离实测已确认这一差别：无 WM 的 legacy 路径关闭 Picom vsync 虽消除了旧帧重复，加入真实 guest Xfwm/Picom 后却没有性能收益，因此未部署。固定实际刷新率和修正 MSC 也未解决。约 45 个新画面/秒只在无合成器、根窗口大小的独立显示中验证，不能沿用为日常窗口成绩，见[呈现与真实帧复核](desktop-compatibility.md#y900-web3d-呈现与真实帧复核)。
+
 官方 Termux 图形仓库提供 `chromium`，可执行入口为 `chromium-browser`。在支持的 Adreno 设备上，先使用独立 profile 验证 native Mesa/Turnip/Zink，再配置：
 
 ```json
@@ -130,6 +138,8 @@ Code 的真实 GPU 绘制通过后，仍须测试边栏调整、编辑器滚动�
 2026-11-15 此前在 Adreno 830 上，微软 VS Code 保留原版本、扩展、工作区与字体；隔离实例实测 ANGLE/freedreno Adreno 830v1、OpenGL 4.6、加速 Compositing/Raster/WebGL，WebGL2 绘制读取像素成功。随后同条件边栏对照确认 GLES 更快，日常入口已按设备选择 GLES，详见兼容记录。日常 Code 的 GPU 子进程也加载隔离驱动并打开 `/dev/kgsl-3d0`。真实 GPU 路径证明与编辑器响应测试分别记录，不宣称获得浏览器同样倍率的提升。
 
 若独立 Code 已顺畅，日常工作区仍慢，保持后端与窗口条件，分别收起终端和扩展侧栏做对照。Y900 的一次实测中，主要剩余开销来自可见终端；官方设置 `"terminal.integrated.gpuAcceleration": "off"` 切换终端 DOM 渲染后，保留终端及原扩展也显著改善了边栏拖动，编辑器仍用 GLES 加速。这是该终端负载的选择，不能推广为终端都应禁用 WebGL；[官方文档](https://code.visualstudio.com/docs/terminal/appearance#_gpu-acceleration) 说明 DOM 与 WebGL 的取舍。标准用户设置会由安装器保留，无需增加全局 GPU 开关或修改打包代码。记录备份、原值、真实终端绘制和用户操作结果；无收益时恢复原值。
+
+侧栏延迟复发时，在日常窗口确认真实 GPU 进程和终端设置，再用固定拖动轨迹复现。以分隔条实际位移和恢复原宽度作为有效样本条件，排除没命中分隔条或丢失焦点的轮次。可比较客户端及桌面画面的窄条像素，分别记录输入到分隔条位移的延迟、可见位置更新和 Android 实际刷新。先对照应用内设置，显示策略试验结束后回读原值。Y900 本轮仍有约 185 毫秒的跟随延迟，固定 120 Hz 的样本结果相近，详见 [Y900 边栏复查](desktop-compatibility.md#y900-vs-code-边栏调整)。
 
 GPU 开启不等于应用空闲。Code 中可启用 `workbench.reduceMotion=on`；不用的动画 Webview/登录侧栏先收起，保留扩展功能，再从 native `/proc/PID/stat` 比较稳定后的 CPU 增量。不修改扩展打包代码、不因活动动画 CPU 高而杀进程；功能使用时的绘制负载另计。
 

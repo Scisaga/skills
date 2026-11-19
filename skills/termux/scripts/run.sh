@@ -21,6 +21,7 @@ Commands:
   desktop-install   Install/configure Debian/Xfce and selected applications in native Termux
   desktop-doctor    Check desktop components without starting a desktop
   desktop-verify    Gate effective policy, boot, screen-off and GPU evidence
+  desktop-baseline  Compare desktop readbacks and verify a recovery bundle
   gpu-probe         Measure only an explicitly isolated Chromium debug instance
   window-probe      Inspect live Xfwm state; explicit --apply allows a reversible redraw comparison
   memory-report     Read Android/Termux PSS, memtrack and physical ZRAM; compare matched snapshots
@@ -70,6 +71,7 @@ case "$command_name" in
   desktop-install) exec bash "$SCRIPT_DIR/install-desktop.sh" "$@" ;;
   desktop-doctor) run_python desktop_setup.py doctor "$@" ;;
   desktop-verify) run_python desktop_verify.py "$@" ;;
+  desktop-baseline) run_python desktop_baseline.py "$@" ;;
   gpu-probe) run_python gpu_probe.py "$@" ;;
   window-probe) run_python window_probe.py "$@" ;;
   memory-report) run_python memory_report.py "$@" ;;

@@ -51,6 +51,24 @@ Xfce 内部问题先在当前桌面及其终端检查，见 [执行位置与现�
 7. 正常结束先测试取消；用专门创建的未保存测试窗口验证阻塞/取消，再由用户处理后正常退出。强制结束至少测试确认取消，未经授权不对真实工作执行强制结束。
 8. 检查退出后本次桌面/X11 cohort 结束、SSH 保留；再启动得到新会话；没有循环启动或持续异常 CPU。
 
+## 桌面配置基线
+
+已有定制的桌面使用本机最近通过验收的基线。维护前从当前会话回读与任务相关的配置，记录已存在的差异。先在 `desktop-plan` 比较拟安装的 profile 和实机值。Y900 的 Xfwm 合成和 XPresent 曾只保存在 Xfce，安装器读取缺字段的 profile 时会采用模板默认值。
+
+- 在 Termux 私有目录和主机私有目录保存恢复包。`profile.json` 供安装器读取。`manifest.json` 记录 `schema: 1`、`architecture`，以及 `native_profile`、`packages`、`xfce`、`code`、`mime` 和 `files` 对象。未启用的组填空对象。`xfce` 以 channel 和属性路径作为两层键，记录实际值或 `null`。`files` 以 `files/` 下的相对路径为键，记录字节数 `size`、`sha256` 和整数权限 `mode`。窗口 ID 和计时证据可另存。
+- 从当前 Xfce 终端采集实际 `xfconf`、Code 的相关 JSONC 设置、MIME 入口及对应软件版本。备份自定义主题时同时保存 CSS、XPM、PNG 等素材。触控模块保留源码、二进制和对应 GTK/Thunar 版本。应用登录、SMB 密码及其他凭据留在设备账户的凭据存储中。
+- 恢复时先查文件摘要和 profile，再用同机恢复入口预览改动。合并需要恢复的键并回读实机，保留原设置的回滚副本。通过隔离目录演练可以验证文件恢复、JSONC 合并和差异检测。涉及登录、冷启动或整机重装的功能按实际执行结果记录。
+- 修改后重新采集相同字段。在原应用、原输入方式下验证受影响的功能，按任务复查拖窗、松手后停止、切换窗口和局部残影。保留已验证的备份和基线，清理本轮测试实例、采样脚本及共享存储的中转文件。
+
+```bash
+bash skills/termux/scripts/run.sh desktop-baseline verify /private/recovery
+bash skills/termux/scripts/run.sh desktop-baseline compare \
+  --baseline /private/recovery/manifest.json --current /private/after.json \
+  --allow-change '/code/terminal.integrated.gpuAcceleration'
+```
+
+`verify` 接受解包后的目录，核对文件字节数和摘要，并比较安装器展开的合成、vblank、GTK 及标题栏主题与已记录的 Xfce 值。`compare` 比对两份保存的回读，`--allow-change` 可重复传入精确的 JSON Pointer，键内的 `/` 用 `~1` 表示，`~` 用 `~0` 表示。两者输出输入摘要，匹配退出 `0`，出现意外差异退出 `1`，输入无效退出 `2`。Windows 主机可直接运行 `scripts/desktop_baseline.py`。实际绘制、输入手感和共享文件仍按日常入口验收。
+
 ## 电源与网络验收
 
 亮屏、切回 Android、普通锁屏、真正息屏及重启后首次解锁分别记录。长息屏按原生 verification-and-troubleshooting 的矩阵进行；本次未做的明确写未验证。USB 常亮不是息屏验收。

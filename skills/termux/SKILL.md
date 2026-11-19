@@ -26,6 +26,7 @@ SSH 用户名、提示符或 PRoot 中显示的 `root` 都不赋予 Android UID 
 3. 首装或迁移先读 [安装与迁移](references/installation-and-migration.md)。Termux/Boot/API/Widget 使用同一签名来源；X11 同时需要 Android APK 与 native CLI。插件安装/更新可能中断 Termux 进程，应在保存并结束桌面后安排，随后复查存储权限。
 4. 原生部署使用 `bootstrap`，权限与后台问题按 [Android 权限与电源](references/android-permissions-and-power.md) 和 [远程管理](references/remote-management.md)。需要蓝牙或本机 Codex 时分别读取对应参考，不自动启用其他模块。
 5. 桌面部署先 `desktop-plan`，再按 [桌面安装](references/desktop-setup.md) 执行。配置采用 JSON；示例 [tablet.json](assets/desktop/tablet.json) 是可调整的平板预设，不能把分辨率、字体和应用偏好固化为所有设备的要求。
+   维护或重装有定制的桌面时，先核对 [配置基线](references/desktop-verification.md#桌面配置基线)。改动后用 `desktop-baseline` 比对实机回读，复验日常入口和受影响的基础操作，再更新已验收的基线。
 6. 显示、键盘、触屏和主题按 [显示与输入](references/desktop-display-input.md)；GPU 与应用性能按 [GPU 渲染与验收](references/desktop-gpu.md)，分别验证 VirGL、直接 KGSL、native Chromium/Zink、原生办公或视频硬解，不以启动参数代替实际绘制/出帧；会话、退出、电量和 CPU 问题按 [生命周期](references/desktop-lifecycle.md)；VPN/代理/DNS 按 [网络排障](references/desktop-network.md)。
    已知低帧率要在本次 GPU 配置内固定负载复测，并验证日常入口。输入修复同时检查单击、双击、拖动、长按与滚动；不要只验证新增手势。鼠标先区分速度、精细定位与事件节拍，固定配置取证后再做单变量对照。
    窗口问题分开验证应用 GPU、Xserver 重绘、整桌面合成与 Android 最终呈现；在症状发生时核对实际刷新率，不用 Xrandr 或静置快照代替。先只读取证，固定条件做单变量对照；Expose、动画回调、呈现时间戳与像素正确性分别报告。外框先区分客户端装饰和 Xfwm 框架，再试应用自带外观选项，见显示与输入参考。
@@ -85,6 +86,7 @@ bash skills/termux/scripts/run.sh launcher-plan --adb /path/to/adb --serial SERI
 - SSH、存储、Bash、API、设备上下文：[remote-management.md](references/remote-management.md)。
 - 可选蓝牙：[bluetooth-companion.md](references/bluetooth-companion.md)；本机 Codex：[codex-on-termux.md](references/codex-on-termux.md)。
 - 桌面预设、安装、应用与边界：[desktop-setup.md](references/desktop-setup.md)。
+- Thunar 缩略图、SMB 文件打开与 Xfce 启动器排障见 [desktop-file-access.md](references/desktop-file-access.md)。
 - VS Code/Git 凭据、GNOME Keyring 与无额外密码解锁：[desktop-credentials.md](references/desktop-credentials.md)。
 - 显示/触控/实体键盘/字体/主题：[desktop-display-input.md](references/desktop-display-input.md)。
 - 服务、退出、CPU 和电池：[desktop-lifecycle.md](references/desktop-lifecycle.md)。

@@ -9,6 +9,7 @@
 ## 安装前
 
 1. 读取设备上下文，确认是否已有桌面、未保存编辑或后台任务。已有 rootfs 与用户目录优先维护，不执行 reset/remove 或整套覆盖。
+   恢复定制桌面时，从本机的 [配置基线](desktop-verification.md#桌面配置基线) 选用 `profile.json`。核对 `desktop-plan` 展开的默认值，以及主题素材、应用入口和用户设置的恢复来源。
 2. 完成 Termux 与必要插件安装。Termux、Boot、API、Widget 同源签名；安装共享 UID 插件可能中断 Termux 与桌面，安排在保存并结束桌面之后。复查 Downloads 存储权限。
 3. 安装官方 Termux:X11 APK，并打开一次；native `termux-x11-nightly` 是另一个必要组件。两者来源见 [Termux:X11 官方说明](https://github.com/termux/termux-x11)。本安装器安装 native 包，不代替 Android APK 安装。
 4. 将整个 skill 的 `scripts/` 和 `assets/` 保持相对位置复制到 native Termux。脚本使用 Python 3.10+ 标准库：`pkg install python`。不把设备上的 SSH 私钥、Cookie、订阅或主机 APK 签名密钥带入技能。

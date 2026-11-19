@@ -32,6 +32,7 @@
   "native_browser_present_mode": "default",
   "touch_mode": "preserve",
   "x11_mitshm": true,
+  "x11_glamor": false,
   "touch_long_press": false,
   "touch_long_press_ms": 700,
   "touch_long_press_move_px": 24,

@@ -1,0 +1,70 @@
+--- a/lorie/src/main/cpp/lorie/InitOutput.c
++++ b/lorie/src/main/cpp/lorie/InitOutput.c
+@@ -168,6 +168,7 @@
+     }
+ 
+     pthread_mutexattr_init(&mutex_attr);
++    lorieScreen.state->glDrawnBufferId = UINT64_MAX;
+     pthread_mutexattr_setpshared(&mutex_attr, PTHREAD_PROCESS_SHARED);
+     pthread_mutexattr_settype(&mutex_attr, PTHREAD_MUTEX_RECURSIVE);
+     pthread_mutex_init(&lorieScreen.state->lock, &mutex_attr);
+@@ -1199,9 +1200,7 @@
+     check(num_fds > 1, "DRI3: More than 1 fd");
+     check(!rawFd && modifier != AHARDWAREBUFFER_SOCKET_FD && modifier != AHARDWAREBUFFER_FLIPPED_SOCKET_FD,
+           "DRI3: Modifier is not RAW_MMAPPABLE_FD or AHARDWAREBUFFER_SOCKET_FD");
+-    check(glamor && rawFd, "DRI3: raw fd buffers are not supported with glamor");
+-
+-    pixmap = glamor ? screen->CreatePixmap(screen, width, height, depth, GLAMOR_CREATE_PIXMAP_NO_TEXTURE)
++    pixmap = glamor && !rawFd ? screen->CreatePixmap(screen, width, height, depth, GLAMOR_CREATE_PIXMAP_NO_TEXTURE)
+                     : screen->CreatePixmap(screen, 0, 0, depth, 0);
+     check(!pixmap, "DRI3: failed to create pixmap");
+ 
+@@ -1212,7 +1211,16 @@
+ 
+     if (rawFd) {
+         check(!(priv->buffer = LorieBuffer_wrapFileDescriptor(width, strides[0]/4, height, AHARDWAREBUFFER_FORMAT_B8G8R8A8_UNORM, fds[0], offsets[0])), "DRI3: LorieBuffer_wrapAHardwareBuffer failed.");
+-        screen->ModifyPixmapHeader(pixmap, width, height, 0, 0, strides[0], NULL);
++        if (glamor) {
++            /* Retain raw-FD clients as CPU-backed pixmaps. Glamor's normal
++             * copy path uploads their current pixels to the GPU destination
++             * after Present's wait fence, including padded source strides. */
++            check(LorieBuffer_lock(priv->buffer, &priv->locked), "DRI3: failed to map raw fd");
++            screen->ModifyPixmapHeader(pixmap, width, height, 0, 0, strides[0], priv->locked);
++            glamor_set_pixmap_type(pixmap, GLAMOR_MEMORY);
++            dixSetPrivate(&pixmap->devPrivates, &lorieGlamorBufferKey, priv);
++        } else
++            screen->ModifyPixmapHeader(pixmap, width, height, 0, 0, strides[0], NULL);
+         if (lorieServerDebugEnabled)
+             log(INFO, "DRI3: imported raw fd, modifier %llu, %ux%u stride %u", (unsigned long long) modifier, width, height, strides[0]);
+         return pixmap;
+--- a/lorie/src/main/cpp/lorie/renderer.cpp
++++ b/lorie/src/main/cpp/lorie/renderer.cpp
+@@ -916,7 +916,7 @@
+ 
+     // We should signal X server to not use root window while we actively copy it
+     lockServerState(state, connFd());
+-    if (state->rendererRelock)
++    if (state->rendererRelock && desc->id != state->glDrawnBufferId)
+         syncRootForGpu(buffer);
+     state->drawRequested = FALSE;
+ 
+--- a/lorie/src/main/cpp/lorie/glamor_support.c
++++ b/lorie/src/main/cpp/lorie/glamor_support.c
+@@ -99,6 +99,7 @@
+     lorieGl.debugMessageCallback = lorieGlLookup("glDebugMessageCallback");
+     lorieGl.debugMessageControl = lorieGlLookup("glDebugMessageControl");
+     lorieGl.objectLabel = lorieGlLookup("glObjectLabel");
++    lorieGl.memoryBarrier = lorieGlLookup("glMemoryBarrier");
+     if (!lorieGl.bindVertexArray || !lorieGl.deleteVertexArrays || !lorieGl.genVertexArrays ||
+         !lorieGl.drawArraysInstanced || !lorieGl.mapBufferRange || !lorieGl.unmapBuffer ||
+         !lorieGl.uniform4ui || !lorieGl.vertexAttribDivisor) {
+--- a/lorie/src/main/cpp/lorie/epoxy/epoxy/gl.h
++++ b/lorie/src/main/cpp/lorie/epoxy/epoxy/gl.h
+@@ -22,6 +22,7 @@
+     PFNGLDEBUGMESSAGECALLBACKPROC debugMessageCallback;
+     PFNGLDEBUGMESSAGECONTROLPROC debugMessageControl;
+     PFNGLOBJECTLABELPROC objectLabel;
++    PFNGLMEMORYBARRIERPROC memoryBarrier;
+     PFNEGLCREATESYNCKHRPROC eglCreateSync;
+     PFNEGLDESTROYSYNCKHRPROC eglDestroySync;
+     PFNEGLDUPNATIVEFENCEFDANDROIDPROC eglDupNativeFenceFd;

@@ -97,6 +97,8 @@
 
 随后固定 Android 实际 120Hz，日常 Code 同一轨迹对照：完整布局、仅隐藏右侧、同时隐藏右侧与终端、仅隐藏终端，可见分隔条位置变化分别为 43、49、181、168 次。再恢复完整布局，仅将官方 `terminal.integrated.gpuAcceleration` 设为 `off`，结果为 173 次；编辑器 GLES 保留。该终端 DOM 配置已备份并应用，用户随后实机复验确认“已经顺畅”，日常边栏调整通过；此处没有证明所有终端负载都更快。最初一组轨迹未命中分隔条，已排除，未用来评价性能。
 
+2026-11-19 回到官方 X11 与 Xfwm 合成后，Code 侧栏延迟复发。日常 Code 的 ANGLE GLES、KGSL 设备句柄及终端 DOM 设置经回读确认。对同一窗口的左侧分隔条使用匹配的 XTest 拖动和窄条像素读回，两次有效的桌面样本中位数约 182 和 186 毫秒，固定实际 120 Hz 的样本约 185 毫秒。Code 客户端取样也观察到滞后。收起终端和切换经典外观未带来可采用的收益，终端 WebGL 样本更慢。应用测试设置及自动刷新已恢复，侧栏延迟仍待解决。上述数据描述分隔条跟随延迟。
+
 ### Y900 鼠标与面板刷新率
 
 本次连接蓝牙鼠标，输入模式保留用户当前的 Trackpad。Xrandr 仍显示约 120Hz，但 Android 活动模式实际为 30～60Hz。临时设置 `min_refresh_rate=120.0` 后回读确为 120Hz；仅请求临时 preferred display mode 没有提高实际频率。首次两分钟试验用户未及测试，已自动恢复；重新提供五分钟试验后，用户反馈 Android 很顺，Xfce 仍稍差。用户最终选择原来的自动刷新率，最低频率恢复缺省，保留 `peak_refresh_rate=120.0`，不持久化全局 120Hz；本次续航未测试。
@@ -174,3 +176,59 @@ VS Code 同时提示 OS keyring unavailable。初次检查仍为 XFCE，会话 D
 冷启动验证曾复现默认 D-Bus 激活先启动锁定 daemon，而终端解锁另起 daemon，出现额外密码框。通过用户 Secret Service 激活入口统一调用桥接、采用 starter bus 地址、明确 HOME、每总线私有控制目录和文件锁串行化后解决。Xfce 启动命令和 D-Bus 冷激活均验证自动解锁，三次并发调用均通过，最终仅一个凭据 daemon。
 
 Git 使用官方固定版本的 libsecret helper；随机 `.invalid` 测试凭据存取、daemon 正常退出后重开读取均通过，所有测试条目删除。日常 Code 正常重开，原工作区恢复；日志实际报告 Encryption is available: true 和 using persisted storage，Secret Service 中存在 Electron Safe Storage 项，仅查询标签，未读取令牌。Code 启动检查保留原 GLES/KGSL 参数，`argv.json` 选用 `gnome-libsecret`。此前未保存的 GitHub 会话可能需要重新登录；本次不冒充真实 GitHub 重新授权测试。164 项脚本回归中 163 通过，1 项 Windows C 环境检查跳过；Android 整机重启、真实锁屏和长时息屏未在此轮验证。实现及回退见 [桌面凭据](desktop-credentials.md)。
+
+### Y900 Chromium 合成性能复查
+
+2026-11-18，日常 Chromium 的 GLES/Zink/Turnip、mailbox 与 GPU 配置仍生效。固定 1280×720 shader、1600×940 viewport、DPR 2、4 秒预热及 10 秒采样，Xfwm/XPresent 路径约 21 次回调/秒；临时关闭合成约 41～43。关闭合成只用于定位，没有作为最终配置保留。
+
+采用独立 Picom 12.5 的 xrender 合成后，相同测试三轮为 49.70／46.90／47.10。相同 Tendrils 默认负载、1920×1152 画布的三轮对照，旧路径为 11.00／12.40／12.70，新路径为 25.90／26.60／26.30。这是两个分别固定条件的 rAF 对照，不是实际屏幕 FPS、所有网站性能或严格 GPU 执行时间。
+
+外部 24 秒录屏的 347 个实际编码帧可见正确棋盘与移动标记。选定静态区域在地址栏输入前后无异常改变；原区域碰到建议菜单的正常遮挡，依据原始帧移至菜单下、Android 键盘上方，保留分析记录。验证同时要求预期图案存在，不能把恒定白屏当成“无变化”。KGSL/GLX Xfwm 的内部计数虽较高，Android 实际白屏，已拒绝；Picom/EGL 黑屏也已撤回。Picom 13 要求已禁用的 MIT-SHM，未采用，不重新打开此前导致 xfdesktop BadAccess 的扩展。
+
+兼容二进制从[官方 v12.5 源码](https://github.com/yshui/picom/releases/tag/v12.5)独立构建，仅沿用 [Termux 构建约定](https://github.com/termux/termux-packages/blob/master/x11-packages/picom/build.sh) 的 `host_system=linux` 适配，没有修改渲染逻辑或升级 Mesa。配置使用 xrender、damage 与 vsync，关闭淡入淡出、模糊、动画和全屏反复取消重定向。Xfwm 继续管理窗口，内置合成关闭；外置 Picom 持有真实 compositor selection，底栏局部重定向辅助仍禁用。该设备选择不改变技能安装默认值。
+
+Guest 的 `tablet-compositor` 及独立 XDG 启动项已配置，进程仍属受管 PRoot cohort；正常重启该入口、单实例、关闭维护终端后继续运行及底栏位置通过。日常 Chromium 无调试端口的普通本地页面另验真实绘制、像素、GL error 0 和无上下文丢失，1920×1152 viewport 的单轮约 65.60 次回调/秒，不混入固定视口倍率。原浏览器与 Code 进程、四个原标签、原生分辨率、输入与自动刷新策略保留。
+
+回退工具与输入摘要保存在设备私有状态目录：默认预览，显式应用才按 PID/start/exe 停止本次 compositor、恢复原 Xfwm 合成并移除本次入口，拒绝覆盖后续修改。旧 `window_probe` 的 `compositor_state_mismatch` 仅比较 Xfwm 开关和 selection，不能识别这一外置配置；维护时应核对受管入口、进程身份及真实 owner，不能据此启动第二个合成器。用户随后针对日常滚动、地址栏中英文输入与拖窗的复验问题反馈“明显顺畅，未见闪动”，本轮实机手感反馈通过。没有据此推定所有场景长期稳定；本轮未重启整个桌面或 Android，冷启动恢复和长时功耗仍未验证。
+
+### Y900 同网址 Web3D 与 Android Chrome 对照
+
+同日，用户继续指出 [Tendrils](https://epok.tech/work/tendrils/) 的 Web3D 卡顿，并要求原生 Android Chrome 对照。两边保持高画质 `rootNum=1024`（1,048,576 粒子），画布均为 1920×1152、DPR 2，音频暂停于 80 秒而粒子模拟继续，4 秒预热后每轮采样 10 秒。Android Chrome 157.0.8103.78 使用 ANGLE / Qualcomm Adreno 830 原生 GLES，三轮约 60.00／60.00／59.99 次动画回调/秒；native Termux Chromium 157.0.8103.50 使用 ANGLE GLES / Mesa 26.2.7 Zink/Turnip，两组三轮分别约 25.60／31.90／31.90 和 24.60／27.60／29.10。测试页面均前台可见、无上下文丢失；桌面测试时日常浏览器最小化，Android 最后复测时桌面诊断实例已关闭。
+
+Android 默认 1536×889 画布也约 60；提高到相同画布后仍保持约 60，因此不能仅用分辨率或粒子数量解释桌面差距。外部约 7.99 秒录屏含 480 编码帧，查看到真实粒子图案；解码缩小后选定网页运动区的相邻 479 对帧，平均像素差均大于 1。rAF、编码帧与屏幕逐帧呈现仍分别报告，不将该结果扩大为完整 SurfaceFlinger 验收。
+
+桌面 baseline 的 8 秒追踪中，`FireAnimationFrame`／`FunctionCall` 中位约 2ms，`SkiaOutputSurfaceImplOnGpu::FinishPaintCurrentFrame` 中位约 30.05ms、P95 32.27ms。这表明较长等待位于图形提交阶段，但不是纯 GPU 执行时间，也未定位到唯一驱动函数。ANGLE＋Skia Vulkan 约 6.5～7.8 次/秒，没有改善；仅 ANGLE Vulkan／GaneshGL 约 7.5～8.3，实际发生软件合成和 WebGL readback，不能作为纯 GPU 后端比较。GLES 仅关闭 GPU 栅格化约 21.9～28.3，也未采用。
+
+本次没有降低日常画质、更改 GPU/合成配置或更换驱动；原日常实例、标签和几何保留，调试界面关闭，隔离实例、profile、转发与共享暂存清理。**桌面 Web3D 的低帧瓶颈仍未解决**；先前窗口交互“顺畅、无闪动”的用户反馈与本次 Web3D 性能结论分别记录，不能互相替代。
+
+### Y900 Web3D 呈现与真实帧复核
+
+后续完成自动／实际 60Hz／自动与自动／实际 120Hz／自动对照，活动模式由 SurfaceFlinger 连续核对，均未形成可采用的改善。X11 声明从旧 120Hz 更新为 60Hz 后仍低帧。XPresent NotifyMSC 显示面板固定 60Hz 时，静态 MSC 约 61、动画约 85；安装库中 Present 完成与显示回调重复推进计数的位置已核对。私有显示原版／单时钟／原版使 MSC 约 80.83→60.20→79.88，而呈现事件约 21.90→21.10→21.80 次/秒，修正计数没有性能收益，未修改日常库。
+
+所有后续比较继续使用高画质、1920×1152 画布、DPR2、音频暂停80秒而模拟运行。临时 Android 窗口有98像素标题栏，所以隔离根窗口为3840×2462，同组条件一致；原桌面3840×2560及其浏览器、Code保持运行。性能采样后同时向DOM和同一个WebGL framebuffer写入12位帧编号，录屏六秒解码，另查三色块、GL error和context loss。下列是新编号增长率，区别于页面rAF与SurfaceFlinger呈现事件：
+
+| 隔离条件 | 新 WebGL 画面/秒 | 结论 |
+|---|---:|---|
+| 无WM／无合成器／根窗口大小／允许导入FD直接flip | 44.99 | 同时解码DOM与WebGL编号确认真实提升；仅证明独立显示路径 |
+| 无WM／legacy-drawing，Picom vsync true→false→true | 13.73→30.56→13.55 | 旧帧重复减少，但该基线不是日常配置 |
+| 真实guest Xfwm＋guest启动Picom，原配置→legacy且vsync=false→原配置 | 30.01→28.37→27.80 | 候选未能重复改善，不采用 |
+
+仅Turnip27在部分隔离条件达到57～60 rAF/s，新WebGL画面却约30.63，与stock约30.57、KGSL27约30.78相近，未升级日常驱动。full-damage、延后Present通知、Picom无frame-pacing、GLX加同步fence也没有可部署结果。真实WM中的全屏自动unredirect与强制flip试验反而约10 rAF/s；UI检查因前台焦点字段读取失败中止，恢复轮未执行，不计完整A/B/A或输入验收通过。
+
+上述为早期隔离阶段记录：当时保留Picom12.5/xrender/vsync=true、原GPU、mailbox与x11_mitshm=false，未降低画质；独立45帧不等于原桌面交付。后续Glamor原桌面部署结果以下节为准。
+
+### Y900 原桌面 Glamor 试验与回退
+
+2026-11-19，标签拆合白块、Xfce窗口触屏延迟及黑色角点残留使Glamor候选验收失败，实验已撤回。仅恢复配置仍有残留，因此换回未经修改且安装后摘要核对的官方X11，并撤回Picom、恢复Xfwm自身合成。原备份APK被Play Protect拒绝，维持系统保护。120Hz触屏基础窗口测试松手后约25ms停止，约644万个背景像素未检出黑色残留。用户随后确认Xfce和Chromium窗口“显示和拖动都正常”。已保存并回读Xfwm的进程专用core事件启动项，完整桌面冷启动待验。Web3D提帧目标未完成，以下为此前阶段结果。
+
+2026-11-18直接更新原Termux:X11包，保留同签名和应用数据，正常启动原`:1`桌面、原Chromium profile及四个标签、Code工作区。显式设备开关`x11_glamor=true`配合修复后的PR1153构建；普通旧APK不能只加参数。补丁包含raw-FD DRI3兼容、GPU根缓冲CPU重锁修正、GLES精度/上传/VBO及纹理同步，详见[源码与回滚参考](desktop-glamor.md)。
+
+原3840×2560桌面、scale2、同Tendrils高画质1024粒子根数和1920×1152画布下约44.62rAF/s，随后六秒录屏DOM/WebGL帧号均约41.30个新画面/秒。SurfaceFlinger两阶段约40.67/42.31呈现/秒。原Code十轮覆盖切换、缩放与最大化后标题区像素一致；Android切走再返回后四个静态区域像素一致，截图无此前条纹。逐次CPU读回的约31帧方案和仍有错误的异步PBO方案未采用。
+
+当时保留Picom12.5/xrender/vsync/use-damage、MIT-SHM及Mesa路径，刷新率恢复原值；观察器移除并清理独立候选。这一阶段随后被真实标签拆合及触屏操作发现的回归否定，不能作为稳定修复交付。长期功耗、Android重启恢复和完整IME未重新验收，当前回退状态见本节开头。
+
+### Y900 Thunar、共享文件与桌面基线
+
+2026-11-19，从当前 Xfce 会话查到缩略图服务缺失、远程预览需要启用，以及 JPEG/PNG 默认打开方式需要调整。启用 Tumbler、相应图片 loader 和远程预览后，当前 SMB 目录 39 张缩略图均生成，其中一张按实际 PNG 内容生成。目录 40 项的 GIO 枚举实测约 43–73 毫秒。Ristretto 从 Thunar 默认入口打开共享图片。原生办公启动器会拒绝 `smb://`，给 SMB 文档接到同会话 guest LibreOffice 后，实际读取并打开测试 DOCX/XLSX，复用已有共享登录。已复核 Thunar 后台 D-Bus 入口加载触控模块。VS Code 桌面图标的超时由信任确认阻塞，在标记该已核对图标后重复启动通过。操作方法见 [文件访问与启动器](desktop-file-access.md)。
+
+原生 profile 缺少实机使用的合成与 vblank 两项，同时 GTK 和标题栏主题也与实机有差异。将 Xfwm/XPresent 和两套主题写入设备重装 profile，并备份主题资源、应用入口、Code 设置、Thunar 模块及默认打开方式。实机回读、模拟漂移检测、隔离目录里的 JSONC 和文件恢复演练通过；本轮验证覆盖安装规划和隔离恢复。设备与主机各保存一份恢复包，临时实例和中转文件已清理。后续按 [配置基线流程](desktop-verification.md#桌面配置基线) 核对。

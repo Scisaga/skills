@@ -1,0 +1,232 @@
+diff --git a/glamor/glamor.c b/glamor/glamor.c
+index 192b1ac..1d1cc6d 100644
+--- a/glamor/glamor.c
++++ b/glamor/glamor.c
+@@ -167,6 +167,10 @@ void
+ glamor_bind_texture(glamor_screen_private *glamor_priv, GLenum texture,
+                     glamor_pixmap_fbo *fbo, Bool destination_red)
+ {
++    if (glamor_priv->is_gles && lorieGl.memoryBarrier)
++        lorieGl.memoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT |
++                             GL_TEXTURE_UPDATE_BARRIER_BIT |
++                             GL_FRAMEBUFFER_BARRIER_BIT);
+     glActiveTexture(texture);
+     glBindTexture(GL_TEXTURE_2D, fbo->tex);
+ 
+@@ -493,6 +497,41 @@ glamor_add_format(ScreenPtr screen, int depth, CARD32 render_format,
+         if (!texture_only) {
+             glGetIntegerv(GL_IMPLEMENTATION_COLOR_READ_FORMAT, &read_format);
+             glGetIntegerv(GL_IMPLEMENTATION_COLOR_READ_TYPE, &read_type);
++
++            /* Some Adreno GLES drivers report a zero read type for BGRA,
++             * although EXT_read_format_bgra works. Verify a known pixel in
++             * this disposable 1x1 test FBO before accepting that format. */
++            if (read_type == 0 && read_format == GL_BGRA &&
++                format == GL_BGRA && type == GL_UNSIGNED_BYTE) {
++                GLfloat saved_clear[4];
++                GLboolean saved_mask[4];
++                GLboolean saved_scissor = glIsEnabled(GL_SCISSOR_TEST);
++                GLubyte pixel[4] = { 102, 102, 102, 102 };
++                GLenum read_error;
++
++                glGetFloatv(GL_COLOR_CLEAR_VALUE, saved_clear);
++                glGetBooleanv(GL_COLOR_WRITEMASK, saved_mask);
++                glDisable(GL_SCISSOR_TEST);
++                glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
++                glClearColor(17.0f / 255.0f, 33.0f / 255.0f,
++                             49.0f / 255.0f, 1.0f);
++                glClear(GL_COLOR_BUFFER_BIT);
++                glReadPixels(0, 0, 1, 1, GL_BGRA, GL_UNSIGNED_BYTE, pixel);
++                read_error = glGetError();
++                glClearColor(saved_clear[0], saved_clear[1],
++                             saved_clear[2], saved_clear[3]);
++                glColorMask(saved_mask[0], saved_mask[1],
++                            saved_mask[2], saved_mask[3]);
++                if (saved_scissor)
++                    glEnable(GL_SCISSOR_TEST);
++
++                if (read_error == GL_NO_ERROR && pixel[0] == 49 &&
++                    pixel[1] == 33 && pixel[2] == 17 && pixel[3] == 255) {
++                    read_type = GL_UNSIGNED_BYTE;
++                    ErrorF("glamor: Verified BGRA/UNSIGNED_BYTE readback "
++                           "despite zero reported type for depth %d.\n", depth);
++                }
++            }
+         }
+ 
+         glDeleteTextures(1, &tex);
+@@ -782,10 +821,16 @@ glamor_init(ScreenPtr screen, unsigned int flags)
+         epoxy_has_gl_extension("GL_EXT_map_buffer_range");
+     glamor_priv->has_buffer_storage =
+         epoxy_has_gl_extension("GL_ARB_buffer_storage");
++    if (glamor_priv->is_gles) {
++        /* Use the existing glBufferData upload path for GLES vertices.
++         * Unsynchronized mapped ranges produce stale geometry on Adreno. */
++        glamor_priv->has_map_buffer_range = FALSE;
++        glamor_priv->has_buffer_storage = FALSE;
++    }
+     glamor_priv->has_mesa_tile_raster_order =
+         epoxy_has_gl_extension("GL_MESA_tile_raster_order");
+     glamor_priv->has_nv_texture_barrier =
+-        epoxy_has_gl_extension("GL_NV_texture_barrier");
++        !glamor_priv->is_gles && epoxy_has_gl_extension("GL_NV_texture_barrier");
+     glamor_priv->has_unpack_subimage =
+         !glamor_priv->is_gles ||
+         epoxy_gl_version() >= 30 ||
+diff --git a/glamor/glamor_copy.c b/glamor/glamor_copy.c
+index eae70e9..72dedd4 100644
+--- a/glamor/glamor_copy.c
++++ b/glamor/glamor_copy.c
+@@ -453,9 +453,6 @@ glamor_copy_fbo_fbo_draw(DrawablePtr src,
+         args.dy = dy + src_off_y - src_box->y1;
+         args.src = glamor_pixmap_fbo_at(src_priv, src_box_index);
+ 
+-        if (!glamor_use_program(dst_pixmap, gc, prog, &args))
+-            goto bail_ctx;
+-
+         glamor_pixmap_loop(dst_priv, dst_box_index) {
+             BoxRec scissor = {
+                 .x1 = max(-args.dx, bounds.x1),
+@@ -466,6 +463,13 @@ glamor_copy_fbo_fbo_draw(DrawablePtr src,
+             if (scissor.x1 >= scissor.x2 || scissor.y1 >= scissor.y2)
+                 continue;
+ 
++            /* Leave a previously rendered source FBO before binding its
++             * texture. Adreno otherwise retains the source render layout. */
++            glBindFramebuffer(GL_FRAMEBUFFER,
++                              glamor_pixmap_fbo_at(dst_priv, dst_box_index)->fb);
++            if (!glamor_use_program(dst_pixmap, gc, prog, &args))
++                goto bail_ctx;
++
+             if (!glamor_set_destination_drawable(dst, dst_box_index, FALSE, FALSE,
+                                                  prog->matrix_uniform,
+                                                  &dst_off_x, &dst_off_y))
+diff --git a/glamor/glamor_picture.c b/glamor/glamor_picture.c
+index 2152b85..9cbf3a4 100644
+--- a/glamor/glamor_picture.c
++++ b/glamor/glamor_picture.c
+@@ -344,6 +344,16 @@ glamor_upload_picture_to_texture(PicturePtr picture)
+     }
+ 
+     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
++    /* tod: la lunghezza della riga va detta sempre: altrimenti resta quella del caricamento precedente
++     * (glamor_upload_boxes) e ogni riga si legge sfalsata (ombre e forme di cairo a puntini su Adreno). */
++    {
++        int bpp = PIXMAN_FORMAT_BPP(converted_format) / 8;
++        if (glamor_priv->has_unpack_subimage || !glamor_priv->is_gles) {
++            glPixelStorei(GL_UNPACK_ROW_LENGTH, bpp && stride % bpp == 0 ? stride / bpp : 0);
++            glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
++            glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
++        }
++    }
+ 
+     glamor_priv->suppress_gl_out_of_memory_logging = true;
+ 
+@@ -351,9 +361,17 @@ glamor_upload_picture_to_texture(PicturePtr picture)
+      * don't have initialized boxes.
+      */
+     glBindTexture(GL_TEXTURE_2D, pixmap_priv->fbo->tex);
+-    glTexImage2D(GL_TEXTURE_2D, 0, iformat,
+-                 pixmap->drawable.width, pixmap->drawable.height, 0,
+-                 format, type, bits);
++    if (glamor_priv->is_gles && format == f->format && type == f->type)
++        /* tod: su Adreno ridefinire la texture con un formato senza misura (GL_RED) la lasciava vuota (maschere
++         * A8 in memoria: ombre del compositore trasparenti o a puntini): si scrive nella texture già creata
++         * con il formato giusto, come fa glamor_upload_boxes per PutImage. */
++        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
++                        pixmap->drawable.width, pixmap->drawable.height,
++                        format, type, bits);
++    else
++        glTexImage2D(GL_TEXTURE_2D, 0, iformat,
++                     pixmap->drawable.width, pixmap->drawable.height, 0,
++                     format, type, bits);
+ 
+     if (needs_swizzle) {
+         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_R, swizzle[0]);
+@@ -362,6 +380,9 @@ glamor_upload_picture_to_texture(PicturePtr picture)
+         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, swizzle[3]);
+     }
+ 
++    if (glamor_priv->has_unpack_subimage || !glamor_priv->is_gles)
++        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);   /* tod */
++
+     glamor_priv->suppress_gl_out_of_memory_logging = false;
+     if (glGetError() == GL_OUT_OF_MEMORY) {
+         ret = FALSE;
+diff --git a/glamor/glamor_priv.h b/glamor/glamor_priv.h
+index ac16610..73c1518 100644
+--- a/glamor/glamor_priv.h
++++ b/glamor/glamor_priv.h
+@@ -44,9 +44,16 @@
+ #include <epoxy/egl.h>
+ #endif
+ 
++/* tod: su Adreno mediump è davvero a 16 bit (le GPU dei PC lo ignorano): coordinate oltre ~1000 pixel
++ * sbagliate, riempimenti ripetuti a puntini. highp dove la GPU lo offre. */
++
+ #define GLAMOR_DEFAULT_PRECISION  \
+     "#ifdef GL_ES\n"              \
++    "#ifdef GL_FRAGMENT_PRECISION_HIGH\n" \
++    "precision highp float;\n"  \
++    "#else\n"                    \
+     "precision mediump float;\n"  \
++    "#endif\n"                   \
+     "#endif\n"
+ 
+ #define GLAMOR_DEFAULT_POINT_SIZE  \
+diff --git a/glamor/glamor_trapezoid.c b/glamor/glamor_trapezoid.c
+index a448a6b..332bcb3 100644
+--- a/glamor/glamor_trapezoid.c
++++ b/glamor/glamor_trapezoid.c
+@@ -34,6 +34,7 @@
+ 
+ #include "mipict.h"
+ #include "fbpict.h"
++#include "glamor_transfer.h"   /* tod */
+ 
+ /**
+  * Creates an appropriate picture for temp mask use.
+@@ -114,6 +115,34 @@ glamor_trapezoids(CARD8 op,
+     height = bounds.y2 - bounds.y1;
+     stride = PixmapBytePad(width, mask_format->depth);
+ 
++    /* tod: maschera calcolata dalla CPU come prima, ma caricata in un'immagine della GPU con la stessa via
++     * di PutImage: la maschera in memoria usata direttamente nella composizione su GLES (Adreno) veniva
++     * caricata male (forme antialiasing di cairo a puntini). Ripiego: la via originale. */
++    if (mask_format->depth == 8) {
++        int error;
++        BoxRec box = { 0, 0, width, height };
++
++        pixmap = glamor_create_pixmap(screen, width, height, 8, 0);
++        if (pixmap && glamor_pixmap_has_fbo(pixmap)) {
++            picture = CreatePicture(0, &pixmap->drawable, mask_format, 0, 0, serverClient, &error);
++            glamor_destroy_pixmap(pixmap);
++            if (!picture)
++                return;
++            image = pixman_image_create_bits(picture->format, width, height, NULL, stride);
++            if (!image) {
++                FreePicture(picture, 0);
++                return;
++            }
++            for (; ntrap; ntrap--, traps++)
++                pixman_rasterize_trapezoid(image, (pixman_trapezoid_t *) traps, -bounds.x1, -bounds.y1);
++            glamor_upload_boxes(glamor_get_drawable_pixmap(picture->pDrawable), &box, 1, 0, 0, 0, 0,
++                                (uint8_t *) pixman_image_get_data(image), pixman_image_get_stride(image));
++            goto componi;
++        }
++        if (pixmap)
++            glamor_destroy_pixmap(pixmap);
++    }
++
+     picture = glamor_create_mask_picture(screen, dst, mask_format,
+                                          width, height);
+     if (!picture)
+@@ -140,6 +169,8 @@ glamor_trapezoids(CARD8 op,
+                                              mask_format->depth),
+                                pixman_image_get_data(image));
+ 
++componi:
++
+     x_rel = bounds.x1 + x_src - x_dst;
+     y_rel = bounds.y1 + y_src - y_dst;
+ 

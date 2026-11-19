@@ -337,6 +337,8 @@ class Manager:
                 command = [PREFIX / 'bin/termux-x11', DISPLAY, '-nolisten', 'tcp']
                 if not CONFIG.get('x11_mitshm', True):
                     command += ['-extension', 'MIT-SHM']
+                if CONFIG.get('x11_glamor', False):
+                    command += ['-glamor']
                 p = self.spawn(command, 'x11.log')
                 self.helpers.append(p)
                 for _ in range(30):

@@ -30,7 +30,7 @@ def validate_profile(value: dict) -> dict:
                         ("touch_long_press_ms", 400, 3000), ("touch_long_press_move_px", 4, 80)):
         if type(p[key]) is not int or not lo <= p[key] <= hi:
             raise ValueError(f"{key} must be an integer between {lo} and {hi}")
-    for key in ("software_rendering", "dock_autohide", "dock_hide_indicator", "code_autostart", "hardware_keyboard", "touch_long_press", "x11_mitshm", "window_compositing", "window_shadows"):
+    for key in ("software_rendering", "dock_autohide", "dock_hide_indicator", "code_autostart", "hardware_keyboard", "touch_long_press", "x11_mitshm", "x11_glamor", "window_compositing", "window_shadows"):
         if type(p[key]) is not bool:
             raise ValueError(f"{key} must be boolean")
     if p['window_vblank_mode'] not in ('auto', 'off', 'xpresent', 'glx'):
