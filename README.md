@@ -36,6 +36,10 @@ VLC 演示片段取自 [MDN 的 flower 示例视频](https://interactive-example
 
 点击 Android 主屏的 **VS Code** 快捷方式即可打开独立编辑器窗口。Xfce 按需启动。编辑器复用 Debian 项目目录，单独管理用户设置和 Codex 等扩展。选装 Office Viewer 时默认只关联 Office 格式。HTML 可从编辑器预览到 Android Chrome。 [安装和配置独立 VS Code](skills/termux/references/standalone-code.md)
 
+小米平板 7 实录。独立 VS Code 左侧显示目录树，中间显示源码和下方终端，右侧打开 Codex。终端运行字幕匹配项目生成 HTML 报告。`Ctrl+1` 在全屏 Android Chrome 的单个标签中打开报告，`Ctrl+Shift+V` 在 VS Code 中预览项目 Markdown。 [字幕匹配项目](skills/subtitle-matcher/SKILL.md)
+
+<img src="assets/demos/termux-pad7-standalone-vscode.gif" alt="小米平板 7 从 Android 主屏打开独立 VS Code，在目录树、代码、终端和 Codex 布局中运行字幕匹配项目，使用 Ctrl+1 全屏预览 HTML 报告并用 Ctrl+Shift+V 预览 Markdown" width="1120">
+
 ## 安装与更新
 
 插件名为 `scisaga`，marketplace 名为 `scisaga-skills`。例如，`slides` 在插件中以 `scisaga:slides` 调用，独立安装默认为 `ss-slides`；版本统一维护在根目录 `plugin.json`。

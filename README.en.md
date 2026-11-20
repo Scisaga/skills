@@ -36,6 +36,10 @@ The VLC clip comes from [MDN's flower sample video](https://interactive-examples
 
 Tap **VS Code** on the Android home screen to open a dedicated editor window. Start Xfce as needed. Both use the same Debian projects, with separate settings and extensions such as Codex for standalone Code. The optional Office Viewer defaults to Office formats only. HTML previews can open in Android Chrome. [Set up standalone VS Code](skills/termux/references/standalone-code.md)
 
+Recorded on a Xiaomi Pad 7. The standalone VS Code workspace shows Explorer, source code, the integrated terminal, and Codex. The terminal runs the subtitle matcher to generate an HTML report. `Ctrl+1` opens the report in a full-screen Android Chrome window with one tab, and `Ctrl+Shift+V` previews the project Markdown in VS Code. [Subtitle matcher](skills/subtitle-matcher/SKILL.md)
+
+<img src="assets/demos/termux-pad7-standalone-vscode.gif" alt="A Xiaomi Pad 7 opens standalone VS Code from the Android home screen and runs the subtitle matcher with Explorer, source code, terminal, and Codex in view, then previews HTML with Ctrl+1 and Markdown with Ctrl+Shift+V" width="1120">
+
 ## Installation and updates
 
 The plugin is named `scisaga`, and its marketplace is `scisaga-skills`. For example, the source skill `slides` is invoked as `scisaga:slides` in the plugin and installed as `ss-slides` by default in standalone mode. The root `plugin.json` is the single source of truth for the version.
