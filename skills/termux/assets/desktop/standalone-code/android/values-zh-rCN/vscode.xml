@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="vscode_windows">VSCode 窗口</string>
+    <string name="vscode_new_window">新建窗口</string>
+    <string name="vscode_launch_failed">无法启动 VSCode，请检查独立启动配置和 Termux 权限。</string>
+</resources>

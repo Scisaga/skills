@@ -11,6 +11,8 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import standalone_code as code
 from desktop_profile import load_profile
+sys.path.insert(0, str(code.ASSETS / "standalone-code"))
+import dock_titles
 
 
 class OfficeAssociationsTests(unittest.TestCase):
@@ -137,6 +139,37 @@ class LauncherAndPreviewTests(unittest.TestCase):
         self.assertNotIn("--wait", launcher)
         with self.assertRaises(ValueError):
             code.render_launcher(prefix, profile, ":01")
+
+    def test_dock_launcher_targets_separate_host_and_isolates_secondary_user_data(self):
+        prefix = PurePosixPath("/data/data/com.termux/files/usr")
+        dock = prefix.parent / "home" / code.DOCK_HOME
+        profile = dict(load_profile(), display=":3")
+        launcher = code.render_launcher(prefix, profile, ":2", dock)
+        self.assertIn(f"android_package={code.DOCK_PACKAGE}", launcher)
+        self.assertIn(f"x11_command=({dock}/x11)", launcher)
+        self.assertIn('(( candidate != desktop_display ))', launcher)
+        self.assertIn('code_data="$root/windows/$slot/code"', launcher)
+        self.assertIn('x11_args=', launcher)
+        self.assertIn('tag="vscode-$slot"', launcher)
+        self.assertIn('broadcast --user 0 -a "$android_package.WINDOW_READY"', launcher)
+        self.assertIn('--es editor_title "$window_title"', launcher)
+        self.assertLess(launcher.index("title_args=(initial"), launcher.index('show_window "$tag" "$title" "$editor_token"'))
+
+    def test_dock_title_keeps_the_file_and_project_without_duplicate_branding(self):
+        self.assertEqual(dock_titles.parse_title('_NET_WM_NAME = "Welcome - sample-project - Visual Studio Code"'),
+                         "Welcome - sample-project")
+        self.assertEqual(dock_titles.parse_title(r'_NET_WM_NAME = "file \"x\" - \344\270\255 - Visual Studio Code"'),
+                         'file "x" - 中')
+        self.assertEqual(dock_titles.parse_title('_NET_WM_NAME = "Visual Studio Code"'), "Visual Studio Code")
+        self.assertIsNone(dock_titles.parse_title("_NET_WM_NAME:  not found."))
+
+    def test_dock_initial_title_distinguishes_a_fresh_window_from_a_restore(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(dock_titles, "find_editor", return_value=(None, None)):
+            state = Path(directory)
+            (state / "window-title").write_text("Previous project\n", encoding="utf-8")
+            self.assertEqual(dock_titles.initial_title({}, state, None, True), "Visual Studio Code")
+            self.assertEqual(dock_titles.initial_title({}, state, None, False), "Previous project")
+            self.assertEqual(dock_titles.initial_title({}, state, "/home/developer/skills", True), "skills")
 
     def test_preview_changes_only_http_default(self):
         source = ("[Default Applications]\r\napplication/pdf=pdf.desktop;\r\n"

@@ -1,6 +1,6 @@
 ---
 name: termux
-description: 在 Android 上安装、迁移和维护 Termux 原生 SSH/API/Boot 环境，以及按需部署 Termux:X11、PRoot Linux 桌面与开发办公应用。用于平板工作站、设备远程管理，以及显示、输入、网络、功耗和遗留进程排障。
+description: 在 Android 上安装、迁移和维护 Termux 原生 SSH/API/Boot 环境，以及按需部署 Termux:X11、PRoot Linux 桌面与开发办公应用。用于平板工作站、设备远程管理、独立 VS Code 主屏与 Dock 多窗口，以及显示、输入、网络、功耗和遗留进程排障。
 ---
 
 # Termux
@@ -34,7 +34,7 @@ SSH 用户名、提示符或 PRoot 中显示的 `root` 都不赋予 Android UID 
    优先使用上游支持的配置；出现控件回显或桌面回归时先撤回实验并查日志。用户允许暂缓的兼容问题如实保留，不继续叠加事件拦截或预加载注入。
    内存任务按 [应用内存诊断](references/desktop-memory.md) 区分驻留 PSS、非映射图形、SwapPss 与 ZRAM 物理量；保留工作与网络，固定负载比较，优先浏览器正式设置及身份合格的缓存/残留进程。
 7. 需要 Android 图形管理、双应用入口、同系列图标或桌面文件夹时，读取 [Android 集成与图标分组](references/android-desktop-integration.md)。管理器从随附源码构建；签名私钥留在主机外部目录。仅整理当前启动器的实际图标，不直接改其数据库。
-   从 Android 主屏单独打开 VS Code 时，按 [独立 VS Code 与扩展配置](references/standalone-code.md) 安装快捷方式。选择 Office Viewer 时默认仅关联 Office 格式。
+   Android 主屏独立 VS Code、Dock 图标与标题、快捷键新建窗口和 ZUI 关联启动提示按 [独立 VS Code 与扩展配置](references/standalone-code.md) 处理。实测多窗口前对照 Android 任务与仍在运行的 X11 会话，并检查子进程余量。选择 Office Viewer 时默认仅关联 Office 格式。
 8. 按 [桌面验收](references/desktop-verification.md) 与 [原生验收](references/verification-and-troubleshooting.md) 完成本次相关检查，仅更新涉及的 AGENTS 受管区块。清理本任务的临时文件、进程和转发，沿本次已有通道复核结果；只有任务包含独立 SSH 交付时才做脱离 ADB 的 LAN SSH 验收。保留未通过及未执行的测试。
    重启前先收齐依赖、有效子进程上限、权限与服务就绪检查。重启后使用原检查点，首次解锁后先取证自动恢复与实际上限，再打开图形桌面；不以手动启动代替自启动证明。检查失败先定位并修复对应阶段，减少重复重启与解锁。
 

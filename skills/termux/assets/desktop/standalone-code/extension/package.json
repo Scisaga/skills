@@ -1,0 +1,25 @@
+{
+  "name": "tablet-vscode-windows",
+  "publisher": "scisaga",
+  "displayName": "VS Code Android Windows",
+  "description": "Open Android tasks and publish their workspace names from standalone VS Code.",
+  "version": "1.1.1",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "*"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": {
+      "supported": true
+    }
+  }
+}

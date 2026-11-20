@@ -20,6 +20,7 @@ Commands:
   desktop-plan      Show the optional desktop profile without changing a device
   desktop-install   Install/configure Debian/Xfce and selected applications in native Termux
   standalone-code   Set up the Android VS Code shortcut and its isolated profile
+  build-vscode-host Build the Android host and matching loader for standalone VS Code tasks
   desktop-doctor    Check desktop components without starting a desktop
   desktop-verify    Gate effective policy, boot, screen-off and GPU evidence
   desktop-baseline  Compare desktop readbacks and verify a recovery bundle
@@ -71,6 +72,7 @@ case "$command_name" in
   desktop-plan) run_python desktop_setup.py plan "$@" ;;
   desktop-install) exec bash "$SCRIPT_DIR/install-desktop.sh" "$@" ;;
   standalone-code) run_python standalone_code.py "$@" ;;
+  build-vscode-host) run_python build_vscode_host.py "$@" ;;
   desktop-doctor) run_python desktop_setup.py doctor "$@" ;;
   desktop-verify) run_python desktop_verify.py "$@" ;;
   desktop-baseline) run_python desktop_baseline.py "$@" ;;

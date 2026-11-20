@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import re
@@ -10,6 +11,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import zipfile
 from contextlib import contextmanager, nullcontext, suppress
 from pathlib import Path
 from textwrap import indent
@@ -33,6 +35,9 @@ CHROME_ENTRY = "tablet-android-chrome-preview.desktop"
 PROFILE_DIR = ".local/share/tablet-vscode"
 STATE_DIR = ".local/state/tablet-desktop/vscode-standalone"
 EDITOR_SETTING = "workbench.editorAssociations"
+DOCK_PACKAGE = "com.scisaga.tabletvscode"
+DOCK_HOME = ".local/libexec/tablet-vscode"
+DOCK_EXTENSION = "scisaga.tablet-vscode-windows"
 
 
 def scoped_path(path, base):
@@ -84,31 +89,104 @@ def code_arguments(profile):
     return ["/usr/local/bin/tablet-gpu-run", *args]
 
 
-def render_launcher(prefix, profile, display):
+def render_launcher(prefix, profile, display, dock=None):
     if not re.fullmatch(r":[0-9]{1,2}", display) or int(display[1:]) == int(profile["display"][1:]):
         raise ValueError("Use a separate numeric X11 display, such as :2")
+    assets = ASSETS / "standalone-code"
+    legacy_setup = '''exec 9>"$state/session.lock"
+if ! flock -n 9; then
+    exec "$prefix/bin/am" start --user 0 -n "$activity" -d "$tag"
+fi'''
     values = {
         "PREFIX": str(prefix),
         "PREFIX_SHELL": shlex.quote(str(prefix)),
         "CONTAINER": shlex.quote(profile["container"]),
         "USER": shlex.quote(profile["user"]),
         "DISPLAY": ":" + str(int(display[1:])),
+        "DESKTOP_DISPLAY": str(int(profile["display"][1:])),
         "SCALE": str(profile["scale"]),
         "X11_ARGS": "" if profile["x11_mitshm"] else "-extension MIT-SHM",
         "CODE_ARGS": shlex.join(code_arguments(profile)),
         "CODE_GUARD": indent(CODE_GUARD.rstrip("\n"), "    "),
         "PROFILE_DIR": PROFILE_DIR,
         "STATE_DIR": STATE_DIR,
+        "ANDROID_PACKAGE": DOCK_PACKAGE if dock else "com.termux.x11",
+        "X11_COMMAND": shlex.quote(str(dock / "x11" if dock else prefix / "bin/termux-x11")),
+        "TITLE_BRIDGE": shlex.quote(str(dock / "dock_titles.py") if dock else ""),
+        "WINDOW_SETUP": (assets / "dock-window-setup.sh").read_text(encoding="utf-8").rstrip() if dock else legacy_setup,
     }
-    template = (ASSETS / "standalone-code/launch.sh").read_text(encoding="utf-8")
+    template = (assets / "launch.sh").read_text(encoding="utf-8")
     return re.sub(r"@([A-Z][A-Z0-9_]+)@", lambda m: values[m[1]], template)
 
 
+def dock_extension():
+    source = ASSETS / "standalone-code/extension"
+    package = (source / "package.json").read_bytes()
+    metadata = json.loads(package)
+    manifest = f"""<?xml version="1.0" encoding="utf-8"?>
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
+  <Metadata>
+    <Identity Id="{metadata['name']}" Version="{metadata['version']}" Publisher="{metadata['publisher']}" Language="en-US" />
+    <DisplayName>{metadata['displayName']}</DisplayName>
+    <Description>{metadata['description']}</Description>
+    <Properties><Property Id="Microsoft.VisualStudio.Code.Engine" Value="{metadata['engines']['vscode']}" /></Properties>
+  </Metadata>
+  <Installation><InstallationTarget Id="Microsoft.VisualStudio.Code" /></Installation>
+  <Dependencies />
+  <Assets><Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true" /></Assets>
+</PackageManifest>"""
+    types = """<?xml version="1.0" encoding="utf-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="json" ContentType="application/json" />
+  <Default Extension="js" ContentType="application/javascript" />
+  <Default Extension="vsixmanifest" ContentType="text/xml" />
+</Types>"""
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        files = {"[Content_Types].xml": types, "extension.vsixmanifest": manifest,
+                 "extension/package.json": package, "extension/extension.js": (source / "extension.js").read_bytes()}
+        for name, data in files.items():
+            archive.writestr(zipfile.ZipInfo(name), data, compress_type=zipfile.ZIP_DEFLATED)
+    return output.getvalue()
+
+
+def dock_loader(prefix, dock):
+    return f"""#!{prefix}/bin/bash
+set -euo pipefail
+export CLASSPATH={shlex.quote(str(dock / "loader.apk"))}
+unset LD_LIBRARY_PATH LD_PRELOAD TERMUX_X11_LOADER_OVERRIDE_CMDENTRYPOINT_CLASS
+exec /system/bin/app_process -Xnoimage-dex2oat / --nice-name="termux-x11 {DOCK_PACKAGE} $*" com.termux.x11.Loader "$@"
+"""
+
+
+def install_dock(prefix, home, root, profile, dock, script, loader, writer):
+    wrapper = dock_loader(prefix, dock)
+    run([prefix / "bin/bash", "-n"], script=wrapper, timeout=8)
+    guest_base = f"/home/{profile['user']}/{PROFILE_DIR}"
+    base = root / guest_base.lstrip("/")
+    vsix = scoped_path(base / "tablet-vscode-windows.vsix", base)
+    writer.put(vsix, dock_extension(), 0o600)
+    code = guest_env(prefix, profile, guest_base) + ["/usr/bin/code", "--no-sandbox",
+            "--user-data-dir", f"{guest_base}/code", "--extensions-dir", f"{guest_base}/extensions"]
+    run(code + ["--install-extension", f"{guest_base}/{vsix.name}", "--force"], timeout=90)
+    if DOCK_EXTENSION not in extension_registry(base):
+        raise ValueError("VS Code did not register the Android windows extension")
+    writer.put(scoped_path(dock / "loader.apk", home), loader, 0o400)
+    writer.put(scoped_path(dock / "x11", home), wrapper, 0o700)
+    writer.put(scoped_path(dock / "dock_titles.py", home),
+               (ASSETS / "standalone-code/dock_titles.py").read_bytes(), 0o600)
+    writer.put(scoped_path(dock / "open", home), script, 0o700)
+
+
 def shortcut(prefix, home, root, profile, writer, args):
-    for executable, package in (
+    dock_file = getattr(args, "dock_loader", None)
+    dependencies = (
         ("bash", "bash"), ("flock", "util-linux"), ("am", "termux-am"),
-        ("proot-distro", "proot-distro"), ("termux-x11", "termux-x11-nightly"), ("xprop", "xorg-xprop"),
-    ):
+        ("proot-distro", "proot-distro"), ("xprop", "xorg-xprop"),
+    )
+    if not dock_file:
+        dependencies += (("termux-x11", "termux-x11-nightly"),)
+    for executable, package in dependencies:
         if not (prefix / "bin" / executable).is_file():
             hint = " Enable the X11 repository with pkg install x11-repo first." if executable in ("termux-x11", "xprop") else ""
             raise ValueError(f"Missing {executable}. Run pkg install {package}.{hint}")
@@ -117,7 +195,20 @@ def shortcut(prefix, home, root, profile, writer, args):
         needed.append("/usr/local/bin/tablet-gpu-run")
     if any(not (root / name.lstrip("/")).is_file() for name in needed):
         raise ValueError("Guest Code or window components are missing. Review desktop-plan with --apps code and desktop-setup.md.")
-    script = render_launcher(prefix, profile, args.display)
+    dock = scoped_path(home / DOCK_HOME, home) if dock_file else None
+    loader = None
+    if dock_file:
+        loader = dock_file.read_bytes()
+        try:
+            with zipfile.ZipFile(io.BytesIO(loader)) as archive:
+                if archive.namelist() != ["classes.dex"] or not archive.read("classes.dex").startswith(b"dex\n"):
+                    raise ValueError("Use the generated vscode-loader.apk from build_vscode_host.py")
+        except zipfile.BadZipFile as error:
+            raise ValueError("Use the generated vscode-loader.apk from build_vscode_host.py") from error
+        installed = run(["/system/bin/cmd", "package", "path", DOCK_PACKAGE], check=False, timeout=8)
+        if installed.returncode or not installed.stdout.startswith("package:"):
+            raise ValueError("Install the signed vscode-host.apk from the same build first")
+    script = render_launcher(prefix, profile, args.display, dock)
     icon = (root / "usr/share/code/resources/app/resources/linux/code.png").read_bytes()
     if not icon.startswith(b"\x89PNG\r\n\x1a\n"):
         raise ValueError("The installed Code icon is invalid")
@@ -133,12 +224,21 @@ def shortcut(prefix, home, root, profile, writer, args):
     if args.apply:
         run([prefix / "bin/bash", "-n"], script=script, timeout=8)
         lock = scoped_path(home / STATE_DIR / "session.lock", home)
-        with exclusive_lock(lock, "Close the standalone Code window normally before updating its shortcut"):
+        dock_lock = scoped_path(home / STATE_DIR / "dock-settings.lock", home)
+        busy = "Close the standalone Code windows normally before updating their launcher"
+        with exclusive_lock(lock, busy), exclusive_lock(dock_lock, busy):
             for directory in (shortcuts, entry.parent, image.parent):
                 directory.mkdir(mode=0o700, exist_ok=True)
+            if dock:
+                install_dock(prefix, home, root, profile, dock, script, loader, writer)
+                am = shlex.quote(str(prefix / "bin/am"))
+                script = (f"#!{prefix}/bin/bash\n# Managed by standalone_code.py\n"
+                          f"exec {am} start --user 0 -a android.intent.action.MAIN "
+                          f"-n {DOCK_PACKAGE}/com.termux.x11.CodeLauncher\n")
             writer.put(image, icon, 0o600)
             writer.put(entry, script, 0o700)
     return {"shortcut": str(entry), "display": ":" + str(int(args.display[1:])),
+            "android_package": DOCK_PACKAGE if dock else "com.termux.x11",
             "graphics": "freedreno-kgsl" if profile["gpu_backend"] == "freedreno-kgsl" else "software"}
 
 
@@ -358,6 +458,7 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="action", required=True)
     launch = sub.add_parser("launcher", help="create the Termux:Widget script for the independent window")
     launch.add_argument("--display", default=":2")
+    launch.add_argument("--dock-loader", type=Path, help="select a signed VS Code Android host and its matching loader")
     plugins = sub.add_parser("extensions", help="install selected extensions in the isolated Code profile")
     plugins.add_argument("ids", nargs="*")
     browser = sub.add_parser("android-chrome", help="send loopback HTTP preview URLs to Android Chrome")

@@ -1,0 +1,308 @@
+diff --git a/gradle/wrapper/gradle-wrapper.properties b/gradle/wrapper/gradle-wrapper.properties
+index 5da4a04..0bb71f3 100644
+--- a/gradle/wrapper/gradle-wrapper.properties
++++ b/gradle/wrapper/gradle-wrapper.properties
+@@ -1,6 +1,6 @@
+ distributionBase=GRADLE_USER_HOME
+ distributionPath=wrapper/dists
+-distributionSha256Sum=7aaba33a6aa7d03e0c7890869da1f1b5e1765c4d71db981a9d5db5cc47a10a6d
+-distributionUrl=https\://services.gradle.org/distributions/gradle-9.9.0-all.zip
++distributionSha256Sum=0b00b0ffe07c4d4789c12d4935a44a7057d55774b7540bd4a3f76f336deb177a
++distributionUrl=https\://services.gradle.org/distributions/gradle-9.9.0-bin.zip
+ networkTimeout=10000
+ retries=0
+diff --git a/lorie-app/build.gradle b/lorie-app/build.gradle
+index b807268..11be7af 100644
+--- a/lorie-app/build.gradle
++++ b/lorie-app/build.gradle
+@@ -25,11 +25,10 @@ android {
+     namespace 'com.termux.x11.app'
+     compileSdkVersion 34
+-    ndkVersion termuxX11NdkVersion
+     defaultConfig {
+-        applicationId "com.termux.x11"
++        applicationId "com.scisaga.tabletvscode"
+         minSdkVersion 24
+         targetSdkVersion 34
+-        versionCode 15
+-        versionName termuxX11VersionName
++        versionCode 6
++        versionName "1.4.1"
+     }
+ 
+@@ -55,5 +54,5 @@ android {
+     compileOptions.targetCompatibility JavaVersion.VERSION_1_9
+     buildTypes.configureEach {
+-        signingConfig signingConfigs.debug
++        signingConfig null
+         minifyEnabled true
+         shrinkResources true
+diff --git a/lorie-app/src/main/AndroidManifest.xml b/lorie-app/src/main/AndroidManifest.xml
+index 6d18a13..b20c330 100644
+--- a/lorie-app/src/main/AndroidManifest.xml
++++ b/lorie-app/src/main/AndroidManifest.xml
+@@ -1,7 +1,7 @@
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+     <application
+-        android:icon="@mipmap/lorie_ic_launcher"
+-        android:label="@string/lorie_app_name"
+-        android:roundIcon="@mipmap/lorie_ic_launcher_round"
++        android:icon="@drawable/vscode_icon"
++        android:label="@string/vscode_app_name"
++        android:roundIcon="@drawable/vscode_icon"
+         android:supportsRtl="true"
+         android:theme="@style/LorieAppTheme"
+diff --git a/lorie/build.gradle b/lorie/build.gradle
+index 9e90d4a..5352192 100644
+--- a/lorie/build.gradle
++++ b/lorie/build.gradle
+@@ -26,5 +26,4 @@ android {
+     //noinspection GrDeprecatedAPIUsage
+     compileSdkVersion 34
+-    ndkVersion termuxX11NdkVersion
+     defaultConfig {
+         minSdkVersion 24
+@@ -39,5 +38,5 @@ android {
+     compileOptions.sourceCompatibility JavaVersion.VERSION_1_9
+     compileOptions.targetCompatibility JavaVersion.VERSION_1_9
+-    externalNativeBuild.cmake.path "src/main/cpp/CMakeLists.txt"
++    sourceSets.main.jniLibs.srcDir rootProject.file("vscode-jni")
+     packagingOptions.jniLibs.useLegacyPackaging false
+     buildFeatures.aidl true
+@@ -125,7 +124,2 @@ afterEvaluate {
+     preBuild.dependsOn generateShortcuts
+ }
+-
+-// The release variant reuses the native libraries built for debug (they are built with RelWithDebInfo anyway).
+-android.sourceSets.release.jniLibs.srcDir layout.buildDirectory.dir('intermediates/merged_native_libs/debug/mergeDebugNativeLibs/out/lib').get().asFile
+-tasks.matching { it.name ==~ /(configure|build)CMakeRelWithDebInfo.*/ }.configureEach { enabled = false }
+-tasks.matching { it.name == 'mergeReleaseJniLibFolders' }.configureEach { dependsOn 'mergeDebugNativeLibs' }
+diff --git a/lorie/src/main/AndroidManifest.xml b/lorie/src/main/AndroidManifest.xml
+index 0ad222a..7d5eb50 100644
+--- a/lorie/src/main/AndroidManifest.xml
++++ b/lorie/src/main/AndroidManifest.xml
+@@ -9,14 +9,32 @@
+     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+ 
++    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
++
+     <application
+         android:name=".LorieApp"
+         android:allowBackup="false"
+         tools:ignore="DataExtractionRules,GoogleAppIndexingWarning">
++        <property
++            android:name="android.window.PROPERTY_SUPPORTS_MULTI_INSTANCE_SYSTEM_UI"
++            android:value="true" />
++        <activity
++            android:name=".CodeLauncher"
++            android:label="@string/vscode_app_name"
++            android:theme="@android:style/Theme.DeviceDefault.Dialog.NoActionBar"
++            android:excludeFromRecents="true"
++            android:exported="true"
++            android:resizeableActivity="true">
++            <intent-filter>
++                <action android:name="android.intent.action.MAIN" />
++                <category android:name="android.intent.category.LAUNCHER" />
++            </intent-filter>
++            <meta-data android:name="android.app.shortcuts" android:resource="@xml/vscode" />
++        </activity>
+         <activity
+             android:name=".MainActivity"
+             android:taskAffinity=".MainActivity"
+-            android:icon="@mipmap/lorie_ic_launcher"
+-            android:roundIcon="@mipmap/lorie_ic_launcher_round"
+-            android:label="@string/lorie_app_name"
++            android:icon="@drawable/vscode_icon"
++            android:roundIcon="@drawable/vscode_icon"
++            android:label="@string/vscode_app_name"
+             android:theme="@style/LorieAppTheme"
+             android:launchMode="singleInstance"
+@@ -26,12 +44,4 @@
+             android:windowSoftInputMode="stateHidden|adjustNothing"
+             android:exported="true">
+-            <intent-filter>
+-                <action android:name="android.intent.action.MAIN" />
+-                <category android:name="android.intent.category.LAUNCHER" />
+-            </intent-filter>
+-            <intent-filter>
+-                <category android:name="android.intent.category.SECONDARY_HOME" />
+-            </intent-filter>
+-            <meta-data android:name="android.app.shortcuts" android:resource="@xml/lorie_shortcuts" />
+         </activity>
+         <activity
+@@ -86,4 +96,6 @@
+                 <action android:name="com.termux.x11.ACTION_PREFERENCES_CHANGED" />
+                 <action android:name="com.termux.x11.ACTION_CUSTOM" />
++                <action android:name="com.scisaga.tabletvscode.WINDOW_TITLE" />
++                <action android:name="com.scisaga.tabletvscode.NEW_WINDOW_REQUEST" />
+             </intent-filter>
+         </receiver>
+diff --git a/lorie/src/main/java/com/termux/x11/LorieApp.java b/lorie/src/main/java/com/termux/x11/LorieApp.java
+index 775026d..a9039b8 100644
+--- a/lorie/src/main/java/com/termux/x11/LorieApp.java
++++ b/lorie/src/main/java/com/termux/x11/LorieApp.java
+@@ -83,5 +83,5 @@ public class LorieApp extends Application {
+         // The parts of the notification that don't depend on preferences, built once and reused as a template.
+         baseNotification = new NotificationCompat.Builder(this, channelId)
+-                .setContentTitle("Termux:X11")
++                .setContentTitle(getString(R.string.vscode_app_name))
+                 .setSmallIcon(R.drawable.ic_x11_icon)
+                 .setContentText(getResources().getText(R.string.lorie_notification_content_text))
+@@ -128,4 +128,9 @@ public class LorieApp extends Application {
+     public void onBroadcastReceive(Intent intent) {
+         String action = intent.getAction();
++        if (CodeLauncher.ACTION_TITLE.equals(action)) {
++            CodeLauncher.updateTaskTitle(this, intent.getStringExtra(CmdEntryPoint.EXTRA_DOCUMENT_TAG),
++                    intent.getStringExtra("title"), intent.getBooleanExtra("editor_title", false));
++            return;
++        }
+         String extraTag = ACTION_START.equals(action) || MainActivity.ACTION_STOP.equals(action) || MainActivity.ACTION_CUSTOM.equals(action)
+                 ? intent.getStringExtra(CmdEntryPoint.EXTRA_DOCUMENT_TAG) : null;
+@@ -158,5 +163,5 @@ public class LorieApp extends Application {
+                             IBinder deadBinder = binderRef.get();
+                             if (deadBinder != null)
+-                                onConnectionDied(tag, deadBinder);
++                                MainActivity.handler.post(() -> onConnectionDied(tag, deadBinder));
+                         }, 0);
+                     }
+@@ -176,6 +181,7 @@ public class LorieApp extends Application {
+             }
+             case MainActivity.ACTION_STOP:
++                CodeLauncher.clearTaskTitle(this, tag);
+                 if (activity != null)
+-                    activity.finishAffinity();
++                    activity.finishAndRemoveTask();
+                 break;
+             case ACTION_PREFERENCES_CHANGED:
+@@ -207,4 +213,9 @@ public class LorieApp extends Application {
+         @Override
+         public void onReceive(Context context, Intent intent) {
++            if (CodeLauncher.ACTION_NEW_REQUEST.equals(intent.getAction())) {
++                if (CodeLauncher.requestNewWindow(context, intent) && isOrderedBroadcast())
++                    setResultCode(android.app.Activity.RESULT_OK);
++                return;
++            }
+             ((LorieApp) context.getApplicationContext()).onBroadcastReceive(intent);
+         }
+diff --git a/lorie/src/main/java/com/termux/x11/MainActivity.java b/lorie/src/main/java/com/termux/x11/MainActivity.java
+index e18c186..6bf5a27 100644
+--- a/lorie/src/main/java/com/termux/x11/MainActivity.java
++++ b/lorie/src/main/java/com/termux/x11/MainActivity.java
+@@ -105,4 +105,5 @@ public class MainActivity extends AppCompatActivity {
+     private boolean externalKeyboardConnected = false;
+     private View.OnKeyListener mLorieKeyListener;
++    private boolean newWindowKeyPressed;
+     private boolean filterOutWinKey = false;
+     boolean useTermuxEKBarBehaviour = false;
+@@ -229,5 +230,5 @@ public class MainActivity extends AppCompatActivity {
+ 
+     /** ActivityOptions requesting freeform windowing mode. */
+-    private static Bundle freeformActivityOptions() {
++    static Bundle freeformActivityOptions() {
+         ActivityOptions opts = ActivityOptions.makeBasic();
+         nativeSetLaunchWindowingModeFreeform(opts);
+@@ -311,4 +312,5 @@ public class MainActivity extends AppCompatActivity {
+ 
+         instances.put(tag, new WeakReference<>(this));
++        CodeLauncher.initializeTaskTitle(this);
+ 
+         prefs = app.getPrefs(this);
+@@ -335,4 +337,17 @@ public class MainActivity extends AppCompatActivity {
+         mInputHandler = new TouchInputHandler(this, new InputEventSender(this, lorieView));
+         mLorieKeyListener = (v, k, e) -> {
++            if (k == KeyEvent.KEYCODE_N && CodeLauncher.isWindowTag(tag)) {
++                if (e.getAction() == KeyEvent.ACTION_DOWN) {
++                    if (e.getRepeatCount() == 0)
++                        newWindowKeyPressed = e.hasModifiers(KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON);
++                    if (newWindowKeyPressed)
++                        return true;
++                } else if (e.getAction() == KeyEvent.ACTION_UP && newWindowKeyPressed) {
++                    newWindowKeyPressed = false;
++                    if (!e.isCanceled())
++                        CodeLauncher.openNewWindow(this);
++                    return true;
++                }
++            }
+             InputDevice dev = e.getDevice();
+             boolean result = mInputHandler.sendKeyEvent(e);
+@@ -421,4 +436,5 @@ public class MainActivity extends AppCompatActivity {
+     @Override
+     protected void onDestroy() {
++        handler.removeCallbacks(connectRetry);
+         handler.removeCallbacks(screenIdleTimeoutCheck);
+         handler.removeCallbacks(serverWatchdog);
+@@ -760,4 +776,6 @@ public class MainActivity extends AppCompatActivity {
+ 
+     boolean tryConnect() {
++        if (isFinishing() || isDestroyed())
++            return false;
+         if (getLorieView().connected()) {
+             handler.removeCallbacks(connectRetry);
+@@ -1295,4 +1313,6 @@ public class MainActivity extends AppCompatActivity {
+     void clientConnectedStateChanged() {
+         runOnUiThread(()-> {
++            if (isFinishing() || isDestroyed())
++                return;
+             boolean connected = getLorieView().connected();
+             lastServerHeartbeat = SystemClock.uptimeMillis();
+@@ -1315,7 +1335,7 @@ public class MainActivity extends AppCompatActivity {
+             getLorieView().setVisibility(connected?View.VISIBLE:View.INVISIBLE);
+ 
+-            // We should recover connection in the case if file descriptor for some reason was broken...
++            // Retry after the current callback returns. A connection attempt also reports its state.
+             if (!connected)
+-                tryConnect();
++                scheduleConnect();
+             else
+                 getLorieView().setPointerIcon(PointerIcon.getSystemIcon(this, PointerIcon.TYPE_NULL));
+diff --git a/shell-loader/build.gradle b/shell-loader/build.gradle
+index 5ff9628..7c424af 100755
+--- a/shell-loader/build.gradle
++++ b/shell-loader/build.gradle
+@@ -26,9 +26,7 @@ if (!gradle.startParameter.taskNames.isEmpty())
+ configurations.matching { it.name ==~ /.*(Compile|Runtime)Classpath/ }.configureEach { exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib" }
+ 
+-def signingConfig = project(':lorie-app').android.signingConfigs.debug
+-def keyStore = java.security.KeyStore.getInstance(java.security.KeyStore.getDefaultType())
+-keyStore.load(new FileInputStream(signingConfig.storeFile), signingConfig.keyPassword.toCharArray())
++def signingCertificate = rootProject.file("vscode-signing-cert.der")
+ 
+-ext.targetApplicationId = "com.termux.x11"
++ext.targetApplicationId = "com.scisaga.tabletvscode"
+ ext.embeddedApplicationId = "com.termux"
+ 
+@@ -36,5 +34,5 @@ android.defaultConfig.buildConfigField "String", "APPLICATION_ID", "\"$targetApp
+ android.defaultConfig.buildConfigField "String", "EMBEDDED_APPLICATION_ID", "\"$embeddedApplicationId\""
+ android.defaultConfig.buildConfigField "String", "logTag", "\"Termux:X11 loader\""
+-android.defaultConfig.buildConfigField "int", "SIGNATURE", String.valueOf(Arrays.hashCode(keyStore.getCertificate(signingConfig.keyAlias).getEncoded()))
++android.defaultConfig.buildConfigField "String", "SIGNER_SHA256", '"' + java.security.MessageDigest.getInstance("SHA-256").digest(signingCertificate.bytes).encodeBase64().toString() + '"'
+ android.defaultConfig.buildConfigField "String", "CLASS_ID", "\"com.termux.x11.CmdEntryPoint\""
+ android.defaultConfig.buildConfigField "String", "packageNotInstalledErrorText",
+@@ -45,4 +43,2 @@ android.defaultConfig.buildConfigField "String", "packageSignatureMismatchErrorT
+         "\"Signature verification of target application $targetApplicationId failed.\\nPlease, reinstall both termux-x11 package and Termux:X11 application from the same source\""
+ android.defaultConfig.buildConfigField "String", "COMMIT", "\"" + ("git rev-parse HEAD\n".execute().getText().trim() ?: (System.getenv('CURRENT_COMMIT') ?: "NO_COMMIT")) + "\""
+-
+-apply from: 'companion-package.gradle'
+diff --git a/shell-loader/src/main/java/com/termux/x11/Loader.java b/shell-loader/src/main/java/com/termux/x11/Loader.java
+index e9e5795..d73d7ef 100755
+--- a/shell-loader/src/main/java/com/termux/x11/Loader.java
++++ b/shell-loader/src/main/java/com/termux/x11/Loader.java
+@@ -21,6 +21,16 @@ public class Loader {
+                     android.app.ActivityThread.getPackageManager().getPackageInfo(BuildConfig.APPLICATION_ID, android.content.pm.PackageManager.GET_SIGNATURES, 0) :
+                     android.app.ActivityThread.getPackageManager().getPackageInfo(BuildConfig.APPLICATION_ID, (long) android.content.pm.PackageManager.GET_SIGNATURES, 0);
+-            assert targetInfo != null : BuildConfig.packageNotInstalledErrorText;
+-            assert targetInfo.signatures.length == 1 && BuildConfig.SIGNATURE == targetInfo.signatures[0].hashCode() : BuildConfig.packageSignatureMismatchErrorText;
++            if (targetInfo == null) {
++                throw new IllegalStateException(BuildConfig.packageNotInstalledErrorText);
++            }
++            if (targetInfo.signatures == null || targetInfo.signatures.length != 1) {
++                throw new SecurityException(BuildConfig.packageSignatureMismatchErrorText);
++            }
++            byte[] expected = android.util.Base64.decode(BuildConfig.SIGNER_SHA256, android.util.Base64.DEFAULT);
++            byte[] actual = java.security.MessageDigest.getInstance("SHA-256")
++                    .digest(targetInfo.signatures[0].toByteArray());
++            if (!java.security.MessageDigest.isEqual(expected, actual)) {
++                throw new SecurityException(BuildConfig.packageSignatureMismatchErrorText);
++            }
+ 
+             android.util.Log.i(BuildConfig.logTag, "loading " + targetInfo.applicationInfo.sourceDir + "::" + cls + "::main of " + targetInfo.packageName + " application (commit " + BuildConfig.COMMIT + ")");

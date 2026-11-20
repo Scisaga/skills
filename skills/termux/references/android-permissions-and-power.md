@@ -67,6 +67,8 @@ adb -s SERIAL shell getprop persist.sys.fflag.override.settings_enable_monitor_p
 
 提高 cap 与禁用监控是两种策略。实际 cap=128 不表示 Phantom 监控已停用；null/空标志也不能证明已关闭。signal 9 还可能来自 LMKD/内存压力、厂商后台策略或手动终止，须结合相同时段 ActivityManager/lmkd 日志确定原因。
 
+验收独立 VS Code 新窗口、浏览器隔离实例等额外负载时，同时盘点正在运行的 Linux 会话。Y900 曾在 Dock 只显示一个窗口时仍有多个独立编辑器，启动新的编辑器后系统回收了先前会话和 SSH。按当前会话数及有效上限安排测试。 [独立 VS Code 验收与恢复](standalone-code.md#多窗口验收与恢复)
+
 若用户选择提高上限，先保存原值，采用适度上限并回读 `dumpsys activity settings`，不默认写入最大整数。例如已授权时：
 
 ```bash
@@ -176,6 +178,8 @@ DeviceIdle 白名单、AppOps allow、standby bucket=5 不代表 ZUI 已允许�
 先分清用途：本机 Linux 桌面不依赖 SSH。若用户只要求本机桌面，不把 SSH 开机自启设为桌面验收的前提；使用正式 Linux 桌面入口按需启动服务。需要无人值守 SSH 时，另验证 Termux:Boot 自启动；需要电量插件自动冷启动时，另验证 Termux → Termux:API 的关联启动。
 
 诊断仅筛选相关包的 system log 和 `dumpsys activity broadcasts`，不要保存无关系统日志。通过 ZUI 自身设置管理实际包级开关，不改全局省电策略。安全中心首次启动若要求接受隐私政策并允许联网，这是一个额外用户选择，不能把配置自启动当作已经同意该条款。只做了手动打开 Termux/API 的恢复时，要明确报告，不能计为开机自动恢复通过。
+
+对“关联启动应用提示”，先根据屏幕确认发起方和目标，再匹配同一时段的 `ZuiSecurityService` 关联状态和 `ActivityTaskManager` 启动记录。Y900 的 Termux → VSCode 曾在覆盖安装宿主后再次询问，旧 Widget 还可能受应用列表访问策略影响。独立 VS Code 的日常入口直接打开 Android 宿主，由宿主创建新窗口。关联启动与 Termux `RUN_COMMAND` 的授予分别核对。 [VS Code 启动链路](standalone-code.md#关联启动提示)
 
 ## Wi-Fi 锁限制
 

@@ -2,6 +2,8 @@
 
 ## 安装主屏入口
 
+通用主屏快捷方式使用 Termux:Widget。Y900 需要 Dock 原生图标和独立窗口时，使用下文的 [Android 宿主](#y900-的-dock-图标和独立窗口)。
+
 复用现有 Debian 用户和官方 Linux VS Code。需要匹配的官方 Termux:X11 APK 与 native CLI，两端都须支持多窗口 `-tag`。Termux:Widget 与 Termux 使用同一签名来源。 [桌面安装](desktop-setup.md) · [Termux:X11 多窗口](https://github.com/termux/termux-x11/blob/c5d0920/README.md#running-multiple-displays-as-separate-windows) · [Termux:Widget 安装](https://github.com/termux/termux-widget#setup-instructions)
 
 在原生 Termux 中从仓库根目录运行。先查看预览，再使用 `--apply` 写入 Widget 任务与图标。默认使用 `:2`，需要其他显示号时两次命令均传入同一个空闲的 `--display`。
@@ -16,6 +18,77 @@ bash skills/termux/scripts/run.sh standalone-code launcher --apply
 小米平板 7 的 HyperOS 若拒绝固定图标，在 Termux:Widget 的「其他权限」中临时允许「桌面快捷方式」。完成固定后可恢复该权限并再点一次图标验证。点击后若编辑器已启动但设备仍停在主屏，检查 `ActivityTaskManager` 的后台启动记录。小米平板 7 上要让 Termux 从后台显示 X11 窗口，需在 Termux 的应用权限中允许「后台弹出界面」和「显示在其他应用上层」。若 HyperOS 以小窗打开编辑器，可下拉小窗底部横条切到全屏。
 
 独立入口启动带 `vscode` 标签的 X11、最小 Xfwm 和 Code 图形进程。重复点击只返回现有窗口。Code 用户设置、扩展和 XDG 目录在 guest 的 `~/.local/share/tablet-vscode`，项目仍用同一 Debian 用户访问。在 Code 文件选择器中可打开 `~/Desktop/skills`，也可访问已授予 Termux 存储权限的 `/sdcard/Download` 和 `/sdcard/Documents`。如需启用已有 Android 保护的 GNOME Keyring，按 [桌面凭据配置](desktop-credentials.md) 验证解锁。登录或同步由当前用户在隔离配置中完成。 [VS Code 配置隔离](https://code.visualstudio.com/docs/configure/command-line#_isolating-vs-code-instances)
+
+## Y900 的 Dock 图标和独立窗口
+
+### 主屏入口和窗口切换
+
+从应用抽屉长按 **VSCode**（`com.scisaga.tabletvscode`）并选择**添加到桌面**。可从同一菜单固定到「无限工作台」Dock。**文件 → 新建窗口**和 **Ctrl+Shift+N** 启动各自的 X11 会话与 Android 任务。ZUI 将同包任务归到一个 Dock 图标，点击可选窗口缩略图，长按后可从 **VSCode 窗口**按项目名切换。 [Termux:X11 多窗口](https://github.com/termux/termux-x11/blob/c5d0920/README.md#running-multiple-displays-as-separate-windows)
+
+点主屏图标时，单窗口直接回到原窗口，多个窗口显示项目列表。Y900 旧版宿主调用 `AppTask.moveToFront()` 后曾停在桌面。从宿主 1.3 起，使用原 `vscode-N` 标签启动 `MainActivityTagged`，按 `documentLaunchMode="intoExisting"` 匹配已有任务。复验时核对切换前后的任务 ID 与 Linux 编辑器 PID。 [Android 文档任务](https://developer.android.com/guide/components/activities/recents.html)
+
+Dock 与缩略图复用白底蓝色应用图标。应用名为 **VSCode**。宿主读取 X11 的 `_NET_WM_NAME`，去掉 Linux 标题末尾重复的产品名，再由 ZUI 显示应用名与编辑器标题。按工作区启动时可先提供项目名，恢复会话时可先用保存的标题。若 `_NET_WM_NAME` 已更新而卡片仍显示旧字样，核对 ZUI 的卡片缓存。重新挂接同一标签后查看卡片，并验证 Linux 编辑器 PID 延续。项目列表显示单独维护的项目名，长标题可能被 ZUI 省略。
+
+### 关联启动提示
+
+弹窗出现时先查看屏幕上的发起应用和目标应用，再在同一次操作的系统日志中查 `ZuiSecurityService`、`ZuiAutoRunManager` 与 `ActivityTaskManager`。本例的旧 Widget 和旧版新建窗口命令会由 Termux 跨应用启动 VSCode。Y900 上曾在宿主升级后重新询问。旧 Widget 即使获准关联启动，也曾被“读取已安装应用列表”策略静默拦下。Y900 的日常入口直接使用应用抽屉里的 **VSCode**，取代旧的 Widget 图标。 [Lenovo ZUI 权限诊断](android-permissions-and-power.md#lenovo-zui-的自启动与关联启动)
+
+宿主 1.4.1 在当前窗口接管 **Ctrl+Shift+N**，通过 Termux 的 `RUN_COMMAND` 启动 X11。Termux 回报就绪后，宿主自行创建 Android 任务并回送接收确认。Android 14 及以上的现行 TermuxAm 广播在发送后立即返回，启动脚本应等待这次请求的确认再继续打开 Code。若任务短暂出现后关闭，从原生 Termux 检查该槽位的 `last.log` 和就绪确认，复测时同时看 Activity 发起包、实际出现的编辑器及 ZUI 屏幕。升级宿主和 launcher 后，旧编辑器会话里的快捷键立即走新版路径，菜单命令在该会话下次正常启动时加载新版扩展。 [Termux RUN_COMMAND](https://github.com/termux/termux-app/wiki/RUN_COMMAND-Intent) · [TermuxAm 广播实现](https://github.com/termux/TermuxAm/blob/master/app/src/main/java/com/termux/termuxam/Am.java)
+
+### 构建与更新
+
+在构建主机安装标准 JDK 21 和 Android SDK 的 `platforms;android-34`、`build-tools;36.0.0`。从已安装的 Linux Code 取得 `/usr/share/code/resources/app/resources/linux/code.png`。构建器只接受匹配固定源码的官方 APK，校验摘要后复用原 ARM64 渲染库。宿主和 loader 使用单独的签名，构建产物和签名目录保存在仓库外。 [Android SDK 工具](https://developer.android.com/tools/sdkmanager)
+
+```bash
+python skills/termux/scripts/build_vscode_host.py --android-sdk /path/to/sdk \
+  --java-home /path/to/jdk --upstream-apk /path/to/official-x11.apk \
+  --code-icon /path/to/code.png --output /private/vscode-host
+adb -s SERIAL install -r /private/vscode-host/vscode-host.apk
+```
+
+通过现有设备通道将同一次构建的 `vscode-loader.apk` 放到 Termux 可以读取的位置。用构建产物 `manifest.json` 核对 APK 摘要与签名，保留同一宿主签名用于覆盖安装。首次使用宿主时，按用户授权配置 Termux 的 `allow-external-apps`，并在 Android 权限界面授予该宿主 `RUN_COMMAND`。launcher 更新会校验会话锁，按安装器提示先保存并正常退出仍在运行的独立编辑器。 [Termux RUN_COMMAND 设置](https://github.com/termux/termux-app/wiki/RUN_COMMAND-Intent)
+
+```bash
+bash skills/termux/scripts/run.sh standalone-code launcher --dock-loader /path/to/vscode-loader.apk
+bash skills/termux/scripts/run.sh standalone-code launcher --dock-loader /path/to/vscode-loader.apk --apply
+```
+
+主窗口沿用隔离配置的 `code/`。额外窗口首次创建时复制主窗口的设置和快捷键，并将各自的编辑器状态与登录存到 `windows/<编号>/code/`。同一 Debian 用户和已安装的扩展目录供这些窗口使用。仅覆盖安装 Android 宿主时，先记录现有标签、Linux PID 与窗口标题，再把失联的 Android 界面挂回原 X11 会话，核对原项目与编辑状态。
+
+以下命令用于重新挂接已确认仍在运行的会话，将 `vscode-N` 换成原标签。
+
+```bash
+adb -s SERIAL shell am start -W \
+  -n com.scisaga.tabletvscode/com.termux.x11.MainActivity -d vscode-N
+```
+
+### 多窗口验收与恢复
+
+先按 [子进程限制](android-permissions-and-power.md#phantom-process-killer--子进程限制) 回读有效上限和当前进程情况。将 Android 最近任务与原生 Termux 已占用的 `dock/<编号>/session.lock` 对照，并用 X11 窗口的 `_NET_WM_PID` 验证实际会话。关掉 ZUI 的缩略图可能只移除 Android 任务，独立 X11 和编辑器仍在运行。接近上限时，可先用已有会话检查切换，把新建测试安排在有余量时。
+
+```bash
+# 主机，使用当前已连接的设备
+bash skills/termux/scripts/run.sh host-doctor --serial SERIAL
+adb -s SERIAL shell dumpsys activity recents | rg 'dat=vscode-[0-9]+'
+# 在提供 PhantomProcessRecord 的设备上查看当时的记录数
+adb -s SERIAL shell dumpsys activity processes | rg -c 'PhantomProcessRecord \{'
+
+# 原生 Termux，查看仍被会话持有的锁
+for lease in "$HOME/.local/state/tablet-desktop/vscode-standalone/dock/"*/session.lock; do
+  [[ -f "$lease" ]] || continue
+  if ! flock -n "$lease" true; then
+    printf '%s\n' "$lease"
+  fi
+done
+```
+
+从主屏实测单窗口返回，再按本次改动复测 **Ctrl+Shift+N**、**文件 → 新建窗口**和项目列表切换。核对每个 Android 任务的标签、实际出现的 Linux 窗口，以及 Dock 上的图标与标题。通过 Code 的正常退出关闭本次测试窗口，然后核对它的 X11 已结束、会话锁已释放、Android 任务已移除，以及原会话仍可操作。记录每条已测入口与未测项。
+
+若新建时窗口或 SSH 同时消失，查看同一时段 `ActivityManager` 的 `Trimming phantom processes` 日志，逐个确认回收的 PID。正常结束本次测试窗口后，用原 profile 和原槽位恢复保存的工作区。可在该 profile 的 `User/globalStorage/storage.json` 查 `windowsState.lastActiveWindow`。主屏入口可能先返回其他存活会话，按实际工作区确认恢复目标。
+
+如旧 X11 锁或 socket 阻止复用显示号，先在 native 环境核对会话锁已释放、记录的 Xserver 已退出、socket 已无监听，再备份移走这两个已确认的遗留记录。SSH 同时被回收时，可沿已有 USB/ADB 打开临时 Termux 终端，由已部署的 runit 恢复服务，再通过 `sv status "$PREFIX/var/service/sshd"` 和原通道复核。分别记录重新打开的工作区和仍待确认的未保存编辑。
+
+需要回到官方 X11 入口时，先正常结束窗口，再执行不带 `--dock-loader` 的 `launcher --apply`。
 
 ## 安装所需扩展
 

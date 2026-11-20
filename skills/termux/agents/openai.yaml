@@ -4,4 +4,4 @@ interface:
   icon_small: "./assets/logo.svg"
   icon_large: "./assets/logo.svg"
   brand_color: "#3B82F6"
-  default_prompt: "使用 $scisaga:termux 处理当前 Android/Termux/Xfce 任务：先区分建议与执行，确认当前设备并沿用用户已有通道；Xfce 内部问题直接在当前 Xfce 界面或终端处理，原生服务才使用 Termux，Android 设置使用 ADB/系统界面；遵守用户对环境和通道的纠正，不为 USB 任务额外尝试 SSH；保留工作，按实际输入路径和控件状态验证，不以配置写入成功代替功能正常。"
+  default_prompt: "使用 $scisaga:termux 处理当前 Android/Termux/Xfce 任务：先区分建议与执行，确认当前设备并沿用用户已有通道；Xfce 内部问题直接在当前 Xfce 界面或终端处理，原生服务才使用 Termux，Android 设置使用 ADB/系统界面；遵守用户对环境和通道的纠正，不为 USB 任务额外尝试 SSH；保留工作，按实际输入路径和控件状态验证，不以配置写入成功代替功能正常。实测独立 VS Code 新窗口前，核对 Android 任务、Linux 会话和子进程余量。"

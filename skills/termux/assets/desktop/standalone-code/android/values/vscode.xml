@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="vscode_app_name">VSCode</string>
+    <string name="vscode_windows">VSCode windows</string>
+    <string name="vscode_new_window">New window</string>
+    <string name="vscode_launch_failed">Could not start VSCode. Check the standalone Code setup and Termux permission.</string>
+</resources>

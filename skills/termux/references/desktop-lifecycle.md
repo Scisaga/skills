@@ -36,6 +36,8 @@ desktop manage --terminal
 
 强制结束位于 Android 管理器中，需用户明确确认并携带当前会话 UUID。CLI 有 `force-stop --confirmed --session UUID --json` 诊断路径；不能由自动恢复逻辑冒充确认。
 
+独立 VS Code 使用自己的 X11 会话。ZUI 移除窗口缩略图可只结束 Android 界面，Linux 应用继续运行。要结束该会话，在编辑器内正常退出并处理保存提示，再检查 X11 已结束且会话锁已释放。要返回仍在运行的会话，按原标签重新挂接 Android 窗口。 [独立 VS Code 多窗口验收与恢复](standalone-code.md#多窗口验收与恢复)
+
 ## 防止遗留进程占满 CPU
 
 本次会话发现过早期脱离 PRoot 的进程持续占满单核；未唯一证明最初触发原因。预防方案是受控会话与身份记录，不是定时全局 pkill。

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="vscode-windows"
+        android:enabled="true"
+        android:icon="@drawable/vscode_icon"
+        android:shortcutShortLabel="@string/vscode_windows">
+        <intent
+            android:action="com.scisaga.tabletvscode.WINDOWS"
+            android:targetPackage="com.scisaga.tabletvscode"
+            android:targetClass="com.termux.x11.CodeLauncher" />
+    </shortcut>
+</shortcuts>

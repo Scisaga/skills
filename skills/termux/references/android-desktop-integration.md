@@ -23,7 +23,7 @@
 
 新部署优先使用这两个正式入口；已有 Widget 快捷方式可保留兼容。不要为了一致图标卸载 Termux:Widget、API 或 Boot。启动器可能给 Widget 图标加来源角标，正式 activity-alias 不依赖该角标。
 
-只打开 VS Code 时，另建固定在主屏的 Widget 快捷方式。使用独立 X11 显示和 VS Code 配置，按 [独立 VS Code 与扩展配置](standalone-code.md) 部署。
+只打开 VS Code 时，可用主屏的 Widget 快捷方式。Y900 选用独立 Android 宿主时，从应用抽屉把 **VSCode** 添加到桌面，或从长按菜单固定到 Dock。两种入口都使用独立 X11 显示和 VS Code 配置，按 [独立 VS Code 与扩展配置](standalone-code.md) 部署。
 
 ## 构建与部署
 
