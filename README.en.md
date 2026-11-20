@@ -20,6 +20,14 @@ Open a skill to find its workflow, commands, and configuration guide. Detailed s
 | <img src="skills/subtitle-matcher/assets/logo.svg" alt="Subtitle Matcher caption bubbles icon" width="64" height="64"> | [`subtitle-matcher`](skills/subtitle-matcher/)<br>Batch subtitle matching | Scan movie and TV directories and find Chinese subtitles from ASSRT, SubHD, and other sources. Rank by release version, download and validate candidates, and compare timing against embedded subtitle tracks. Normalize VLC auto-loading filenames and generate HTML reports with review items and playback links. |
 | <img src="skills/video/assets/logo.svg" alt="Video clapperboard icon" width="64" height="64"> | [`video`](skills/video/)<br>Video tools | Extract keyframes and audio, find existing subtitles or generate SRT through ASR, mux subtitles, and check synchronization. Includes cross-platform FFmpeg installation and online research for movie summaries and reviews. |
 
+### Standalone VS Code on Android
+
+Tap **VS Code** on the Android home screen to open a dedicated editor window. Start Xfce as needed. Both use the same Debian projects, with separate settings and extensions such as Codex for standalone Code. The optional Office Viewer defaults to Office formats only. HTML previews can open in Android Chrome. [Set up standalone VS Code](skills/termux/references/standalone-code.md)
+
+Recorded on a Xiaomi Pad 7. The standalone VS Code workspace shows Explorer, source code, the integrated terminal, and Codex. The terminal runs the subtitle matcher to generate an HTML report. `Ctrl+1` opens the report in a full-screen Android Chrome window with one tab, and `Ctrl+Shift+V` previews the project Markdown in VS Code. [Subtitle matcher](skills/subtitle-matcher/SKILL.md)
+
+<img src="assets/demos/termux-pad7-standalone-vscode.gif" alt="A Xiaomi Pad 7 opens standalone VS Code from the Android home screen and runs the subtitle matcher with Explorer, source code, terminal, and Codex in view, then previews HTML with Ctrl+1 and Markdown with Ctrl+Shift+V" width="1120">
+
 ### Termux device demo
 
 Termux/Xfce workstations have been deployed and tested on both the **Xiaomi Pad 7** and **Lenovo Y900**, covering coding, office apps, media playback, and keyboard/mouse input.
@@ -31,14 +39,6 @@ Recorded on a Xiaomi Pad 7: YouTube (3Blue1Brown) → GitHub → VLC video playb
 [Snake example source](skills/termux/assets/demo/snake.py) · Run `python3 snake.py` inside Debian/Xfce; install `python3-tk` if Tk is missing. Use arrow keys or WASD to move, Space to pause, and R to restart.
 
 The VLC clip comes from [MDN's flower sample video](https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4).
-
-### Standalone VS Code on Android
-
-Tap **VS Code** on the Android home screen to open a dedicated editor window. Start Xfce as needed. Both use the same Debian projects, with separate settings and extensions such as Codex for standalone Code. The optional Office Viewer defaults to Office formats only. HTML previews can open in Android Chrome. [Set up standalone VS Code](skills/termux/references/standalone-code.md)
-
-Recorded on a Xiaomi Pad 7. The standalone VS Code workspace shows Explorer, source code, the integrated terminal, and Codex. The terminal runs the subtitle matcher to generate an HTML report. `Ctrl+1` opens the report in a full-screen Android Chrome window with one tab, and `Ctrl+Shift+V` previews the project Markdown in VS Code. [Subtitle matcher](skills/subtitle-matcher/SKILL.md)
-
-<img src="assets/demos/termux-pad7-standalone-vscode.gif" alt="A Xiaomi Pad 7 opens standalone VS Code from the Android home screen and runs the subtitle matcher with Explorer, source code, terminal, and Codex in view, then previews HTML with Ctrl+1 and Markdown with Ctrl+Shift+V" width="1120">
 
 ## Installation and updates
 

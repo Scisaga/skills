@@ -20,6 +20,14 @@
 | <img src="skills/subtitle-matcher/assets/logo.svg" alt="Subtitle Matcher 字幕气泡图标" width="64" height="64"> | [`subtitle-matcher`](skills/subtitle-matcher/)<br>批量匹配字幕 | 扫描电影、剧集目录，按片源版本从 ASSRT、SubHD 等来源查找中文字幕；评分筛选、下载校验，并用内嵌字幕时间轴辅助比对。规范 VLC 自动加载命名，生成带复查项与播放入口的 HTML 报告。 |
 | <img src="skills/video/assets/logo.svg" alt="Video 场记板图标" width="64" height="64"> | [`video`](skills/video/)<br>视频工具 | 提取关键帧与音频，检索现成字幕或通过 ASR 生成 SRT，封装字幕并检查同步；支持跨平台 FFmpeg 安装，以及联网整理影片简介和评价。 |
 
+### Android 主屏独立 VS Code
+
+点击 Android 主屏的 **VS Code** 快捷方式即可打开独立编辑器窗口。Xfce 按需启动。编辑器复用 Debian 项目目录，单独管理用户设置和 Codex 等扩展。选装 Office Viewer 时默认只关联 Office 格式。HTML 可从编辑器预览到 Android Chrome。 [安装和配置独立 VS Code](skills/termux/references/standalone-code.md)
+
+小米平板 7 实录。独立 VS Code 左侧显示目录树，中间显示源码和下方终端，右侧打开 Codex。终端运行字幕匹配项目生成 HTML 报告。`Ctrl+1` 在全屏 Android Chrome 的单个标签中打开报告，`Ctrl+Shift+V` 在 VS Code 中预览项目 Markdown。 [字幕匹配项目](skills/subtitle-matcher/SKILL.md)
+
+<img src="assets/demos/termux-pad7-standalone-vscode.gif" alt="小米平板 7 从 Android 主屏打开独立 VS Code，在目录树、代码、终端和 Codex 布局中运行字幕匹配项目，使用 Ctrl+1 全屏预览 HTML 报告并用 Ctrl+Shift+V 预览 Markdown" width="1120">
+
 ### Termux 实机演示
 
 已在 **小米平板 7** 和 **联想 Y900** 上完成 Termux/Xfce 工作站部署与实机适配，覆盖开发、办公、影音及键鼠交互。
@@ -31,14 +39,6 @@
 [贪吃蛇示例源码](skills/termux/assets/demo/snake.py) · 在 Debian/Xfce 中运行 `python3 snake.py`；缺少 Tk 时安装 `python3-tk`。方向键或 WASD 移动，空格暂停，R 重开。
 
 VLC 演示片段取自 [MDN 的 flower 示例视频](https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4)。
-
-### Android 主屏独立 VS Code
-
-点击 Android 主屏的 **VS Code** 快捷方式即可打开独立编辑器窗口。Xfce 按需启动。编辑器复用 Debian 项目目录，单独管理用户设置和 Codex 等扩展。选装 Office Viewer 时默认只关联 Office 格式。HTML 可从编辑器预览到 Android Chrome。 [安装和配置独立 VS Code](skills/termux/references/standalone-code.md)
-
-小米平板 7 实录。独立 VS Code 左侧显示目录树，中间显示源码和下方终端，右侧打开 Codex。终端运行字幕匹配项目生成 HTML 报告。`Ctrl+1` 在全屏 Android Chrome 的单个标签中打开报告，`Ctrl+Shift+V` 在 VS Code 中预览项目 Markdown。 [字幕匹配项目](skills/subtitle-matcher/SKILL.md)
-
-<img src="assets/demos/termux-pad7-standalone-vscode.gif" alt="小米平板 7 从 Android 主屏打开独立 VS Code，在目录树、代码、终端和 Codex 布局中运行字幕匹配项目，使用 Ctrl+1 全屏预览 HTML 报告并用 Ctrl+Shift+V 预览 Markdown" width="1120">
 
 ## 安装与更新
 
