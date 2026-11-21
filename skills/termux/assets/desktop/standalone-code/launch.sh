@@ -104,6 +104,7 @@ remember_display() {
 }
 
 close_display() {
+    rm -f -- "$state/editor.pid" "$state/editor.pid.tmp"
     if [[ -n "$title_pid" ]]; then
         kill "$title_pid" 2>/dev/null || true
         wait "$title_pid" 2>/dev/null || true
@@ -160,11 +161,10 @@ if [[ -n "$dock_tag" ]]; then
     title_pid=$!
 fi
 
-"$prefix/bin/python" "$HOME/@DOCK_HOME@/session.py" \
-    "$prefix/bin/proot-distro" login "$container" --user "$user" --shared-tmp -- \
-    /bin/bash -s -- "$display" "$scale" "$slot" "$dock_tag" "$fresh" "$workspace" "$editor_token" "$guest_ime_socket" "${code_args[@]}" 7>&- 9>&- <<'GUEST'
+@GUEST_START@
 set -euo pipefail
 umask 077
+@EDITOR_PID_HANDOFF@
 root="$HOME/@PROFILE_DIR@"
 export DISPLAY="$1" GDK_SCALE="$2" GDK_DPI_SCALE=1 XDG_SESSION_TYPE=x11
 slot=$3
@@ -235,7 +235,7 @@ exec /usr/bin/dbus-run-session -- /bin/bash -s -- "$@" <<'SESSION'
         export GTK_IM_MODULE=tablet-vscode GTK_IM_MODULE_FILE="$VSCODE_STANDALONE_HOME/ime/immodules.cache"
         set -- "$@" --gtk-version=3
     fi
-    "$@" --user-data-dir "$VSCODE_STANDALONE_DATA" --extensions-dir "$VSCODE_STANDALONE_HOME/extensions" \
-        ${VSCODE_STANDALONE_WORKSPACE:+"$VSCODE_STANDALONE_WORKSPACE"}
+@EDITOR_START@
+@CODE_START@
 SESSION
 GUEST

@@ -184,6 +184,55 @@ os.kill(os.getpid(), signal.SIGKILL)
         self.assertIn('--es editor_title "$window_title"', launcher)
         self.assertLess(launcher.index("title_args=(initial"), launcher.index('show_window "$tag" "$title" "$editor_token"'))
 
+    @unittest.skipUnless(sys.platform == "linux", "Linux process identity and child subreaper")
+    def test_session_cleans_up_a_guest_stuck_after_editor_exit(self):
+        helper = code.ASSETS / "standalone-code/session.py"
+        command = """
+import os
+from pathlib import Path
+import signal
+import sys
+import time
+
+editor = os.fork()
+if editor == 0:
+    fields = Path("/proc/self/stat").read_text().rsplit(") ", 1)[1].split()
+    destination = Path(sys.argv[1])
+    pending = destination.with_suffix(".tmp")
+    pending.write_text(f"{os.getpid()} {fields[19]}")
+    pending.replace(destination)
+    os.kill(os.getpid(), signal.SIGKILL)
+time.sleep(12)
+"""
+        with tempfile.TemporaryDirectory() as folder:
+            marker = str(Path(folder) / "editor.pid")
+            result = subprocess.run([sys.executable, helper, "--editor-pid-file", marker, sys.executable, "-c",
+                                     command, marker], capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 143, result.stderr)
+        self.assertIn("editor exited and guest did not stop", result.stderr)
+
+    def test_supervision_upgrade_preserves_the_existing_touch_menu_startup(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            launcher = home / code.DOCK_HOME / "open"
+            launcher.parent.mkdir(parents=True)
+            generated = code.render_launcher(PurePosixPath("/termux/usr"), load_profile(), ":2", launcher.parent)
+            generated = generated.replace(code.CODE_START, code.DOCK_TOUCH_CODE_START)
+            legacy = generated.replace(code.GUEST_START, code.LEGACY_GUEST_START).replace(code.EDITOR_START, "")
+            legacy = legacy.replace(code.EDITOR_PID_HANDOFF, "")
+            legacy = legacy.replace('    rm -f -- "$state/editor.pid" "$state/editor.pid.tmp"\n', '', 1)
+            launcher.write_bytes(legacy.encode())
+            writer = code.Writer(home, home, home)
+            code.supervise_launcher(home, "bash", writer, False)
+            self.assertEqual(launcher.read_bytes(), legacy.encode())
+
+            with patch.object(code, "run"):
+                code.supervise_launcher(home, "bash", writer, True)
+                self.assertEqual(launcher.read_bytes(), generated.encode())
+                self.assertEqual(next(writer.backup.rglob("open")).read_bytes(), legacy.encode())
+                code.supervise_launcher(home, "bash", writer, True)
+            self.assertEqual(len(writer.changed), 2)
+
     def test_ime_bridge_uses_a_private_socket_only_for_opted_in_dock_windows(self):
         prefix = PurePosixPath("/data/data/com.termux/files/usr")
         dock = prefix.parent / "home" / code.DOCK_HOME
@@ -195,6 +244,38 @@ os.kill(os.getpid(), signal.SIGKILL)
         self.assertIn('guest_ime_socket="/tmp/${ime_dir##*/}/commit"', launcher)
         self.assertIn('"$editor_token" "$guest_ime_socket"', launcher)
         self.assertIn('export GTK_IM_MODULE=tablet-vscode', launcher)
+
+    def test_touch_menu_installs_into_the_existing_launchers(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            launcher = home / code.DOCK_HOME / "open"
+            launcher.parent.mkdir(parents=True)
+            base = home / code.PROFILE_DIR
+            generated = code.render_launcher(PurePosixPath("/termux/usr"), load_profile(), ":2", launcher.parent)
+            legacy = generated.replace(code.CODE_START, code.LEGACY_CODE_START).encode()
+            launcher.write_bytes(legacy)
+            writer = code.Writer(home, home, home)
+
+            code.scm_touch_menu(home, base, "bash", writer, False)
+            self.assertFalse(base.exists())
+            self.assertEqual(launcher.read_bytes(), legacy)
+
+            with patch.object(code, "run"):
+                code.scm_touch_menu(home, base, "bash", writer, True)
+                self.assertEqual(launcher.read_bytes(), generated.encode())
+                self.assertEqual(len(writer.changed), 3)
+                self.assertEqual(next(writer.backup.rglob("open")).read_bytes(), legacy)
+                code.scm_touch_menu(home, base, "bash", writer, True)
+                self.assertEqual(len(writer.changed), 3)
+
+            widget = home / code.WIDGET_ENTRY
+            widget.parent.mkdir(parents=True)
+            generated = code.render_launcher(PurePosixPath("/termux/usr"), load_profile(), ":2")
+            widget.write_bytes(generated.replace(code.CODE_START, code.LEGACY_CODE_START).encode())
+            with patch.object(code, "run"):
+                code.scm_touch_menu(home, base, "bash", writer, True, "widget")
+            self.assertEqual(widget.read_bytes(), generated.encode())
+            self.assertEqual(len(writer.changed), 4)
 
     def test_dock_title_keeps_the_file_and_project_without_duplicate_branding(self):
         self.assertEqual(dock_titles.parse_title('_NET_WM_NAME = "Welcome - sample-project - Visual Studio Code"'),

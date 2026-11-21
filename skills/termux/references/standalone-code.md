@@ -121,7 +121,15 @@ done
 
 如旧 X11 锁或 socket 阻止复用显示号，先在 native 环境核对会话锁已释放、记录的 Xserver 已退出、socket 已无监听，再备份移走这两个已确认的遗留记录。SSH 同时被回收时，可沿已有 USB/ADB 打开临时 Termux 终端，由已部署的 runit 恢复服务，再通过 `sv status "$PREFIX/var/service/sshd"` 和原通道复核。分别记录重新打开的工作区和仍待确认的未保存编辑。
 
-#### 运行日志与残留进程
+## 窗口退出、标题与会话恢复
+
+卡住的旧画面可能来自已经退出的编辑器。将 Android 任务的标签对应到 X11 显示号，在原生 Termux 查询该显示号的 `_NET_CLIENT_LIST` 和窗口的 `_NET_WM_PID`，再核对 PID 的启动时间及所属进程树。Android 还有卡片、会话锁仍持有，以及 X11 屏幕还能截图，都无法替代这项核对。
+
+- 编辑器已退出时，先查看同一配置的 `Backups`、`windowsState.lastActiveWindow` 和该会话的启动日志。只回收身份已核实的残留会话，再从日常入口恢复对应工作区。保留未保存内容和其他活会话。
+- 编辑器仍在且 X11 窗口为 `_NET_WM_STATE_HIDDEN` 时，核对窗口 ID、标题及 PID 后，可用 `xdotool windowactivate --sync XID` 恢复原窗口。再用日常入口切换，确认键盘、触屏和 Android 标题一致。
+- 测试窗口使用独立配置或可清理的临时工作区。通过 Code 的退出命令关闭测试窗口。在删除测试目录前，先移除该目录的最近项目条目。日常退出用 **File → Exit**，Android 划掉缩略图可能只关掉卡片。
+
+### 运行日志与残留进程
 
 每个窗口每次启动写一份 `last.log`，最多保留 4 MiB。达到上限后写入截断提示，并继续排空管道。
 
@@ -131,9 +139,33 @@ Y900 的隔离复现中，单独结束 VSCode 主进程时 zygote 正常退出�
 
 独立窗口的启动器在已有的 `--no-sandbox` 参数旁加上 `--no-zygote`，让 Electron 直接创建子进程。启动器还为每个窗口单独启用 Linux 子进程收养。PRoot 退出后，只回收被此窗口接管的子进程，例如 D-Bus、GVfs 和 Xfce 配置服务。新启动的窗口使用这两项设置。 [Chromium 启动参数](https://github.com/chromium/chromium/blob/150.0.7871.250/content/public/common/content_switches.cc)
 
+启动器同时跟踪 VS Code 主进程。主进程退出后，如果该窗口的 PRoot 会话四秒内仍未结束，启动器会回收该会话，再释放显示号和会话锁，并通知 Android 移除对应任务。已有会话监督器的入口可以在原生 Termux 单独更新。选择设备实际使用的入口。后续启动的窗口会使用新的收尾逻辑。
+
+```bash
+bash skills/termux/scripts/run.sh standalone-code supervise --entry dock
+bash skills/termux/scripts/run.sh standalone-code supervise --entry dock --apply
+bash skills/termux/scripts/run.sh standalone-code supervise --entry widget --apply
+```
+
 故障注入使用限量日志和临时配置，分别对照正常退出、主进程退出和 PRoot 突然退出。逐项复核该会话的子进程、显示号和日志，确认日常窗口仍能使用。Y900 使用独立 VSCode 的原 GPU 参数完成了编辑、保存、Codex 扩展激活和正常退出的复测。强制终止隔离 PRoot 后，启动器约 0.12 秒退出，该会话的进程已回收，日志中没有出现上述循环报错。
 
-需要回到官方 X11 入口时，先正常结束窗口，再执行不带 `--dock-loader` 的 `launcher --apply`。
+小米平板 7 等使用官方 X11 的设备，若 Widget 任务仍直接启动 PRoot，先确认未保存内容和当前显示号，正常退出后用 `launcher --display :2 --apply` 刷新原入口。使用实际显示号，并保留原编辑器配置、GPU 后端和 X11 输入模式。Y900 需要回到官方 X11 入口时，同样在正常结束窗口后执行不带 `--dock-loader` 的 `launcher --apply`。
+
+## Commit 下拉菜单的触屏修复
+
+在有未提交变化的临时仓库轻点 Commit 右侧箭头。ADB 验收用带少量移动的 `input touchscreen swipe X1 Y1 X2 Y2 150`，再对照鼠标点击。瞬时 `input tap`、鼠标点击或单帧截图可能看不出焦点丢失。需要确认触屏松开后菜单仍展开，并可以用方向键移动焦点。
+
+确认同一次触屏的手势先打开菜单、再由外层源代码管理列表夺走焦点时，可在原生 Termux 为对应入口启用修复。
+
+```bash
+bash skills/termux/scripts/run.sh standalone-code scm-touch-menu --entry dock
+bash skills/termux/scripts/run.sh standalone-code scm-touch-menu --entry dock --apply
+bash skills/termux/scripts/run.sh standalone-code scm-touch-menu --entry widget --apply
+```
+
+新启动的窗口会等源代码管理列表处理完这次触屏点按，再打开菜单。窗口重载后会自动应用修复。启动器通过匿名管道连接同一会话的 VS Code 工作台，编辑器退出时结束辅助进程。验收覆盖关闭后从日常入口重开，以及执行 **Developer: Reload Window** 后再次触屏。移走独立配置目录的 `compat/scm-touch-menu` 后，下一次启动会走默认路径。
+
+Y900 的 Dock 入口与小米平板 7 的官方 Widget 入口均已通过真实触屏、冷启动和窗口重载验证。小米平板 7 正常退出后，独立 X11 显示号和会话锁均已释放。
 
 ## 安装所需扩展
 

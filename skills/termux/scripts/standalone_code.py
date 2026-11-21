@@ -38,6 +38,51 @@ EDITOR_SETTING = "workbench.editorAssociations"
 DOCK_PACKAGE = "com.scisaga.tabletvscode"
 DOCK_HOME = ".local/libexec/tablet-vscode"
 DOCK_EXTENSION = "scisaga.tablet-vscode-windows"
+WIDGET_ENTRY = ".shortcuts/tasks/VS Code"
+WIDGET_PACKAGE = "com.termux.x11"
+SCM_TOUCH_MENU = "compat/scm-touch-menu"
+LEGACY_GUEST_START = r'''"$prefix/bin/python" "$HOME/.local/libexec/tablet-vscode/session.py" \
+    "$prefix/bin/proot-distro" login "$container" --user "$user" --shared-tmp -- \
+    /bin/bash -s -- "$display" "$scale" "$slot" "$dock_tag" "$fresh" "$workspace" "$editor_token" "$guest_ime_socket" "${code_args[@]}" 7>&- 9>&- <<'GUEST'
+'''
+EDITOR_PID_HANDOFF = 'export VSCODE_EDITOR_PID_FILE="$1"\nshift\n'
+EDITOR_PID_CLEANUP = 'rm -f -- "$state/editor.pid" "$state/editor.pid.tmp"\n'
+SUPERVISOR = LEGACY_GUEST_START.splitlines(keepends=True)[0]
+GUARDED_SUPERVISOR = EDITOR_PID_CLEANUP + SUPERVISOR.replace(
+    '"$HOME/.local/libexec/tablet-vscode/session.py"',
+    '"$HOME/.local/libexec/tablet-vscode/session.py" --editor-pid-file "$state/editor.pid"',
+)
+GUEST_ARGS = '    /bin/bash -s -- "$display"'
+GUARDED_GUEST_ARGS = '    /bin/bash -s -- "$state/editor.pid" "$display"'
+GUEST_START = LEGACY_GUEST_START.replace(SUPERVISOR, GUARDED_SUPERVISOR).replace(GUEST_ARGS, GUARDED_GUEST_ARGS)
+EDITOR_START = r'''    set -- /bin/bash -c '
+        pid_file=$1
+        shift
+        if IFS= read -r stat <"/proc/$$/stat"; then
+            read -r -a fields <<<"${stat##*) }"
+            if printf "%s %s\n" "$$" "${fields[19]}" >"$pid_file.tmp"; then
+                /usr/bin/mv -fT -- "$pid_file.tmp" "$pid_file"
+            fi
+        fi
+        exec "$@"
+    ' vscode-editor "$VSCODE_EDITOR_PID_FILE" "$@"
+'''
+LEGACY_CODE_START = r'''    "$@" --user-data-dir "$VSCODE_STANDALONE_DATA" --extensions-dir "$VSCODE_STANDALONE_HOME/extensions" \
+        ${VSCODE_STANDALONE_WORKSPACE:+"$VSCODE_STANDALONE_WORKSPACE"}
+'''
+CODE_START = r'''    set -- "$@" --user-data-dir "$VSCODE_STANDALONE_DATA" --extensions-dir "$VSCODE_STANDALONE_HOME/extensions" \
+        ${VSCODE_STANDALONE_WORKSPACE:+"$VSCODE_STANDALONE_WORKSPACE"}
+    repair="$VSCODE_STANDALONE_HOME/compat/scm-touch-menu"
+    if [[ -r "$repair/launch.sh" && -r "$repair/watch.py" ]]; then
+        source "$repair/launch.sh"
+        tablet_code_with_scm_touch_menu "$repair/watch.py" "$@"
+    else
+        "$@"
+    fi
+'''
+DOCK_TOUCH_CODE_START = CODE_START.replace(
+    'if [[ -r "$repair/launch.sh"', 'if [[ -n "${TABLET_VSCODE_DOCK_TAG:-}" && -r "$repair/launch.sh"',
+)
 
 
 def scoped_path(path, base):
@@ -108,10 +153,14 @@ fi'''
         "X11_ARGS": "" if profile["x11_mitshm"] else "-extension MIT-SHM",
         "CODE_ARGS": shlex.join(code_arguments(profile)),
         "CODE_GUARD": indent(CODE_GUARD.rstrip("\n"), "    "),
+        "GUEST_START": GUEST_START.rstrip("\n"),
+        "EDITOR_PID_HANDOFF": EDITOR_PID_HANDOFF.rstrip("\n"),
+        "EDITOR_START": EDITOR_START.rstrip("\n"),
+        "CODE_START": CODE_START.rstrip("\n"),
         "PROFILE_DIR": PROFILE_DIR,
         "STATE_DIR": STATE_DIR,
         "DOCK_HOME": DOCK_HOME,
-        "ANDROID_PACKAGE": DOCK_PACKAGE if dock else "com.termux.x11",
+        "ANDROID_PACKAGE": DOCK_PACKAGE if dock else WIDGET_PACKAGE,
         "X11_COMMAND": shlex.quote(str(dock / "x11" if dock else prefix / "bin/termux-x11")),
         "TITLE_BRIDGE": shlex.quote(str(dock / "dock_titles.py") if dock else ""),
         "IME_BRIDGE": "1" if dock and ime_bridge else "0",
@@ -228,7 +277,7 @@ def shortcut(prefix, home, root, profile, writer, args):
     if not icon.startswith(b"\x89PNG\r\n\x1a\n"):
         raise ValueError("The installed Code icon is invalid")
     shortcuts = scoped_path(home / ".shortcuts", home)
-    entry = scoped_path(shortcuts / "tasks/VS Code", shortcuts)
+    entry = scoped_path(home / WIDGET_ENTRY, shortcuts)
     image = scoped_path(shortcuts / "icons/VS Code.png", shortcuts)
     if entry.is_file():
         old = entry.read_text(encoding="utf-8")
@@ -255,8 +304,77 @@ def shortcut(prefix, home, root, profile, writer, args):
             writer.put(image, icon, 0o600)
             writer.put(entry, script, 0o700)
     return {"shortcut": str(entry), "display": ":" + str(int(args.display[1:])),
-            "android_package": DOCK_PACKAGE if dock else "com.termux.x11",
+            "android_package": DOCK_PACKAGE if dock else WIDGET_PACKAGE,
             "graphics": "freedreno-kgsl" if profile["gpu_backend"] == "freedreno-kgsl" else "software"}
+
+
+def read_managed_launcher(home, entry):
+    path, package = {
+        "dock": (f"{DOCK_HOME}/open", DOCK_PACKAGE),
+        "widget": (WIDGET_ENTRY, WIDGET_PACKAGE),
+    }[entry]
+    launcher = scoped_path(home / path, home)
+    if not launcher.is_file():
+        raise ValueError(f"Install the standalone VS Code {entry} launcher first")
+    current = launcher.read_text(encoding="utf-8")
+    if "# Managed by standalone_code.py\n" not in current or f"android_package={package}\n" not in current:
+        raise ValueError(f"The {entry} launcher is unsupported. Review the standalone-code launcher preview first.")
+    return launcher, current
+
+
+def editor_command(launcher):
+    matches = [block for block in (CODE_START, DOCK_TOUCH_CODE_START, LEGACY_CODE_START) if block in launcher]
+    if len(matches) != 1 or launcher.count(matches[0]) != 1:
+        raise ValueError("The existing launcher has an unrecognized Code startup block")
+    return matches[0]
+
+
+def scm_touch_menu(home, base, bash, writer, apply, entry="dock"):
+    launcher, current = read_managed_launcher(home, entry)
+    updated = current.replace(editor_command(current), CODE_START)
+
+    assets = ASSETS / "standalone-code/scm-touch-menu"
+    directory = scoped_path(base / SCM_TOUCH_MENU, base)
+    scripts = {scoped_path(directory / name, base): (assets / name).read_bytes()
+               for name in ("launch.sh", "watch.py")}
+    if apply:
+        compile(scripts[directory / "watch.py"], "watch.py", "exec")
+        for shell in (scripts[directory / "launch.sh"].decode(), CODE_START, updated):
+            run([bash, "-n"], script=shell, timeout=8)
+        for path, data in scripts.items():
+            writer.put(path, data, 0o600)
+        if updated != current:
+            writer.put(launcher, updated, 0o700)
+    return {"launcher": str(launcher), "scm_touch_menu": str(directory)}
+
+
+def supervise_launcher(home, bash, writer, apply, entry="dock"):
+    launcher, updated = read_managed_launcher(home, entry)
+    cleanup = 'close_display() {\n'
+    guest_header = "<<'GUEST'\nset -euo pipefail\numask 077\n"
+    code_start = editor_command(updated)
+    changes = (
+        (SUPERVISOR, GUARDED_SUPERVISOR),
+        (GUEST_ARGS, GUARDED_GUEST_ARGS),
+        (guest_header, guest_header + EDITOR_PID_HANDOFF),
+        (cleanup, cleanup + "    " + EDITOR_PID_CLEANUP),
+        (code_start, EDITOR_START + code_start),
+    )
+    for before, after in changes:
+        if updated.count(after) == 1:
+            continue
+        if updated.count(before) != 1:
+            raise ValueError("The existing launcher has an unrecognized session startup block")
+        updated = updated.replace(before, after)
+    supervisor = scoped_path(home / DOCK_HOME / "session.py", home)
+    if apply:
+        content = (ASSETS / "standalone-code/session.py").read_bytes()
+        compile(content, "session.py", "exec")
+        run([bash, "-n"], script=EDITOR_START, timeout=8)
+        run([bash, "-n"], script=updated, timeout=8)
+        writer.put(supervisor, content, 0o600)
+        writer.put(launcher, updated, 0o700)
+    return {"launcher": str(launcher), "session_supervisor": str(supervisor)}
 
 
 def extension_registry(base):
@@ -480,7 +598,11 @@ def main(argv=None):
     plugins = sub.add_parser("extensions", help="install selected extensions in the isolated Code profile")
     plugins.add_argument("ids", nargs="*")
     browser = sub.add_parser("android-chrome", help="send loopback HTTP preview URLs to Android Chrome")
-    for command in (launch, plugins, browser):
+    touch_menu = sub.add_parser("scm-touch-menu", help="repair the Commit dropdown for touch in standalone windows")
+    lifecycle = sub.add_parser("supervise", aliases=["supervise-dock"], help="tie each standalone window to its editor process")
+    for command in (touch_menu, lifecycle):
+        command.add_argument("--entry", choices=("dock", "widget"), default="dock")
+    for command in (launch, plugins, browser, touch_menu, lifecycle):
         command.add_argument("--apply", action="store_true", help="apply the previewed changes")
     args = parser.parse_args(argv)
     try:
@@ -497,6 +619,10 @@ def main(argv=None):
         with lock:
             if args.action == "launcher":
                 result = shortcut(prefix, home, root, profile, writer, args)
+            elif args.action == "scm-touch-menu":
+                result = scm_touch_menu(home, base, prefix / "bin/bash", writer, args.apply, args.entry)
+            elif args.action in ("supervise", "supervise-dock"):
+                result = supervise_launcher(home, prefix / "bin/bash", writer, args.apply, args.entry)
             else:
                 guest = guest_env(prefix, profile, guest_base)
                 if args.action == "extensions":
@@ -507,7 +633,7 @@ def main(argv=None):
                           "changed": writer.changed, "backup": str(writer.backup) if writer.backup.exists() else None},
                          ensure_ascii=False))
         return 0
-    except (OSError, ValueError, RuntimeError, KeyError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, RuntimeError, KeyError, SyntaxError, subprocess.SubprocessError) as error:
         print(str(error), file=sys.stderr)
         return 1
 
