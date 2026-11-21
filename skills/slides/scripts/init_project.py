@@ -8,12 +8,12 @@ import hashlib
 import json
 import re
 import shutil
-import zipfile
 from pathlib import Path
 from typing import Any, Sequence
 
 from validate_input_document import PROFILES, gate_document, render_markdown
 from page_script_contract import audit_page_script
+from production_common import DELIVERABLES
 
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -43,18 +43,17 @@ def copy_template(
     gate_report: dict[str, Any] | None,
     page_script_audit: dict[str, Any],
     rewrite_authorized: bool = False,
+    seconds_per_page: int = 5,
 ) -> None:
     if not TEMPLATE_ROOT.is_dir():
         raise FileNotFoundError(f"Template not found: {TEMPLATE_ROOT}")
     if template_source is not None:
         if not template_source.is_file():
             raise FileNotFoundError(template_source)
-        if template_source.suffix.lower() != ".pptx":
-            raise ValueError("--template-source must be a .pptx file")
-        if not zipfile.is_zipfile(template_source):
-            raise ValueError(
-                f"--template-source is not a valid PPTX package: {template_source}"
-            )
+        if deliverable == "narration_audio":
+            raise ValueError("--template-source applies only to HTML projects")
+        if template_source.suffix.lower() != ".css":
+            raise ValueError("--template-source must be a .css file")
     if output.exists() and not output.is_dir():
         raise NotADirectoryError(output)
     if output.exists() and any(output.iterdir()) and not force:
@@ -64,7 +63,7 @@ def copy_template(
     output.mkdir(parents=True, exist_ok=True)
 
     project_file_stem = safe_filename(project_name)
-    deck_file = f"{project_file_stem}_动画.pptx"
+    deck_file = f"{project_file_stem}_网页"
     replacements = {
         "{{PROJECT_NAME}}": json.dumps(
             project_name,
@@ -80,7 +79,7 @@ def copy_template(
         relative = source.relative_to(TEMPLATE_ROOT)
         if deliverable == "narration_audio" and (
             relative.parts[0] == "assets"
-            or relative == Path("video/svg_layer_plan.json")
+            or relative in {Path("video/svg_layer_plan.json"), Path("template.css")}
         ):
             continue
         target = output / relative
@@ -139,7 +138,7 @@ def copy_template(
     template_metadata: dict[str, Any] = {
         "mode": "generated",
         "source": None,
-        "working": "template.pptx",
+        "working": "template.css",
         "safe_area": {
             "x": 120,
             "y": 150,
@@ -148,14 +147,14 @@ def copy_template(
         },
     }
     if template_source is not None:
-        preserved = inputs_dir / "template-source.pptx"
-        working = output / "template.pptx"
+        preserved = inputs_dir / "template-source.css"
+        working = output / "template.css"
         shutil.copy2(template_source, preserved)
         shutil.copy2(template_source, working)
         template_metadata.update(
             {
                 "mode": "provided",
-                "source": "inputs/template-source.pptx",
+                "source": "inputs/template-source.css",
             }
         )
 
@@ -191,6 +190,8 @@ def copy_template(
     project_path = output / "project.json"
     project = json.loads(project_path.read_text(encoding="utf-8"))
     project["deliverable"] = deliverable
+    if deliverable != "narration_audio":
+        project["seconds_per_page"] = seconds_per_page
     recorded_source = dict(source_metadata)
     recorded_source["origin_document"] = str(source_document)
     recorded_source["document"] = "inputs/source.md"
@@ -245,13 +246,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--name", required=True)
     parser.add_argument(
         "--deliverable",
-        choices=(
-            "narration_audio",
-            "static_pptx",
-            "animated_pptx",
-            "narrated_pptx",
-            "video",
-        ),
+        choices=sorted(DELIVERABLES),
         required=True,
         help="Highest deliverable level this project is allowed to produce",
     )
@@ -287,8 +282,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--template-source",
         type=Path,
-        help="Optional user PPTX copied into inputs/ and adapted as template.pptx",
+        help="Optional CSS copied into inputs/ and used as template.css",
     )
+    parser.add_argument("--seconds-per-page", type=int, default=5)
     parser.add_argument(
         "--visual-style",
         choices=("project-default", "technical-infographic"),
@@ -312,6 +308,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.seconds_per_page <= 0:
+        parser.error("--seconds-per-page must be positive")
     output = args.output.expanduser().resolve()
     gate = gate_document(
         args.input_document,
@@ -387,6 +385,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         gate_report=gate_report,
         page_script_audit=page_script_audit,
         rewrite_authorized=args.allow_substantial_rewrite,
+        seconds_per_page=args.seconds_per_page,
     )
     print(f"OK  {output}: narrated-presentation project initialized")
     return 0

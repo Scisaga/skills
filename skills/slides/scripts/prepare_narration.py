@@ -20,6 +20,7 @@ from narration_performance import (
     derive_page_performance,
 )
 from production_common import (
+    NARRATION_DELIVERABLES,
     load_object,
     load_project_config,
     load_voice_profile,
@@ -38,13 +39,9 @@ def prepare(
 ) -> int:
     project = project.expanduser().resolve()
     config = load_project_config(project)
-    if config["deliverable"] not in {
-        "narration_audio",
-        "narrated_pptx",
-        "video",
-    }:
+    if config["deliverable"] not in NARRATION_DELIVERABLES:
         raise RuntimeError(
-            "prepare-narration requires narration_audio, narrated_pptx, or video"
+            "prepare-narration requires narration_audio or narrated_html"
         )
     require_approvals(project, ("content",))
     paths = project_paths(project, config)

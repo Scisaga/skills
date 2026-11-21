@@ -14,7 +14,7 @@
 bash skills/slides/scripts/run.sh init \
   --output /path/to/project \
   --name "项目名称" \
-  --deliverable static_pptx \
+  --deliverable static_html \
   --input-document /path/to/source.md \
   --input-review /path/to/input-review.json \
   --page-script-source /path/to/confirmed-page-script.md \
@@ -163,7 +163,7 @@ bash skills/slides/scripts/run.sh init \
 
 专业技术页需要解释结构、机理、流程或系统关系时，可查看 [图示参考案例](visual-reference-cases.md)。观察其中的具体细节与层次怎样帮助理解，再为当前内容自主选择表达；不固定套用其布局、配色或业务对象。
 
-工程场景可按解释需要绘制结构细节、仪表和微界面，关键名称与结论仍由正文层级承载。这些示例不适用于所有 PPT，也不要求每张技术页都变复杂；封面、观点、过渡等页面按各自用途设计。内容密集时先调整分区和叙事层级；若输入已固定页码或逐页稿，不擅自拆页。
+工程场景可按解释需要绘制结构细节、仪表和微界面，关键名称与结论仍由正文层级承载。这些示例不适用于所有演示，也不要求每张技术页都变复杂；封面、观点、过渡等页面按各自用途设计。内容密集时先调整分区和叙事层级；若输入已固定页码或逐页稿，不擅自拆页。
 
 ## 交付前检查
 

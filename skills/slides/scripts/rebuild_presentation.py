@@ -10,12 +10,12 @@ from pathlib import Path
 from typing import Sequence
 
 from production_common import (
+    NARRATION_DELIVERABLES,
     current_input_fingerprints,
     file_hash,
     load_project_config,
     project_paths,
 )
-from pptx_production import require_current_visual_baseline
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -35,9 +35,9 @@ def rebuild_audio(args: argparse.Namespace) -> int:
     project = args.project.expanduser().resolve()
     config = load_project_config(project)
     deliverable = config["deliverable"]
-    if deliverable not in {"narration_audio", "narrated_pptx", "video"}:
+    if deliverable not in NARRATION_DELIVERABLES:
         raise RuntimeError(
-            "Audio rebuild requires narration_audio, narrated_pptx, or video"
+            "Audio rebuild requires narration_audio or narrated_html"
         )
     paths = project_paths(project)
     if (args.voice or args.rate or args.pitch) and args.pages:
@@ -68,8 +68,6 @@ def rebuild_audio(args: argparse.Namespace) -> int:
 
     if deliverable == "narration_audio" and args.qa != "audio":
         raise RuntimeError("narration_audio stops at --qa audio")
-    if deliverable != "narration_audio" and not args.dry_run:
-        require_current_visual_baseline(project, paths["animated_pptx"])
 
     before = (
         current_input_fingerprints(project)
@@ -94,8 +92,8 @@ def rebuild_audio(args: argparse.Namespace) -> int:
             print("PLAN audio timeline → audio QA → stop at per-page MP3")
         else:
             print(
-                "PLAN audio timeline → audio QA → PPTX media/timing replacement "
-                "→ standard QA → optional PowerPoint video export"
+                "PLAN audio timeline → audio QA → HTML narration track and timeline "
+                "→ optional standard QA"
             )
         return 0
 
@@ -123,56 +121,18 @@ def rebuild_audio(args: argparse.Namespace) -> int:
     if deliverable == "narration_audio":
         print("OK  rebuild scope=audio qa=audio; stopping at per-page MP3")
         return 0
-    run_script(
-        "pptx_production.py",
-        ["replace-audio", "--project", str(project)],
-    )
-    if args.qa == "standard":
-        run_script(
-            "qa_presentation.py",
-            [
-                "--project",
-                str(project),
-                "--level",
-                "standard",
-                *(["--force"] if args.force else []),
-            ],
-        )
-    if args.qa == "audio":
-        assert before is not None
-        after_audio = current_input_fingerprints(project)
-        if (
-            after_audio["source"] != before["source"]
-            or after_audio["visual"] != before["visual"]
-        ):
-            raise RuntimeError("Source or visual inputs changed during audio rebuild")
-        print(
-            "OK  audio QA passed and narrated PPTX was rebuilt; "
-            "stopping before video export because standard QA was not requested"
-        )
-        return 0
-    if deliverable == "video" and not args.skip_export:
-        run_script(
-            "powerpoint_production.py",
-            ["export-video", "--project", str(project)],
-        )
-    elif deliverable == "video":
-        print("WARN PowerPoint video export was explicitly skipped")
-    else:
-        print("INFO deliverable=narrated_pptx; stopping before video export")
-    if deliverable == "video" and not args.skip_export:
-        print(
-            "INFO video exported; stopping without post-export inspection"
-        )
-
+    after_audio = current_input_fingerprints(project)
     assert before is not None
-    after = current_input_fingerprints(project)
-    if after["source"] != before["source"] or after["visual"] != before["visual"]:
+    if after_audio["source"] != before["source"] or after_audio["visual"] != before["visual"]:
         raise RuntimeError("Source or visual inputs changed during audio rebuild")
-    print(
-        f"OK  rebuild scope=audio qa={args.qa}; "
-        f"video_exported={deliverable == 'video' and not args.skip_export}"
-    )
+    run_script("html_production.py", ["--project", str(project)])
+    if args.qa == "standard":
+        for level in ("static", "standard"):
+            run_script(
+                "qa_presentation.py",
+                ["--project", str(project), "--level", level],
+            )
+    print(f"OK  rebuild scope=audio qa={args.qa}")
     return 0
 
 
@@ -191,7 +151,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pages")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--skip-export", action="store_true")
     return parser
 
 

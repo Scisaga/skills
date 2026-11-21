@@ -4,11 +4,9 @@ import argparse
 import contextlib
 import hashlib
 import io
-import subprocess
 import sys
 import tempfile
 import unittest
-import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -20,8 +18,6 @@ import approve_project
 import audio_production
 import doctor
 import init_project
-import powerpoint_production
-import pptx_production
 import prepare_narration
 import qa_presentation
 import rebuild_presentation
@@ -39,103 +35,6 @@ from production_common import (
 )
 from validate_project import validate
 from validate_input_document import INPUT_CONTRACT_VERSION
-
-
-def make_minimal_pptx(
-    path: Path,
-    *,
-    slides: int = 1,
-    embedded_svg: bool = False,
-) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr(
-            "[Content_Types].xml",
-            '<?xml version="1.0" encoding="UTF-8"?>'
-            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
-        )
-        for page in range(1, slides + 1):
-            archive.writestr(
-                f"ppt/slides/slide{page}.xml",
-                '<?xml version="1.0" encoding="UTF-8"?>'
-                '<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"/>',
-            )
-            if embedded_svg:
-                archive.writestr(
-                    f"ppt/media/page-{page}.svg",
-                    '<svg xmlns="http://www.w3.org/2000/svg" '
-                    'viewBox="0 0 1600 900"/>',
-                )
-
-
-def make_animated_pptx(
-    path: Path,
-    *,
-    animation_filter: str = "fade",
-    target_name: str = "s01_title",
-) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    slide = f'''<?xml version="1.0" encoding="UTF-8"?>
-<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
-  <p:cSld><p:spTree><p:sp><p:nvSpPr>
-    <p:cNvPr id="2" name="{target_name}"/>
-  </p:nvSpPr></p:sp></p:spTree></p:cSld>
-  <p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" nodeType="tmRoot">
-    <p:childTnLst><p:seq><p:cTn id="2" dur="indefinite" nodeType="mainSeq">
-      <p:childTnLst><p:par><p:cTn id="3" dur="indefinite" presetClass="entr">
-        <p:childTnLst><p:animEffect transition="in" filter="{animation_filter}">
-          <p:cBhvr><p:cTn id="4" dur="280"/><p:tgtEl><p:spTgt spid="2"/></p:tgtEl></p:cBhvr>
-        </p:animEffect></p:childTnLst>
-      </p:cTn></p:par></p:childTnLst>
-    </p:cTn></p:seq></p:childTnLst>
-  </p:cTn></p:par></p:tnLst></p:timing>
-</p:sld>'''
-    with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr(
-            "[Content_Types].xml",
-            '<?xml version="1.0" encoding="UTF-8"?>'
-            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
-        )
-        archive.writestr("ppt/slides/slide1.xml", slide)
-        archive.writestr(
-            "ppt/presentation.xml",
-            '<?xml version="1.0" encoding="UTF-8"?>'
-            '<p:presentation '
-            'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" '
-            'showAnimation="1"/>',
-        )
-        archive.writestr(
-            "ppt/media/page-1.svg",
-            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900"/>',
-        )
-
-
-def write_one_page_animation_timing(project: Path) -> None:
-    write_object(
-        project_paths(project)["timing"],
-        {
-            "schema_version": 1,
-            "strategy": "fast-parallel-entrance",
-            "defaults": {},
-            "slides": [
-                {
-                    "page": 1,
-                    "audio_start_ms": 0,
-                    "animation_window_ms": 1000,
-                    "animation_end_ms": 280,
-                    "advance_safety_ms": 150,
-                    "beats": [
-                        {
-                            "id": "title",
-                            "effect": "fade",
-                            "start_ms": 0,
-                            "duration_ms": 280,
-                        }
-                    ],
-                }
-            ],
-        },
-    )
 
 
 class ProjectV2Tests(unittest.TestCase):
@@ -198,8 +97,6 @@ class ProjectV2Tests(unittest.TestCase):
             gate_report=gate,
             page_script_audit=page_script_audit,
         )
-        if template_source is None and deliverable != "narration_audio":
-            make_minimal_pptx(project / "template.pptx")
         if prepare_visual:
             self.prepare_visual(project)
         return project
@@ -236,15 +133,14 @@ class ProjectV2Tests(unittest.TestCase):
         prepare_narration.prepare(project, force=False)
 
     def test_initialization_writes_only_v2_for_all_deliverables(self) -> None:
-        supplied_template = self.root / "supplied.pptx"
-        make_minimal_pptx(supplied_template)
+        supplied_template = self.root / "supplied.css"
+        supplied_template.write_text(":root{--slide-background:#fafafa}", encoding="utf-8")
         for index, deliverable in enumerate(
             (
                 "narration_audio",
-                "static_pptx",
-                "animated_pptx",
-                "narrated_pptx",
-                "video",
+                "static_html",
+                "animated_html",
+                "narrated_html",
             )
         ):
             with self.subTest(deliverable=deliverable):
@@ -252,14 +148,14 @@ class ProjectV2Tests(unittest.TestCase):
                     f"project-{index}",
                     deliverable,
                     template_source=(
-                        supplied_template if deliverable == "static_pptx" else None
+                        supplied_template if deliverable == "static_html" else None
                     ),
                     prepare_visual=False,
                 )
                 config = load_project_config(project)
                 self.assertEqual(config["schema_version"], 2)
                 self.assertEqual(config["deliverable"], deliverable)
-                self.assertIn("narrated_pptx", config["outputs"])
+                self.assertIn("html_dir", config["outputs"])
                 self.assertTrue((project / "page-script.md").is_file())
                 self.assertEqual(
                     load_object(project / "video" / "animation_manifest.json")[
@@ -279,16 +175,16 @@ class ProjectV2Tests(unittest.TestCase):
                 )
         supplied = self.root / "project-1"
         self.assertEqual(
-            (supplied / "inputs" / "template-source.pptx").read_bytes(),
+            (supplied / "inputs" / "template-source.css").read_bytes(),
             supplied_template.read_bytes(),
         )
         self.assertEqual(
-            (supplied / "template.pptx").read_bytes(),
+            (supplied / "template.css").read_bytes(),
             supplied_template.read_bytes(),
         )
 
     def test_schema_v1_is_rejected_without_rewrite(self) -> None:
-        project = self.create_project("schema-reject", "static_pptx")
+        project = self.create_project("schema-reject", "static_html")
         path = project / "project.json"
         config = load_object(path)
         config["schema_version"] = 1
@@ -301,7 +197,7 @@ class ProjectV2Tests(unittest.TestCase):
     def test_legacy_v2_content_metadata_is_upgraded_on_content_approval(self) -> None:
         project = self.create_project(
             "legacy-v2",
-            "static_pptx",
+            "static_html",
             prepare_visual=False,
         )
         path = project / "project.json"
@@ -324,7 +220,7 @@ class ProjectV2Tests(unittest.TestCase):
         self.assertTrue(project_paths(project)["binding_audit"].is_file())
 
     def test_current_v2_static_contract_validates_without_audio(self) -> None:
-        project = self.create_project("schema-current", "static_pptx")
+        project = self.create_project("schema-current", "static_html")
         self.approve(project, "content")
         self.approve(project, "visual", "1")
         errors, warnings = validate(project)
@@ -333,7 +229,7 @@ class ProjectV2Tests(unittest.TestCase):
         self.assertFalse(project_paths(project)["audio_timeline"].exists())
 
     def test_voice_change_only_invalidates_narration_approval(self) -> None:
-        project = self.create_project("approval", "narrated_pptx")
+        project = self.create_project("approval", "narrated_html")
         self.approve(project, "content")
         self.approve(project, "visual", "1")
         self.prepare_narration_review(project)
@@ -491,7 +387,7 @@ class ProjectV2Tests(unittest.TestCase):
         self.assertEqual(paths["voice_profile"].read_bytes(), original_voice)
 
     def test_build_state_and_approval_records_are_strictly_validated(self) -> None:
-        project = self.create_project("strict-state", "static_pptx")
+        project = self.create_project("strict-state", "static_html")
         self.approve(project, "content")
         paths = project_paths(project)
         state = load_state(paths["build_state"])
@@ -505,7 +401,7 @@ class ProjectV2Tests(unittest.TestCase):
             load_state(paths["build_state"])
 
     def test_contract_version_bump_invalidates_content_approval(self) -> None:
-        project = self.create_project("contract-version", "static_pptx")
+        project = self.create_project("contract-version", "static_html")
         self.approve(project, "content")
         self.assertTrue(approval_status(project, "content")[0])
 
@@ -541,12 +437,11 @@ class ProjectV2Tests(unittest.TestCase):
             self.assertFalse(approval_status(project, "narration")[0])
 
     def test_refresh_gate_invalidates_content_without_rebuilding_material(self) -> None:
-        project = self.create_project("refresh-gate", "narrated_pptx")
+        project = self.create_project("refresh-gate", "narrated_html")
         self.approve(project, "content")
         self.approve(project, "visual", "1")
         self.prepare_narration_review(project)
         self.approve(project, "narration")
-        paths = project_paths(project)
 
         gate = load_object(project / "input-gate.json")
         gate["contract_version"] = 1
@@ -576,7 +471,7 @@ class ProjectV2Tests(unittest.TestCase):
         self.assertIn("content approval remains current", output.getvalue())
 
     def test_refresh_gate_auto_corrects_historical_profile(self) -> None:
-        project = self.create_project("refresh-profile", "narrated_pptx")
+        project = self.create_project("refresh-profile", "narrated_html")
         self.approve(project, "content")
         self.approve(project, "visual", "1")
         self.prepare_narration_review(project)
@@ -595,7 +490,7 @@ class ProjectV2Tests(unittest.TestCase):
         self.assertTrue(approval_status(project, "narration")[0])
 
     def test_audio_cache_ignores_visual_only_changes(self) -> None:
-        project = self.create_project("audio-cache-projection", "narrated_pptx")
+        project = self.create_project("audio-cache-projection", "narrated_html")
         self.approve(project, "content")
         self.approve(project, "visual", "1")
         self.prepare_narration_review(project)
@@ -614,342 +509,14 @@ class ProjectV2Tests(unittest.TestCase):
         after = qa_presentation.cache_fingerprint(project, "audio", state)
         self.assertEqual(before, after)
 
-    def test_visual_baseline_rejected_after_svg_change(self) -> None:
-        project = self.create_project("visual-provenance", "narrated_pptx")
-        paths = project_paths(project)
-        make_minimal_pptx(paths["animated_pptx"])
-        pptx_production.record_visual_baseline(
-            project,
-            paths["animated_pptx"],
-        )
-        (project / "assets" / "00_cover.svg").write_text(
-            '<svg xmlns="http://www.w3.org/2000/svg" '
-            'viewBox="0 0 1600 900"><!-- changed later --></svg>',
-            encoding="utf-8",
-        )
-        with self.assertRaisesRegex(RuntimeError, "visual baseline"):
-            pptx_production.require_current_visual_baseline(
-                project,
-                paths["animated_pptx"],
-            )
-
-    def test_static_and_animated_assembly_do_not_read_audio(self) -> None:
-        for deliverable, output_key in (
-            ("static_pptx", "static_pptx"),
-            ("animated_pptx", "animated_pptx"),
-        ):
-            with self.subTest(deliverable=deliverable):
-                project = self.create_project(deliverable, deliverable)
-                self.approve(project, "content")
-                self.approve(project, "visual", "1")
-                output = project_paths(project)[output_key]
-                make_minimal_pptx(output)
-                audio_timeline = project / "video" / "audio_timeline.json"
-                self.assertFalse(audio_timeline.exists())
-                with mock.patch.object(pptx_production, "run_adapter"):
-                    pptx_production.assemble_command(
-                        argparse.Namespace(project=project, adapter="test-adapter")
-                    )
-                self.assertTrue(output.is_file())
-                self.assertFalse(
-                    project_paths(project)["narrated_pptx"].exists()
-                )
-
     def test_static_doctor_does_not_check_audio_modules(self) -> None:
-        checked: list[str] = []
+        self.assertIn("playwright", doctor.required_modules("static"))
+        self.assertNotIn("azure.cognitiveservices.speech", doctor.required_modules("static"))
+        self.assertNotIn("lameenc", doctor.required_modules("video"))
+        self.assertNotIn("playwright", doctor.required_modules("audio"))
 
-        def available(module: str) -> bool:
-            checked.append(module)
-            return True
-
-        with mock.patch.object(doctor, "module_available", side_effect=available):
-            self.assertEqual(doctor.check_stage("static"), [])
-        self.assertTrue(set(checked).issubset(set(doctor.STATIC_MODULES)))
-        self.assertFalse(set(checked).intersection(doctor.AUDIO_MODULES))
-
-    def test_video_doctor_does_not_require_ffprobe(self) -> None:
-        executables: list[str] = []
-
-        def which(name: str) -> str | None:
-            executables.append(name)
-            if name == "powershell.exe":
-                return "/mock/powershell.exe"
-            return None
-
-        with (
-            mock.patch.object(doctor, "module_available", return_value=True),
-            mock.patch.object(doctor.shutil, "which", side_effect=which),
-        ):
-            self.assertEqual(doctor.check_stage("video"), [])
-        self.assertNotIn("ffprobe", executables)
-
-    def test_office_2019_product_id_selects_color_range_fix(self) -> None:
-        generation, reason = powerpoint_production.classify_powerpoint_generation(
-            {
-                "powerpoint_version": "16.0",
-                "powerpoint_build": "14701",
-                "office_product_release_ids": "ProPlus2019Retail",
-            }
-        )
-        self.assertEqual(generation, "office-2019")
-        self.assertIn("ProductReleaseIds", reason)
-
-    def test_newer_office_build_skips_color_range_fix(self) -> None:
-        report = {
-            "powerpoint_version": "16.0",
-            "powerpoint_build": "14332",
-            "office_product_release_ids": "ProPlus2021Volume",
-        }
-        video = self.root / "newer-office.mp4"
-        video.write_bytes(b"newer")
-        with mock.patch.object(powerpoint_production, "reencode_office2019_color_range") as reencode:
-            compatibility = powerpoint_production.apply_color_range_compatibility(
-                video,
-                report,
-                "auto",
-            )
-        reencode.assert_not_called()
-        self.assertEqual(compatibility["powerpoint_generation"], "newer-office")
-        self.assertEqual(compatibility["action"], "skipped")
-
-    def test_shared_retail_build_without_product_id_is_unknown(self) -> None:
-        generation, reason = powerpoint_production.classify_powerpoint_generation(
-            {
-                "powerpoint_version": "16.0",
-                "powerpoint_build": "14701",
-            }
-        )
-        self.assertEqual(generation, "unknown")
-        self.assertIn("shared", reason)
-
-    def test_unknown_office_generation_requires_explicit_override(self) -> None:
-        video = self.root / "unknown-office.mp4"
-        video.write_bytes(b"unknown")
-        compatibility = powerpoint_production.apply_color_range_compatibility(
-            video,
-            {"powerpoint_version": "16.0"},
-            "auto",
-        )
-        self.assertEqual(compatibility["action"], "skipped")
-        self.assertIn("warning", compatibility)
-
-    def test_office_2019_fix_reencodes_pixels_to_limited_range(self) -> None:
-        video = self.root / "office-2019.mp4"
-        video.write_bytes(b"raw-video")
-        commands: list[list[str]] = []
-
-        def run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
-            commands.append(command)
-            Path(command[-1]).write_bytes(b"fixed-video")
-            return subprocess.CompletedProcess(command, 0, "", "")
-
-        with (
-            mock.patch.object(powerpoint_production, "find_ffmpeg", return_value="ffmpeg"),
-            mock.patch.object(powerpoint_production.subprocess, "run", side_effect=run),
-        ):
-            compatibility = powerpoint_production.apply_color_range_compatibility(
-                video,
-                {"office_product_release_ids": "PowerPoint2019Volume"},
-                "auto",
-            )
-
-        self.assertEqual(video.read_bytes(), b"fixed-video")
-        self.assertEqual(compatibility["action"], "applied")
-        self.assertTrue(compatibility["reencoded"])
-        self.assertIn("libx264", commands[0])
-        self.assertIn("scale=in_range=pc:out_range=tv", commands[0])
-        self.assertEqual(compatibility["audio_reencoded"], False)
-
-    def test_static_qa_does_not_require_audio_artifacts(self) -> None:
-        project = self.create_project("static-qa", "static_pptx")
-        self.approve(project, "content")
-        self.approve(project, "visual", "1")
-        paths = project_paths(project)
-        make_minimal_pptx(paths["static_pptx"], embedded_svg=True)
-        pptx_production.record_visual_baseline(
-            project,
-            paths["static_pptx"],
-            artifact_key="static_pptx",
-            include_timing=False,
-        )
-        errors: list[str] = []
-        warnings: list[str] = []
-        with mock.patch.object(
-            qa_presentation,
-            "validate_full_project",
-            return_value=([], []),
-        ):
-            _, report = qa_presentation.static_qa(
-                project,
-                errors,
-                warnings,
-            )
-        self.assertEqual(errors, [])
-        self.assertEqual(report["pptx"]["slides"], 1)
-        self.assertFalse(paths["audio_timeline"].exists())
-
-        state = load_state(paths["build_state"])
-        before = qa_presentation.cache_fingerprint(project, "static", state)
-        state["artifacts"].pop("static_pptx")
-        write_object(paths["build_state"], state)
-        after = qa_presentation.cache_fingerprint(project, "static", state)
-        self.assertNotEqual(before, after)
-
-    def test_animated_static_qa_requires_actual_ooxml_entrance_effect(self) -> None:
-        project = self.create_project("animated-qa", "animated_pptx")
-        self.approve(project, "content")
-        self.approve(project, "visual", "1")
-        paths = project_paths(project)
-
-        make_minimal_pptx(paths["animated_pptx"], embedded_svg=True)
-        pptx_production.record_visual_baseline(
-            project,
-            paths["animated_pptx"],
-            artifact_key="animated_pptx",
-            include_timing=True,
-        )
-        errors: list[str] = []
-        warnings: list[str] = []
-        with mock.patch.object(
-            qa_presentation,
-            "validate_full_project",
-            return_value=([], []),
-        ):
-            qa_presentation.static_qa(project, errors, warnings)
-        self.assertTrue(any("p:timing" in message for message in errors))
-
-        write_one_page_animation_timing(project)
-        make_animated_pptx(paths["animated_pptx"])
-        pptx_production.record_visual_baseline(
-            project,
-            paths["animated_pptx"],
-            artifact_key="animated_pptx",
-            include_timing=True,
-        )
-        errors = []
-        warnings = []
-        with mock.patch.object(
-            qa_presentation,
-            "validate_full_project",
-            return_value=([], []),
-        ):
-            _, report = qa_presentation.static_qa(project, errors, warnings)
-        self.assertEqual(errors, [])
-        self.assertTrue(report["pptx"]["animations"][0]["matched"])
-
-    def test_animation_evidence_rejects_malformed_filters_clicks_and_duration(self) -> None:
-        pptx = self.root / "animation-evidence.pptx"
-        make_animated_pptx(pptx)
-        with zipfile.ZipFile(pptx) as archive:
-            valid = archive.read("ppt/slides/slide1.xml")
-        beats = [{"id": "title", "effect": "fade"}]
-        timing_beats = [
-            {"id": "title", "effect": "fade", "duration_ms": 280}
-        ]
-        evidence, errors = qa_presentation.animation_slide_evidence(
-            valid,
-            page=1,
-            beats=beats,
-            timing_beats=timing_beats,
-        )
-        self.assertEqual(errors, [])
-        self.assertTrue(evidence["matched"])
-
-        mutations = (
-            valid.replace(b'filter="fade"', b'filter="fade(bogus"'),
-            valid.replace(b'dur="280"', b'dur="999999999"'),
-            valid.replace(
-                b'<p:tnLst><p:par>',
-                b'<p:tnLst><p:cond evt="onClick"/><p:par>',
-            ),
-            valid.replace(
-                b'<p:cNvPr id="2" name="s01_title"/>',
-                b'<p:cNvPr id="2" name="s01_title"/>'
-                b'<p:cNvPr id="3" name="s01_title"/>',
-            ),
-            valid.replace(
-                b"</p:timing>",
-                b'<p:animEffect transition="in" filter="fade(bogus"/>'
-                b"</p:timing>",
-            ),
-            valid.replace(
-                b"</p:timing>",
-                b'<p:cond evt="onClick"/></p:timing>',
-            ),
-        )
-        for payload in mutations:
-            with self.subTest(payload=payload[:80]):
-                evidence, errors = qa_presentation.animation_slide_evidence(
-                    payload,
-                    page=1,
-                    beats=beats,
-                    timing_beats=timing_beats,
-                )
-                self.assertTrue(errors)
-                self.assertFalse(evidence["matched"])
-
-    def test_standard_fingerprint_binds_current_static_qa_report(self) -> None:
-        project = self.create_project("standard-static-dependency", "narrated_pptx")
-        state = load_state(project_paths(project)["build_state"])
-        errors: list[str] = []
-        warnings: list[str] = []
-        with mock.patch.object(
-            qa_presentation,
-            "validate_full_project",
-            return_value=([], []),
-        ):
-            qa_presentation.standard_qa(
-                project,
-                errors,
-                warnings,
-                cached_audio_report={"fingerprint": "audio", "evidence": {}},
-                cached_static_report=None,
-            )
-        self.assertTrue(
-            any("no current static QA PASS" in message for message in errors)
-        )
-        without_static = qa_presentation.cache_fingerprint(
-            project,
-            "standard",
-            state,
-        )
-        static_fingerprint = qa_presentation.cache_fingerprint(
-            project,
-            "static",
-            state,
-        )
-        report_path = project / "video" / "qa_static.json"
-        write_object(
-            report_path,
-            {
-                "schema_version": 1,
-                "level": "static",
-                "status": "passed",
-                "fingerprint": static_fingerprint,
-                "errors": [],
-                "warnings": [],
-                "evidence": {},
-            },
-        )
-        state["qa"]["static"] = {
-            "status": "passed",
-            "fingerprint": static_fingerprint,
-            "report": "video/qa_static.json",
-            "report_sha256": file_hash(report_path),
-        }
-        write_object(project_paths(project)["build_state"], state)
-        with_static = qa_presentation.cache_fingerprint(
-            project,
-            "standard",
-            state,
-        )
-        self.assertNotEqual(without_static, with_static)
-        report_path.write_bytes(report_path.read_bytes() + b"\n")
-        tampered = qa_presentation.cache_fingerprint(project, "standard", state)
-        self.assertNotEqual(with_static, tampered)
-
-    def test_voice_configuration_does_not_require_visual_baseline(self) -> None:
-        project = self.create_project("voice-config", "narrated_pptx")
+    def test_voice_configuration_does_not_require_html(self) -> None:
+        project = self.create_project("voice-config", "narrated_html")
         args = argparse.Namespace(
             project=project,
             qa="standard",
@@ -961,16 +528,12 @@ class ProjectV2Tests(unittest.TestCase):
             dry_run=False,
             skip_export=False,
         )
-        with mock.patch.object(rebuild_presentation, "run_script") as run, mock.patch.object(
-            rebuild_presentation,
-            "require_current_visual_baseline",
-        ) as require_baseline:
+        with mock.patch.object(rebuild_presentation, "run_script") as run:
             self.assertEqual(rebuild_presentation.rebuild_audio(args), 0)
         run.assert_called_once()
-        require_baseline.assert_not_called()
 
     def test_voice_configuration_survives_invalid_visual_manifest(self) -> None:
-        project = self.create_project("voice-invalid-visual", "narrated_pptx")
+        project = self.create_project("voice-invalid-visual", "narrated_html")
         self.approve(project, "content")
         self.prepare_narration_review(project)
         paths = project_paths(project)
@@ -998,7 +561,7 @@ class ProjectV2Tests(unittest.TestCase):
         self.assertIn("could not be refreshed", output.getvalue())
 
     def test_voice_configuration_noop_and_dry_run_messages_are_truthful(self) -> None:
-        project = self.create_project("voice-message", "narrated_pptx")
+        project = self.create_project("voice-message", "narrated_html")
         paths = project_paths(project)
         original = paths["voice_profile"].read_bytes()
         output = io.StringIO()
@@ -1035,76 +598,10 @@ class ProjectV2Tests(unittest.TestCase):
         self.assertIn("PLAN configure-voice", output.getvalue())
         self.assertEqual(paths["voice_profile"].read_bytes(), original)
 
-    def test_release_cache_binds_powerpoint_export_report_file(self) -> None:
-        project = self.create_project("release-report-cache", "video")
-        self.approve(project, "content")
-        self.prepare_narration_review(project)
-        paths = project_paths(project)
-        paths["video"].parent.mkdir(parents=True, exist_ok=True)
-        paths["video"].write_bytes(b"video-bytes")
-        export_report = project / "video" / "powerpoint_export.json"
-        export_report.write_text('{"status":"ok"}\n', encoding="utf-8")
-        state = load_state(paths["build_state"])
-        state["powerpoint"]["video_exported"] = {
-            "status": "passed",
-            "video_sha256": file_hash(paths["video"]),
-            "pptx_sha256": "0" * 64,
-            "report": "video/powerpoint_export.json",
-            "report_sha256": file_hash(export_report),
-        }
-        before = qa_presentation.cache_fingerprint(project, "release", state)
-        export_report.unlink()
-        after = qa_presentation.cache_fingerprint(project, "release", state)
-        self.assertNotEqual(before, after)
-
-    def test_video_probe_reports_missing_ffprobe_as_unavailable(self) -> None:
-        video = self.root / "sample.mp4"
-        video.write_bytes(b"not-a-real-video")
-        with mock.patch.object(qa_presentation.shutil, "which", return_value=None):
-            report = qa_presentation.probe_video(video)
-        self.assertEqual(report["ffprobe"], "unavailable")
-        self.assertNotIn("duration_seconds", report)
-
-    def test_video_export_rejects_forged_standard_qa_state(self) -> None:
-        project = self.create_project("forged-standard", "video")
-        self.approve(project, "content")
-        self.approve(project, "visual", "1")
-        self.prepare_narration_review(project)
-        self.approve(project, "narration")
-        paths = project_paths(project)
-        state = load_state(paths["build_state"])
-        fingerprint = qa_presentation.cache_fingerprint(
-            project,
-            "standard",
-            state,
-        )
-        state["qa"]["standard"] = {
-            "status": "passed",
-            "fingerprint": fingerprint,
-            "report": "video/qa_standard.json",
-            "report_sha256": "0" * 64,
-        }
-        write_object(paths["build_state"], state)
-
-        with mock.patch.object(powerpoint_production, "run_powershell") as run:
-            with self.assertRaisesRegex(RuntimeError, "standard QA"):
-                powerpoint_production.export_video_command(
-                    argparse.Namespace(
-                        project=project,
-                        input_pptx=None,
-                        output_mp4=None,
-                        timeout_minutes=90,
-                        vertical_resolution=1080,
-                        frames_per_second=30,
-                        quality=100,
-                    )
-                )
-            run.assert_not_called()
-
     def test_content_rejects_missing_sha_bound_review(self) -> None:
         project = self.create_project(
             "missing-review",
-            "static_pptx",
+            "static_html",
             prepare_visual=False,
         )
         config = load_object(project / "project.json")

@@ -9,7 +9,33 @@ import os
 from pathlib import Path
 from typing import Any, Sequence
 
-from mutagen.mp3 import MP3
+def timeline_rows(timeline: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = timeline.get("slides")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("audio_timeline.slides must be a non-empty array")
+    normalized: list[dict[str, Any]] = []
+    for index, row in enumerate(rows, 1):
+        if not isinstance(row, dict):
+            raise ValueError(f"audio_timeline.slides[{index - 1}] is invalid")
+        page = row.get("page")
+        audio_file = row.get("audio_file")
+        advance_ms = row.get("advance_ms")
+        if (
+            isinstance(page, bool)
+            or not isinstance(page, int)
+            or page != index
+        ):
+            raise ValueError("Audio timeline pages must be contiguous from 1")
+        if not isinstance(audio_file, str) or not audio_file:
+            raise ValueError(f"Audio timeline page {page} has no audio_file")
+        if (
+            isinstance(advance_ms, bool)
+            or not isinstance(advance_ms, int)
+            or advance_ms <= 0
+        ):
+            raise ValueError(f"Audio timeline page {page} has invalid advance_ms")
+        normalized.append(row)
+    return normalized
 
 
 def build_timeline(
@@ -18,6 +44,10 @@ def build_timeline(
     audio_dir: Path,
     output: Path,
 ) -> dict[str, Any]:
+    try:
+        from mutagen.mp3 import MP3
+    except ImportError as exc:
+        raise RuntimeError("Missing mutagen; run bootstrap --stage audio") from exc
     slides = manifest.get("slides")
     if not isinstance(slides, list) or not slides:
         raise ValueError("Manifest must contain slides[]")

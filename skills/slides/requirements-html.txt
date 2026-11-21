@@ -1,0 +1,3 @@
+fonttools[woff]>=4.60,<5
+playwright>=1.51,<2
+tinycss2>=1.4,<2

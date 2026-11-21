@@ -68,7 +68,7 @@ Git 源使用按提交隔离的工作树，使旧安装可继续引用旧版本�
 
 ## 运行依赖与环境配置
 
-技能安装完成后，再按实际能力运行对应技能的 bootstrap 和 doctor；Python 包、FFmpeg、Windows PowerPoint、自托管服务均属于运行环境。插件安装不会部署 Qwen 服务或提供这些软件。
+技能安装完成后，再按实际能力运行对应技能的 bootstrap 和 doctor；Python 包、FFmpeg、Chromium、字体和自托管服务均属于运行环境。插件安装不会部署 Qwen 服务或提供这些软件。
 
 推荐将配置放在实际项目的 `.env`；跨项目共享配置使用 `--env-file /absolute/path/settings.env`。Speech 与 Slides 按以下顺序逐层补充缺失值，先前的值不被覆盖：
 

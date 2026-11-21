@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
-"""Run cached static, audio, or standard QA for a presentation project."""
+"""Run cached browser, audio, or synchronized playback QA."""
 
 from __future__ import annotations
 
 import argparse
-import json
-import shutil
-import subprocess
+import hashlib
 import sys
-import zipfile
-import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
+from browser_render import browser_page, open_deck
+from build_audio_timeline import timeline_rows
+from html_production import NARRATED_APPROVALS, STATIC_APPROVALS, require_current_html
+from narration_performance import audit_narration_performance
 from narration_pitch import narration_pitch_audit
-from pptx_production import P_NS, slide_audio_target, timeline_rows
 from production_common import (
+    HTML_DELIVERABLES,
+    NARRATION_DELIVERABLES,
     canonical_hash,
     chapter_audio_fingerprint,
     chapter_groups,
-    current_input_fingerprints,
     file_hash,
     load_object,
     load_project_config,
@@ -28,111 +28,38 @@ from production_common import (
     load_voice_profile,
     normalize_director_pages,
     pronunciation_audit,
+    project_lock,
     project_paths,
     require_approvals,
-    source_fingerprint,
     synthesis_identity_errors,
-    visual_fingerprint,
     voice_synthesis_projection,
     write_object,
 )
-from narration_performance import audit_narration_performance
-from validate_project import validate as validate_full_project
+from validate_project import validate
 
 
-def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+APPROVALS = {
+    "static": STATIC_APPROVALS,
+    "audio": ("content", "narration"),
+    "standard": NARRATED_APPROVALS,
+}
 
 
 def directory_hashes(directory: Path, patterns: tuple[str, ...]) -> dict[str, str]:
-    result: dict[str, str] = {}
-    if not directory.is_dir():
-        return result
-    for pattern in patterns:
-        for path in sorted(directory.glob(pattern)):
-            if path.is_file():
-                result[str(path.relative_to(directory))] = file_hash(path)
-    return result
+    return {
+        path.name: file_hash(path)
+        for pattern in patterns
+        for path in sorted(directory.glob(pattern))
+        if path.is_file()
+    }
 
 
 def qa_tool_hashes(*names: str) -> dict[str, str]:
-    script_dir = Path(__file__).resolve().parent
-    return {
-        name: file_hash(script_dir / name)
-        for name in names
-        if (script_dir / name).is_file()
-    }
+    return {name: file_hash(Path(__file__).with_name(name)) for name in names}
 
 
-def qa_dependency_payload(
-    project: Path,
-    state: dict[str, Any],
-    level: str,
-) -> dict[str, Any]:
-    qa_state = state.get("qa")
-    record = qa_state.get(level) if isinstance(qa_state, dict) else None
-    report_value = record.get("report") if isinstance(record, dict) else None
-    report_path = (
-        project / report_value
-        if isinstance(report_value, str) and report_value
-        else None
-    )
-    return {
-        "record": record,
-        "actual_report_sha256": (
-            file_hash(report_path)
-            if report_path is not None and report_path.is_file()
-            else None
-        ),
-    }
-
-
-def cache_fingerprints(
-    project: Path,
-    level: str,
-    state: dict[str, Any],
-) -> dict[str, str]:
+def audio_fingerprint(project: Path) -> str:
     paths = project_paths(project)
-    config = load_project_config(project)
-    if level == "static":
-        static_delivery = config["deliverable"] == "static_pptx"
-        visual_pptx = (
-            paths["static_pptx"] if static_delivery else paths["animated_pptx"]
-        )
-        artifact_key = "static_pptx" if static_delivery else "animated_pptx"
-        manifest = (
-            load_object(paths["manifest"])
-            if paths["manifest"].is_file()
-            else {}
-        )
-        return {
-            "static": canonical_hash(
-                {
-                    "source": source_fingerprint(project, config),
-                    "visual": visual_fingerprint(
-                        project,
-                        config,
-                        manifest,
-                        include_timing=not static_delivery,
-                    ),
-                    "pptx": (
-                        file_hash(visual_pptx)
-                        if visual_pptx.is_file()
-                        else None
-                    ),
-                    "visual_artifact": state.get("artifacts", {}).get(
-                        artifact_key
-                    ),
-                    "qa_tools": qa_tool_hashes(
-                        Path(__file__).name,
-                        "validate_project.py",
-                        "production_common.py",
-                        "page_script_contract.py",
-                    ),
-                }
-            )
-        }
-
     manifest = (
         load_object(paths["manifest"])
         if paths["manifest"].is_file()
@@ -177,513 +104,10 @@ def cache_fingerprints(
         "qa_tools": qa_tool_hashes(
             Path(__file__).name,
             "production_common.py",
-            "pptx_production.py",
+            "build_audio_timeline.py",
         ),
     }
-    fingerprints = {"audio": canonical_hash(audio_payload)}
-    if level == "audio":
-        return fingerprints
-    static_fingerprint = cache_fingerprints(project, "static", state)["static"]
-    fingerprints["static"] = static_fingerprint
-    standard_payload = {
-        "audio": audio_payload,
-        "static_qa": {
-            "fingerprint": static_fingerprint,
-            **qa_dependency_payload(project, state, "static"),
-        },
-        "source": source_fingerprint(project, config),
-        "visual": visual_fingerprint(project, config, manifest),
-        "visual_artifacts": {
-            key: state.get("artifacts", {}).get(key)
-            for key in ("animated_pptx", "narrated_pptx")
-        },
-        "pptx": (
-            file_hash(paths["narrated_pptx"])
-            if paths["narrated_pptx"].is_file()
-            else None
-        ),
-        "qa_tools": qa_tool_hashes(
-            Path(__file__).name,
-            "validate_project.py",
-            "page_script_contract.py",
-            "pptx_production.py",
-            "production_common.py",
-        ),
-    }
-    fingerprints["standard"] = canonical_hash(standard_payload)
-    if level == "standard":
-        return fingerprints
-    release_payload = {
-        "standard": standard_payload,
-        "inputs": current_input_fingerprints(project),
-        "video": file_hash(paths["video"]) if paths["video"].is_file() else None,
-        "powerpoint": state.get("powerpoint"),
-        "powerpoint_export_report": None,
-        "qa_tools": qa_tool_hashes(
-            "validate_project.py",
-            "page_script_contract.py",
-        ),
-    }
-    powerpoint = state.get("powerpoint")
-    exported = (
-        powerpoint.get("video_exported")
-        if isinstance(powerpoint, dict)
-        else None
-    )
-    report_value = exported.get("report") if isinstance(exported, dict) else None
-    if isinstance(report_value, str) and report_value:
-        report_path = project / report_value
-        release_payload["powerpoint_export_report"] = (
-            file_hash(report_path) if report_path.is_file() else None
-        )
-    fingerprints["release"] = canonical_hash(release_payload)
-    return fingerprints
-
-
-def cache_fingerprint(
-    project: Path,
-    level: str,
-    state: dict[str, Any],
-) -> str:
-    return cache_fingerprints(project, level, state)[level]
-
-
-def current_cached_report(
-    project: Path,
-    level: str,
-    state: dict[str, Any],
-    fingerprint: str,
-) -> dict[str, Any] | None:
-    qa_state = state.get("qa")
-    cached = qa_state.get(level) if isinstance(qa_state, dict) else None
-    if (
-        not isinstance(cached, dict)
-        or cached.get("status") != "passed"
-        or cached.get("fingerprint") != fingerprint
-        or not isinstance(cached.get("report"), str)
-        or not isinstance(cached.get("report_sha256"), str)
-    ):
-        return None
-    report_path = project / cached["report"]
-    if (
-        not report_path.is_file()
-        or file_hash(report_path) != cached["report_sha256"]
-    ):
-        return None
-    try:
-        report = load_object(report_path)
-    except (OSError, ValueError):
-        return None
-    if (
-        report.get("schema_version") != 1
-        or report.get("level") != level
-        or report.get("status") != "passed"
-        or report.get("fingerprint") != fingerprint
-        or report.get("errors") != []
-        or not isinstance(report.get("evidence"), dict)
-    ):
-        return None
-    return report
-
-
-def normalize_animation_filter(value: str | None) -> str | None:
-    if not isinstance(value, str):
-        return None
-    return {
-        "fade": "fade",
-        "wipe(left)": "wipe_left",
-        "wipe(right)": "wipe_right",
-        "wipe(up)": "wipe_up",
-        "wipe(down)": "wipe_down",
-    }.get(value.strip().lower())
-
-
-def animation_slide_evidence(
-    payload: bytes,
-    *,
-    page: int,
-    beats: list[dict[str, Any]],
-    timing_beats: list[dict[str, Any]] | None = None,
-) -> tuple[dict[str, Any], list[str]]:
-    """Verify actual entrance effects, targets, and stable beat shape names."""
-    errors: list[str] = []
-    root = ET.fromstring(payload)
-    shape_rows = [
-        {"id": node.get("id"), "name": node.get("name")}
-        for node in root.findall(f".//{{{P_NS}}}cNvPr")
-    ]
-    shape_ids = [row["id"] for row in shape_rows if row["id"]]
-    shape_name_values = [row["name"] for row in shape_rows if row["name"]]
-    if len(shape_ids) != len(set(shape_ids)):
-        errors.append(f"Slide {page} contains duplicate cNvPr shape ids")
-    if len(shape_name_values) != len(set(shape_name_values)):
-        errors.append(f"Slide {page} contains duplicate cNvPr shape names")
-    shape_names = {
-        row["id"]: row["name"]
-        for row in shape_rows
-        if row["id"] and row["name"]
-    }
-    timing = root.find(f"{{{P_NS}}}timing")
-    timing_list = (
-        timing.find(f"{{{P_NS}}}tnLst") if timing is not None else None
-    )
-    if timing is None or timing_list is None or len(timing_list) == 0:
-        errors.append(f"Slide {page} has no non-empty p:timing/p:tnLst tree")
-
-    raw_effects = (
-        timing_list.findall(f".//{{{P_NS}}}animEffect")
-        if timing_list is not None
-        else []
-    )
-    all_effects = root.findall(f".//{{{P_NS}}}animEffect")
-    inside_effect_ids = {id(effect) for effect in raw_effects}
-    if any(id(effect) not in inside_effect_ids for effect in all_effects):
-        errors.append(
-            f"Slide {page} contains animEffect nodes outside p:timing/p:tnLst"
-        )
-    if any(
-        isinstance(condition.get("evt"), str)
-        and "click" in condition.get("evt", "").lower()
-        for condition in root.findall(f".//{{{P_NS}}}cond")
-    ):
-        errors.append(f"Slide {page} animation timing contains an onClick trigger")
-    effects: list[dict[str, Any]] = []
-    for index, effect in enumerate(raw_effects, 1):
-        transition = effect.get("transition")
-        normalized_transition = (
-            transition.strip().lower() if isinstance(transition, str) else None
-        )
-        filter_value = effect.get("filter")
-        normalized_effect = normalize_animation_filter(filter_value)
-        targets = effect.findall(f".//{{{P_NS}}}spTgt")
-        target_ids = [
-            target.get("spid") for target in targets if target.get("spid")
-        ]
-        target_id = target_ids[0] if len(target_ids) == 1 else None
-        target_name = shape_names.get(target_id) if target_id else None
-        behavior = effect.find(f".//{{{P_NS}}}cBhvr")
-        duration_node = (
-            behavior.find(f"{{{P_NS}}}cTn")
-            if behavior is not None
-            else None
-        )
-        duration_value = (
-            duration_node.get("dur") if duration_node is not None else None
-        )
-        duration_ms = (
-            int(duration_value)
-            if isinstance(duration_value, str)
-            and duration_value.isdigit()
-            and 0 < int(duration_value) <= 1000
-            else None
-        )
-        if normalized_transition != "in":
-            errors.append(
-                f"Slide {page} animation effect {index} is not an entrance effect"
-            )
-        if normalized_effect is None:
-            errors.append(
-                f"Slide {page} animation effect {index} has unsupported filter "
-                f"{filter_value!r}"
-            )
-        if len(target_ids) != 1:
-            errors.append(
-                f"Slide {page} animation effect {index} must target one shape"
-            )
-        elif target_name is None:
-            errors.append(
-                f"Slide {page} animation target spid={target_id} does not exist"
-            )
-        if duration_ms is None:
-            errors.append(
-                f"Slide {page} animation effect {index} duration must be 1-1000ms"
-            )
-        effects.append(
-            {
-                "filter": filter_value,
-                "effect": normalized_effect,
-                "transition": normalized_transition,
-                "target_spid": target_id,
-                "target_name": target_name,
-                "duration_ms": duration_ms,
-            }
-        )
-
-    timing_by_id = {
-        row.get("id"): row
-        for row in timing_beats or []
-        if isinstance(row, dict) and isinstance(row.get("id"), str)
-    }
-    expected: list[dict[str, Any]] = []
-    for beat in beats:
-        beat_id = beat.get("id") if isinstance(beat, dict) else None
-        effect = beat.get("effect") if isinstance(beat, dict) else None
-        if isinstance(beat_id, str) and isinstance(effect, str):
-            expected.append(
-                {
-                    "beat_id": beat_id,
-                    "shape_name": f"s{page:02d}_{beat_id}",
-                    "effect": effect,
-                    "duration_ms": (
-                        timing_by_id.get(beat_id, {}).get("duration_ms")
-                        if timing_beats is not None
-                        else None
-                    ),
-                }
-            )
-    if len(effects) != len(expected):
-        errors.append(
-            f"Slide {page} entrance effect count {len(effects)} "
-            f"!= manifest beats {len(expected)}"
-        )
-    actual_names = [row["target_name"] for row in effects]
-    if len([name for name in actual_names if name is not None]) != len(
-        set(name for name in actual_names if name is not None)
-    ):
-        errors.append(f"Slide {page} animation beats reuse a target shape")
-    for row in expected:
-        matches = [
-            effect
-            for effect in effects
-            if effect["target_name"] == row["shape_name"]
-        ]
-        if len(matches) != 1:
-            errors.append(
-                f"Slide {page} beat {row['beat_id']} must map once to "
-                f"shape {row['shape_name']}"
-            )
-        elif matches[0]["effect"] != row["effect"]:
-            errors.append(
-                f"Slide {page} beat {row['beat_id']} effect "
-                f"{matches[0]['effect']!r} != {row['effect']!r}"
-            )
-        elif (
-            timing_beats is not None
-            and matches[0]["duration_ms"] != row["duration_ms"]
-        ):
-            errors.append(
-                f"Slide {page} beat {row['beat_id']} duration "
-                f"{matches[0]['duration_ms']!r} != timing "
-                f"{row['duration_ms']!r}"
-            )
-    return {
-        "page": page,
-        "expected_beats": expected,
-        "effects": effects,
-        "matched": not errors,
-    }, errors
-
-
-def static_qa(
-    project: Path,
-    errors: list[str],
-    warnings: list[str],
-) -> tuple[str, dict[str, Any]]:
-    paths = project_paths(project)
-    config = load_project_config(project)
-    static_delivery = config["deliverable"] == "static_pptx"
-    artifact_key = "static_pptx" if static_delivery else "animated_pptx"
-    validation_stage = "static_pptx" if static_delivery else "animated_pptx"
-    full_errors, full_warnings = validate_full_project(
-        project,
-        stage=validation_stage,
-    )
-    errors.extend(full_errors)
-    warnings.extend(full_warnings)
-    template = paths["template_working"]
-    if not template.is_file():
-        errors.append(f"Working template not found: {template}")
-    elif not zipfile.is_zipfile(template):
-        errors.append(f"Working template is not a valid PPTX package: {template}")
-
-    manifest = load_object(paths["manifest"])
-    expected_pages = [
-        row.get("page")
-        for row in manifest.get("slides", [])
-        if isinstance(row, dict)
-    ]
-    manifest_by_page = {
-        row.get("page"): row
-        for row in manifest.get("slides", [])
-        if isinstance(row, dict)
-    }
-    timing_beats_by_page: dict[int, list[dict[str, Any]]] = {}
-    if not static_delivery:
-        if not paths["timing"].is_file():
-            errors.append("Animated PPTX requires fast_animation_timing.json")
-        else:
-            timing_payload = load_object(paths["timing"])
-            for row in timing_payload.get("slides", []):
-                if (
-                    isinstance(row, dict)
-                    and isinstance(row.get("page"), int)
-                    and not isinstance(row.get("page"), bool)
-                    and isinstance(row.get("beats"), list)
-                ):
-                    timing_beats_by_page[row["page"]] = row["beats"]
-    pptx = paths[artifact_key]
-    state = load_state(paths["build_state"])
-    recorded_static = state.get("artifacts", {}).get(artifact_key)
-    current_static = (
-        {
-            "sha256": file_hash(pptx),
-            "source_fingerprint": source_fingerprint(project, config),
-            "visual_fingerprint": visual_fingerprint(
-                project,
-                config,
-                manifest,
-                include_timing=not static_delivery,
-            ),
-        }
-        if pptx.is_file()
-        else None
-    )
-    if current_static is not None and (
-        not isinstance(recorded_static, dict)
-        or any(
-            recorded_static.get(key) != value
-            for key, value in current_static.items()
-        )
-    ):
-        errors.append(
-            f"{artifact_key} visual provenance is missing or stale; rerun assembly"
-        )
-    pptx_report: dict[str, Any] | None = None
-    if not pptx.is_file():
-        errors.append(f"Static PPTX not found: {pptx}")
-    else:
-        try:
-            with zipfile.ZipFile(pptx) as archive:
-                bad_member = archive.testzip()
-                if bad_member is not None:
-                    errors.append(f"PPTX ZIP member is corrupt: {bad_member}")
-                slide_names = {
-                    name
-                    for name in archive.namelist()
-                    if name.startswith("ppt/slides/slide")
-                    and name.endswith(".xml")
-                    and "/_rels/" not in name
-                }
-                if len(slide_names) != len(expected_pages):
-                    errors.append(
-                        f"Static PPTX slide count {len(slide_names)} "
-                        f"!= manifest pages {len(expected_pages)}"
-                    )
-                svg_members = [
-                    name
-                    for name in archive.namelist()
-                    if name.startswith("ppt/media/")
-                    and name.lower().endswith(".svg")
-                ]
-                if len(svg_members) < len(expected_pages):
-                    errors.append(
-                        "Static PPTX does not contain one embedded SVG per page"
-                    )
-                external_media: list[str] = []
-                for name in archive.namelist():
-                    if not name.endswith(".rels"):
-                        continue
-                    root = ET.fromstring(archive.read(name))
-                    for relationship in root:
-                        rel_type = relationship.get("Type", "")
-                        if (
-                            relationship.get("TargetMode") == "External"
-                            and rel_type.rsplit("/", 1)[-1]
-                            in {"audio", "image", "media"}
-                        ):
-                            external_media.append(
-                                f"{name}:{relationship.get('Target')}"
-                            )
-                if external_media:
-                    errors.append(
-                        "Static PPTX contains external media relationships: "
-                        + ", ".join(external_media)
-                    )
-                animation_reports: list[dict[str, Any]] = []
-                if not static_delivery:
-                    for page in expected_pages:
-                        if isinstance(page, bool) or not isinstance(page, int):
-                            continue
-                        slide_name = f"ppt/slides/slide{page}.xml"
-                        if slide_name not in slide_names:
-                            errors.append(
-                                f"Animated PPTX is missing {slide_name}"
-                            )
-                            continue
-                        slide = manifest_by_page.get(page)
-                        beats = (
-                            slide.get("beats", [])
-                            if isinstance(slide, dict)
-                            else []
-                        )
-                        timing_beats = timing_beats_by_page.get(page)
-                        if timing_beats is None:
-                            errors.append(
-                                f"Animation timing has no page {page} beat plan"
-                            )
-                        evidence, animation_errors = animation_slide_evidence(
-                            archive.read(slide_name),
-                            page=page,
-                            beats=beats if isinstance(beats, list) else [],
-                            timing_beats=timing_beats,
-                        )
-                        animation_reports.append(evidence)
-                        errors.extend(animation_errors)
-                    presentation_name = "ppt/presentation.xml"
-                    if presentation_name not in archive.namelist():
-                        errors.append(
-                            "Animated PPTX is missing ppt/presentation.xml"
-                        )
-                    else:
-                        presentation = ET.fromstring(
-                            archive.read(presentation_name)
-                        )
-                        if presentation.get("showAnimation") == "0":
-                            errors.append(
-                                "Animated PPTX explicitly disables animations"
-                            )
-                pptx_report = {
-                    "file": str(pptx.relative_to(project)),
-                    "sha256": file_hash(pptx),
-                    "slides": len(slide_names),
-                    "embedded_svg": len(svg_members),
-                    "animations": animation_reports,
-                }
-        except (ET.ParseError, zipfile.BadZipFile) as exc:
-            errors.append(f"Invalid static PPTX package: {exc}")
-
-    fingerprint = canonical_hash(
-        {
-            "source": source_fingerprint(project, config),
-            "visual": visual_fingerprint(
-                project,
-                config,
-                manifest,
-                include_timing=not static_delivery,
-            ),
-            "template": (
-                file_hash(template) if template.is_file() else None
-            ),
-            "pptx": file_hash(pptx) if pptx.is_file() else None,
-            "qa_script": file_hash(Path(__file__)),
-        }
-    )
-    return fingerprint, {
-        "project": {
-            "errors": full_errors,
-            "warnings": full_warnings,
-        },
-        "template": (
-            {
-                "file": str(template.relative_to(project)),
-                "sha256": file_hash(template),
-            }
-            if template.is_file()
-            else None
-        ),
-        "pptx": pptx_report,
-        "visual_provenance": recorded_static,
-    }
+    return canonical_hash(audio_payload)
 
 
 def narration_pitch_qa(
@@ -1073,466 +497,214 @@ def audio_qa(
     }
 
 
-def transition_advance(payload: bytes) -> int | None:
-    try:
-        from lxml import etree
-    except ImportError as exc:
-        raise RuntimeError("Missing lxml; run bootstrap first") from exc
-    root = etree.fromstring(payload)
-    transition = root.find(f"{{{P_NS}}}transition")
-    if transition is None:
+def current_cached_report(project: Path, level: str, state: dict, fingerprint: str) -> dict | None:
+    record = state["qa"].get(level)
+    if not isinstance(record, dict) or record.get("status") != "passed" or record.get("fingerprint") != fingerprint:
         return None
-    value = transition.get("advTm")
-    return int(value) if value and value.isdigit() else None
-
-
-def standard_qa(
-    project: Path,
-    errors: list[str],
-    warnings: list[str],
-    *,
-    cached_audio_report: dict[str, Any] | None = None,
-    cached_static_report: dict[str, Any] | None = None,
-) -> tuple[str, dict[str, Any]]:
-    if cached_audio_report is None:
-        audio_fingerprint, audio_report = audio_qa(project, errors, warnings)
-    else:
-        audio_fingerprint = str(cached_audio_report["fingerprint"])
-        audio_report = cached_audio_report["evidence"]
-        for warning in cached_audio_report.get("warnings", []):
-            if isinstance(warning, str) and warning not in warnings:
-                warnings.append(warning)
-    if cached_static_report is None:
-        static_fingerprint = None
-        static_report = None
-        errors.append(
-            "Current animated baseline has no current static QA PASS; "
-            "run qa --level static before standard QA"
-        )
-    else:
-        static_fingerprint = str(cached_static_report["fingerprint"])
-        static_report = cached_static_report["evidence"]
-        for warning in cached_static_report.get("warnings", []):
-            if isinstance(warning, str) and warning not in warnings:
-                warnings.append(warning)
-    paths = project_paths(project)
-    full_errors, full_warnings = validate_full_project(
-        project,
-        stage="animation",
-    )
-    errors.extend(f"Full project: {message}" for message in full_errors)
-    warnings.extend(f"Full project: {message}" for message in full_warnings)
-    pptx = paths["narrated_pptx"]
-    state = load_state(paths["build_state"])
-    recorded_narrated = state.get("artifacts", {}).get("narrated_pptx")
-    config = load_project_config(project)
-    manifest = load_object(paths["manifest"])
-    expected_source = source_fingerprint(project, config)
-    expected_visual = visual_fingerprint(project, config, manifest)
-    if not isinstance(recorded_narrated, dict):
-        errors.append("Narrated PPTX has no visual/audio provenance record")
-    else:
-        recorded_visual = recorded_narrated.get("visual_baseline")
-        if (
-            not isinstance(recorded_visual, dict)
-            or recorded_visual.get("source_fingerprint") != expected_source
-            or recorded_visual.get("visual_fingerprint") != expected_visual
-        ):
-            errors.append("Narrated PPTX visual provenance is stale")
-        if paths["audio_timeline"].is_file() and recorded_narrated.get(
-            "audio_timeline_sha256"
-        ) != file_hash(paths["audio_timeline"]):
-            errors.append("Narrated PPTX audio timeline provenance is stale")
-        if pptx.is_file() and recorded_narrated.get("sha256") != file_hash(pptx):
-            errors.append("Narrated PPTX artifact SHA-256 is stale")
-    if not pptx.is_file():
-        errors.append(f"Narrated PPTX not found: {pptx}")
-        return canonical_hash({"audio": audio_fingerprint, "pptx": None}), {
-            "audio": audio_report,
-            "full_project": {
-                "errors": full_errors,
-                "warnings": full_warnings,
-            },
-            "pptx": None,
-        }
-    timeline = load_object(paths["audio_timeline"])
-    rows = timeline_rows(timeline)
-    pptx_rows: list[dict[str, Any]] = []
+    path = project / "video" / f"qa_{level}.json"
+    if (
+        record.get("report") != str(path.relative_to(project))
+        or not path.is_file()
+        or file_hash(path) != record.get("report_sha256")
+    ):
+        return None
     try:
-        with zipfile.ZipFile(pptx) as archive:
-            bad_member = archive.testzip()
-            if bad_member is not None:
-                errors.append(f"PPTX ZIP member is corrupt: {bad_member}")
-            slide_names = {
-                name
-                for name in archive.namelist()
-                if name.startswith("ppt/slides/slide")
-                and name.endswith(".xml")
-                and "/_rels/" not in name
-            }
-            if len(slide_names) != len(rows):
-                errors.append(
-                    f"PPTX slide count {len(slide_names)} != audio pages {len(rows)}"
-                )
-            media_targets: set[str] = set()
-            for row in rows:
-                page = int(row["page"])
-                try:
-                    target = slide_audio_target(archive, page)
-                except ValueError as exc:
-                    errors.append(str(exc))
-                    continue
-                if target in media_targets:
-                    errors.append(f"PPTX media target is shared: {target}")
-                media_targets.add(target)
-                source_audio = (
-                    paths["audio_timeline"].parent / row["audio_file"]
-                ).resolve()
-                try:
-                    embedded = archive.read(target)
-                except KeyError:
-                    errors.append(f"Embedded audio is missing: {target}")
-                    continue
-                if source_audio.is_file() and embedded != source_audio.read_bytes():
-                    errors.append(
-                        f"Slide {page} embedded audio differs from timeline file"
-                    )
-                slide_name = f"ppt/slides/slide{page}.xml"
-                slide_xml = archive.read(slide_name)
-                advance = transition_advance(slide_xml)
-                if advance != row["advance_ms"]:
-                    errors.append(
-                        f"Slide {page} PPTX advance {advance} != "
-                        f"timeline {row['advance_ms']}"
-                    )
-                if b"playFrom" not in slide_xml:
-                    errors.append(
-                        f"Slide {page} has no automatic media playFrom command"
-                    )
-                pptx_rows.append(
-                    {
-                        "page": page,
-                        "media_target": target,
-                        "advance_ms": advance,
-                    }
-                )
-            presentation_xml = archive.read("ppt/presentation.xml")
-            for attribute in (b'useTimings="1"', b'showNarration="1"', b'showAnimation="1"'):
-                if attribute not in presentation_xml:
-                    errors.append(
-                        "ppt/presentation.xml is missing "
-                        + attribute.decode("ascii")
-                    )
-    except zipfile.BadZipFile as exc:
-        errors.append(f"Invalid PPTX ZIP: {exc}")
-
-    fingerprint = canonical_hash(
-        {
-            "audio": audio_fingerprint,
-            "static": static_fingerprint,
-            "pptx": file_hash(pptx),
-            "qa_script": file_hash(Path(__file__)),
-        }
-    )
-    return fingerprint, {
-        "audio": audio_report,
-        "static": static_report,
-        "full_project": {
-            "errors": full_errors,
-            "warnings": full_warnings,
-        },
-        "pptx": {
-            "file": str(pptx.relative_to(project)),
-            "sha256": file_hash(pptx),
-            "slides": pptx_rows,
-        },
-    }
-
-
-def probe_video(video: Path) -> dict[str, Any]:
-    report: dict[str, Any] = {
-        "file": str(video),
-        "sha256": file_hash(video),
-        "bytes": video.stat().st_size,
-    }
-    ffprobe = shutil.which("ffprobe")
-    if not ffprobe:
-        report["ffprobe"] = "unavailable"
-        return report
-    result = subprocess.run(
-        [
-            ffprobe,
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "json",
-            str(video),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        report["ffprobe"] = "failed"
-        report["ffprobe_error"] = result.stderr.strip()
-        return report
-    report["ffprobe"] = "passed"
-    payload = json.loads(result.stdout)
-    duration = payload.get("format", {}).get("duration")
-    if duration is not None:
-        report["duration_seconds"] = float(duration)
+        report = load_object(path)
+    except (OSError, ValueError):
+        return None
+    if (
+        report.get("schema_version") != 1 or report.get("level") != level
+        or report.get("status") != "passed" or report.get("fingerprint") != fingerprint
+        or report.get("errors") != [] or not isinstance(report.get("evidence"), dict)
+    ):
+        return None
     return report
 
 
-def release_qa(
-    project: Path,
-    state: dict[str, Any],
-    errors: list[str],
-    warnings: list[str],
-    *,
-    cached_standard_report: dict[str, Any] | None = None,
-    cached_audio_report: dict[str, Any] | None = None,
-    cached_static_report: dict[str, Any] | None = None,
-) -> tuple[str, dict[str, Any]]:
-    if cached_standard_report is None:
-        standard_fingerprint, standard_report = standard_qa(
-            project,
-            errors,
-            warnings,
-            cached_audio_report=cached_audio_report,
-            cached_static_report=cached_static_report,
-        )
-    else:
-        standard_fingerprint = str(cached_standard_report["fingerprint"])
-        standard_report = cached_standard_report["evidence"]
-        for warning in cached_standard_report.get("warnings", []):
-            if isinstance(warning, str) and warning not in warnings:
-                warnings.append(warning)
-    full_errors: list[str] = []
-    full_warnings: list[str] = []
-    paths = project_paths(project)
-    video = paths["video"]
-    video_report: dict[str, Any] | None = None
-    if not video.is_file() or video.stat().st_size <= 0:
-        errors.append(f"Exported video not found or empty: {video}")
-    else:
-        video_report = probe_video(video)
-        if video_report.get("ffprobe") != "passed":
-            errors.append(
-                "ffprobe did not successfully inspect the exported MP4"
-            )
-        if not isinstance(video_report.get("duration_seconds"), (int, float)):
-            errors.append("ffprobe did not return a valid MP4 duration")
-        timeline = load_object(paths["audio_timeline"])
-        duration = video_report.get("duration_seconds")
-        estimated = timeline.get("estimated_deck_seconds")
-        if isinstance(duration, (int, float)) and isinstance(
-            estimated,
-            (int, float),
-        ):
-            tolerance = max(2.0, float(estimated) * 0.05)
-            if abs(float(duration) - float(estimated)) > tolerance:
-                errors.append(
-                    f"MP4 duration {duration:.3f}s differs from estimated "
-                    f"{estimated:.3f}s"
-                )
+def cache_fingerprint(project: Path, level: str, state: dict) -> str:
+    if level == "audio":
+        return audio_fingerprint(project)
+    _, record = require_current_html(project, state)
+    static = canonical_hash({
+        "html": record,
+        "tools": qa_tool_hashes(Path(__file__).name, "browser_render.py", "validate_project.py"),
+    })
+    if level == "static":
+        return static
+    return canonical_hash({
+        "html": record,
+        "static_fingerprint": static,
+        "audio_fingerprint": audio_fingerprint(project),
+        "qa": [state["qa"].get(key) for key in ("static", "audio")],
+    })
 
-    powerpoint = state.get("powerpoint", {})
-    opened = powerpoint.get("opened") if isinstance(powerpoint, dict) else None
-    exported = (
-        powerpoint.get("video_exported")
-        if isinstance(powerpoint, dict)
-        else None
-    )
-    watched = (
-        powerpoint.get("human_watch")
-        if isinstance(powerpoint, dict)
-        else None
-    )
-    pptx_sha = (
-        file_hash(paths["narrated_pptx"])
-        if paths["narrated_pptx"].is_file()
-        else None
-    )
-    video_sha = file_hash(video) if video.is_file() else None
-    if not isinstance(opened, dict) or opened.get("pptx_sha256") != pptx_sha:
-        errors.append("Current PPTX has no matching PowerPoint-open evidence")
-    if not isinstance(exported, dict) or exported.get("video_sha256") != video_sha:
-        errors.append("Current MP4 has no matching PowerPoint-export evidence")
-    elif exported.get("pptx_sha256") != pptx_sha:
-        errors.append("PowerPoint export evidence refers to another PPTX")
-    else:
-        report_value = exported.get("report")
-        report_path = (
-            project / report_value
-            if isinstance(report_value, str) and report_value
-            else None
-        )
-        if report_path is None or not report_path.is_file():
-            errors.append("PowerPoint export report is missing")
-        elif exported.get("report_sha256") != file_hash(report_path):
-            errors.append("PowerPoint export report SHA-256 is stale")
-    if not isinstance(watched, dict) or watched.get("video_sha256") != video_sha:
-        errors.append(
-            "Current MP4 has no human full-watch confirmation; rerun release "
-            "QA with --human-confirmed only after actually watching it"
-        )
 
-    inputs = current_input_fingerprints(project)
-    fingerprint = canonical_hash(
-        {
-            "standard": standard_fingerprint,
-            "inputs": inputs,
-            "video": video_sha,
-            "powerpoint": powerpoint,
-            "qa_script": file_hash(Path(__file__)),
-        }
-    )
-    return fingerprint, {
-        "standard": standard_report,
-        "full_project": {
-            "errors": full_errors,
-            "warnings": full_warnings,
-        },
-        "video": video_report,
-        "powerpoint": powerpoint,
-        "inputs": inputs,
+def require_qa(project: Path, level: str, state: dict | None = None) -> dict:
+    require_approvals(project, APPROVALS[level])
+    state = state if state is not None else load_state(project_paths(project)["build_state"])
+    if level == "standard":
+        require_qa(project, "static", state)
+        require_qa(project, "audio", state)
+    report = current_cached_report(project, level, state, cache_fingerprint(project, level, state))
+    if report is None:
+        raise RuntimeError(f"缺少当前 qa --level {level} PASS，请先运行该验收")
+    return report
+
+
+def static_qa(project: Path, errors: list[str], warnings: list[str]) -> tuple[str, dict]:
+    directory, record = require_current_html(project)
+    timeline = record["timeline"]
+    stage = "visual" if timeline["mode"] == "static_html" else "animation"
+    invalid, notices = validate(project, stage=stage)
+    errors.extend(invalid)
+    warnings.extend(notices)
+    evidence = []
+    browser_errors = []
+    with browser_page() as page:
+        page.on("pageerror", lambda error: browser_errors.append(str(error)))
+        open_deck(page, directory / "index.html")
+        if page.evaluate("window.slides.timeline") != timeline:
+            errors.append("网页内的时间轴和构建状态不一致")
+        for index, row in enumerate(timeline["slides"]):
+            page.evaluate("i => window.slides.showFinal(i)", index)
+            locator = page.locator(f'.page[data-page="{row["page"]}"]')
+            bounds = locator.locator(".canvas").bounding_box()
+            if not bounds or bounds["width"] != 1600 or bounds["height"] != 900:
+                errors.append(f"第 {row['page']} 页渲染画布尺寸异常")
+            screenshot = page.screenshot()
+            evidence.append({"page": row["page"], "render_sha256": hashlib.sha256(screenshot).hexdigest()})
+            for beat in row["beats"]:
+                target = locator.locator("[data-beat]")
+                passed = target.evaluate_all("""(elements, entry) => {
+                    const el = elements.find(node => node.dataset.beat === entry.beat.id);
+                    if (!el) return false;
+                    const at = entry.row.start_ms + entry.beat.start_ms;
+                    const duration = entry.beat.duration_ms;
+                    window.slides.renderAt(at);
+                    if (getComputedStyle(el).visibility !== "hidden") return false;
+                    window.slides.renderAt(at + duration / 2);
+                    const middle = getComputedStyle(el);
+                    const active = entry.beat.effect === "fade"
+                        ? Number(middle.opacity) > 0 && Number(middle.opacity) < 1
+                        : middle.clipPath !== "none";
+                    window.slides.showFinal(entry.index);
+                    const final = getComputedStyle(el);
+                    return active && final.visibility === "visible" && Number(final.opacity) === 1 && final.clipPath === "none";
+                }""", {"row": row, "beat": beat, "index": index})
+                if not passed:
+                    errors.append(f"第 {row['page']} 页 {beat['id']} 的浏览器动画未正确执行")
+    errors.extend(browser_errors)
+    return ("failed" if errors else "passed"), {
+        "pages": evidence,
+        "fonts": record["fonts"],
+        "font_substitutions": record["font_substitutions"],
+    }
+
+
+def standard_qa(project: Path, errors: list[str], warnings: list[str]) -> tuple[str, dict]:
+    require_qa(project, "static")
+    require_qa(project, "audio")
+    directory, record = require_current_html(project)
+    timeline = record["timeline"]
+    with browser_page() as page:
+        open_deck(page, directory / "index.html")
+        page.wait_for_function("document.querySelector('#narration').readyState >= 1")
+        duration = page.evaluate("document.querySelector('#narration').duration")
+        if abs(duration * 1000 - timeline["total_ms"]) > 34:
+            errors.append(f"网页音轨时长 {duration}s 与时间轴不一致")
+        for index, row in enumerate(timeline["slides"]):
+            actual = page.evaluate("""ms => {
+              window.slides.renderAt(ms);
+              return document.querySelector(".page:not([hidden])")?.dataset.page;
+            }""", row["start_ms"])
+            if actual != str(index + 1):
+                errors.append(f"旁白时间点未进入第 {index + 1} 页")
+    return ("failed" if errors else "passed"), {
+        "pages": len(timeline["slides"]),
+        "duration_ms": timeline["total_ms"],
+        "browser_audio_seconds": duration,
+        "track_sha256": record["files"]["narration.mp3"],
     }
 
 
 def qa_command(args: argparse.Namespace) -> int:
     project = args.project.expanduser().resolve()
     config = load_project_config(project)
-    deliverable = config["deliverable"]
-    if args.level == "audio" and deliverable not in {
-        "narration_audio",
-        "narrated_pptx",
-        "video",
-    }:
-        raise RuntimeError(
-            "qa=audio requires narration_audio, narrated_pptx, or video"
-        )
-    if args.level == "static" and deliverable not in {
-        "static_pptx",
-        "animated_pptx",
-        "narrated_pptx",
-        "video",
-    }:
-        raise RuntimeError(
-            "qa=static requires a static, animated, narrated PPTX, or video project"
-        )
-    if args.level == "standard" and deliverable not in {
-        "narrated_pptx",
-        "video",
-    }:
-        raise RuntimeError("qa=standard requires narrated_pptx or video")
-    approval_requirements = {
-        "static": ("content", "visual"),
-        "audio": ("content", "narration"),
-        "standard": ("content", "visual", "narration"),
+    mode = config["deliverable"]
+    allowed = {
+        "static": HTML_DELIVERABLES,
+        "audio": NARRATION_DELIVERABLES,
+        "standard": {"narrated_html"},
     }
-    require_approvals(project, approval_requirements[args.level])
-    paths = project_paths(project)
+    level = args.level
+    if mode not in allowed[level]:
+        raise ValueError(f"{mode} 不支持 qa --level {level}")
+    require_approvals(project, APPROVALS[level])
+    if level == "standard":
+        require_qa(project, "static")
+        require_qa(project, "audio")
+    paths = project_paths(project, config)
     state = load_state(paths["build_state"])
-    fingerprints = cache_fingerprints(project, args.level, state)
-    fingerprint = fingerprints[args.level]
-    cached_report = current_cached_report(
-        project,
-        args.level,
-        state,
-        fingerprint,
-    )
-    if not args.force and cached_report is not None:
-        print(f"SKIP qa={args.level}: inputs and tools unchanged")
+    fingerprint = cache_fingerprint(project, level, state)
+    if not args.force and current_cached_report(project, level, state, fingerprint):
+        print(f"SKIP qa={level}: inputs and tools unchanged")
         return 0
 
     errors: list[str] = []
     warnings: list[str] = []
-    if args.level == "static":
-        _, report = static_qa(project, errors, warnings)
-    elif args.level == "audio":
-        _, report = audio_qa(project, errors, warnings)
-    elif args.level == "standard":
-        reusable_audio = current_cached_report(
-            project,
-            "audio",
-            state,
-            fingerprints["audio"],
-        )
-        reusable_static = current_cached_report(
-            project,
-            "static",
-            state,
-            fingerprints["static"],
-        )
-        _, report = standard_qa(
-            project,
-            errors,
-            warnings,
-            cached_audio_report=reusable_audio,
-            cached_static_report=reusable_static,
-        )
-    else:
-        raise ValueError(f"Unsupported QA level: {args.level}")
-
+    if level == "audio":
+        invalid, notices = validate(project, stage="audio")
+        errors.extend(invalid)
+        warnings.extend(notices)
+    _, evidence = {"static": static_qa, "audio": audio_qa, "standard": standard_qa}[level](
+        project, errors, warnings,
+    )
     for warning in warnings:
         print(f"WARN {warning}")
     for error in errors:
         print(f"ERROR {error}")
-    qa_report = {
-        "schema_version": 1,
-        "level": args.level,
-        "status": "failed" if errors else "passed",
-        "fingerprint": fingerprint,
-        "checked_at": now_iso(),
-        "errors": errors,
-        "warnings": warnings,
-        "evidence": report,
-    }
-    report_path = project / "video" / f"qa_{args.level}.json"
-    write_object(report_path, qa_report)
-    state = load_state(paths["build_state"])
-    state["qa"][args.level] = {
-        "status": qa_report["status"],
-        "fingerprint": fingerprint,
-        "checked_at": qa_report["checked_at"],
-        "report": str(report_path.relative_to(project)),
-        "report_sha256": file_hash(report_path),
-    }
-    write_object(paths["build_state"], state)
+    with project_lock(project):
+        state = load_state(paths["build_state"])
+        if cache_fingerprint(project, level, state) != fingerprint:
+            raise RuntimeError("验收期间输入已变化，请重试")
+        report = {
+            "schema_version": 1,
+            "level": level,
+            "status": "failed" if errors else "passed",
+            "fingerprint": fingerprint,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "errors": errors,
+            "warnings": warnings,
+            "evidence": evidence,
+        }
+        path = project / "video" / f"qa_{level}.json"
+        write_object(path, report)
+        state["qa"][level] = {
+            "status": report["status"],
+            "fingerprint": fingerprint,
+            "checked_at": report["checked_at"],
+            "report": str(path.relative_to(project)),
+            "report_sha256": file_hash(path),
+        }
+        write_object(paths["build_state"], state)
     if errors:
         return 1
-    print(f"OK  qa={args.level}: {report_path}")
+    print(f"OK  qa={level}: {path}")
     return 0
 
 
-def build_parser() -> argparse.ArgumentParser:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", type=Path, required=True)
-    parser.add_argument(
-        "--level",
-        choices=("static", "audio", "standard"),
-        required=True,
-    )
+    parser.add_argument("--level", choices=("static", "audio", "standard"), required=True)
     parser.add_argument("--force", action="store_true")
-    return parser
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    return qa_command(build_parser().parse_args(argv))
+    args = parser.parse_args(argv)
+    try:
+        return qa_command(args)
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"ERROR {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except (
-        FileNotFoundError,
-        OSError,
-        ValueError,
-        RuntimeError,
-        subprocess.SubprocessError,
-    ) as exc:
-        print(f"ERROR {exc}", file=sys.stderr)
-        raise SystemExit(1)
+    raise SystemExit(main())

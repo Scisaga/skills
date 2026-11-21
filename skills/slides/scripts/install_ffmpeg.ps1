@@ -1,7 +1,7 @@
 param()
 
 $ErrorActionPreference = "Stop"
-if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
+if ((Get-Command ffmpeg -ErrorAction SilentlyContinue) -and (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
   & ffmpeg -version | Select-Object -First 1
   exit 0
 }
@@ -17,9 +17,9 @@ if (Get-Command winget -ErrorAction SilentlyContinue) {
   throw "No supported package manager found. Install FFmpeg from https://ffmpeg.org/download.html"
 }
 
-if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
   Write-Host "FFmpeg was installed but is not visible in this PowerShell session."
-  Write-Host "Open a new terminal, run 'ffmpeg -version', then rerun export-video."
-  exit 0
+  Write-Host "Open a new terminal and rerun bootstrap."
+  exit 1
 }
 & ffmpeg -version | Select-Object -First 1

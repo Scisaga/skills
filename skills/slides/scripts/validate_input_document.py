@@ -655,7 +655,7 @@ def check_presentation_source(
                                 f"PRS011C-{page:02d}",
                                 "blocking",
                                 f"第 {page} 页 SVG 包含不可解析资源：{unresolved_refs}",
-                                "修复资源路径；进入 PPTX 装配前再把本地资源内嵌。",
+                                "修复资源路径；进入 HTML 装配前再把本地资源内嵌。",
                                 location=target_value,
                             )
                         )
@@ -1158,7 +1158,7 @@ def render_markdown(report: dict[str, Any]) -> str:
                 "## 门禁动作",
                 "",
                 (
-                    "停止生成 SVG、PPTX、动画、旁白和视频。先修复当前报告中的"
+                    "停止生成 SVG、HTML、动画、旁白和视频。先修复当前报告中的"
                     "机械阻断项；需要语义复核的 profile 再重新完成复核。"
                 ),
                 "",

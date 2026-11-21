@@ -6,13 +6,18 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Sequence
 
+from generate_fast_animation_timing import SUPPORTED_EFFECTS, build_timing
 from narration_pitch import narration_pitch_audit
 from production_common import (
+    ANIMATION_DELIVERABLES,
+    DELIVERABLES,
+    HTML_DELIVERABLES,
+    NARRATION_DELIVERABLES,
+    RATE_RE,
     approval_status,
     canonical_hash,
     load_project_config,
@@ -28,16 +33,6 @@ from page_script_contract import (
 )
 from narration_performance import audit_narration_performance
 from validate_input_document import INPUT_CONTRACT_VERSION
-
-
-SUPPORTED_EFFECTS = {
-    "fade",
-    "wipe_left",
-    "wipe_right",
-    "wipe_up",
-    "wipe_down",
-}
-RATE_RE = re.compile(r"^[+-]\d+%$")
 
 
 def load_object(path: Path) -> dict[str, Any]:
@@ -72,7 +67,7 @@ def validate_svg(path: Path, errors: list[str]) -> None:
     except (ET.ParseError, OSError) as exc:
         errors.append(f"Cannot parse SVG {path}: {exc}")
         return
-    view_box = root.get("viewBox", "").split()
+    view_box = root.get("viewBox", "").replace(",", " ").split()
     if view_box and view_box != ["0", "0", "1600", "900"]:
         errors.append(f"{path} viewBox must be 0 0 1600 900")
 
@@ -92,53 +87,18 @@ def validate(
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         return [f"Project contract: {exc}"], warnings
     target = stage or project_config["deliverable"]
-    if target not in {
-        "content",
-        "visual",
-        "animation",
-        "narration",
-        "audio",
-        "narration_audio",
-        "static_pptx",
-        "animated_pptx",
-        "narrated_pptx",
-        "video",
-    }:
+    if target not in DELIVERABLES | {"content", "visual", "animation", "narration", "audio"}:
         return [f"Unsupported validation stage: {target}"], warnings
-    needs_visual = target in {
-        "visual",
-        "animation",
-        "static_pptx",
-        "animated_pptx",
-        "narrated_pptx",
-        "video",
-    }
-    needs_animation = target in {
-        "animation",
-        "animated_pptx",
-        "narrated_pptx",
-        "video",
-    }
-    needs_narration = target in {
-        "narration",
-        "audio",
-        "narration_audio",
-        "narrated_pptx",
-        "video",
-    }
-    needs_audio = target in {
-        "audio",
-        "narration_audio",
-        "narrated_pptx",
-        "video",
-    }
+    needs_visual = target in HTML_DELIVERABLES | {"visual", "animation"}
+    needs_animation = target in ANIMATION_DELIVERABLES | {"animation"}
+    needs_narration = target in NARRATION_DELIVERABLES | {"narration", "audio"}
+    needs_audio = target in NARRATION_DELIVERABLES | {"audio"}
     required = {
         "project": project_path,
     }
     if needs_visual or needs_narration:
         required["manifest"] = project / "video" / "animation_manifest.json"
-    if needs_animation:
-        required["layers"] = project / "video" / "svg_layer_plan.json"
+    layers_path = project / "video" / "svg_layer_plan.json"
     if needs_narration:
         required["director"] = project / "video" / "narration_director.json"
     missing = [str(path) for path in required.values() if not path.is_file()]
@@ -408,8 +368,8 @@ def validate(
             )
 
     raw_layer_pages: dict[str, Any] = {}
-    if needs_animation:
-        layer_plan = load_object(required["layers"])
+    if needs_animation and layers_path.is_file():
+        layer_plan = load_object(layers_path)
         if layer_plan.get("canvas") != {"width": 1600, "height": 900}:
             errors.append("svg_layer_plan.json canvas must be 1600x900")
         raw_layer_pages = layer_plan.get("pages")
@@ -476,8 +436,8 @@ def validate(
             errors.append(f"Page {page} first animated group must be title")
 
         layer_row = raw_layer_pages.get(f"{page:02d}")
-        if needs_animation and not isinstance(layer_row, dict):
-            errors.append(f"Page {page} is missing from svg_layer_plan.pages")
+        if needs_animation and layer_row is not None and not isinstance(layer_row, dict):
+            errors.append(f"Page {page} has an invalid svg_layer_plan row")
         elif needs_animation and isinstance(layer_row, dict):
             layers = layer_row.get("layers")
             layer_names = [
@@ -588,63 +548,11 @@ def validate(
                             "differs from director"
                         )
 
-    timing_path = project / "video" / "fast_animation_timing.json"
-    if needs_animation and timing_path.is_file():
-        timing = load_object(timing_path)
-        timing_pages = page_map(timing.get("slides"), "timing.slides", errors)
-        if sorted(timing_pages) != sorted(slides):
-            errors.append("Timing and manifest page sets differ")
-        for page, slide in slides.items():
-            row = timing_pages.get(page, {})
-            if row.get("audio_start_ms") != 0:
-                errors.append(f"Timing page {page} audio must start at 0ms")
-            end_ms = row.get("animation_end_ms")
-            if not isinstance(end_ms, int) or not 500 <= end_ms <= 1000:
-                errors.append(f"Timing page {page} animation must end at 500-1000ms")
-            timed_ids = [
-                beat.get("id")
-                for beat in row.get("beats", [])
-                if isinstance(beat, dict)
-            ]
-            manifest_ids = [
-                beat.get("id")
-                for beat in slide.get("beats", [])
-                if isinstance(beat, dict)
-            ]
-            if timed_ids != manifest_ids:
-                errors.append(f"Timing page {page} beat order differs from manifest")
-            timed_effects = [
-                beat.get("effect")
-                for beat in row.get("beats", [])
-                if isinstance(beat, dict)
-            ]
-            manifest_effects = [
-                beat.get("effect")
-                for beat in slide.get("beats", [])
-                if isinstance(beat, dict)
-            ]
-            if timed_effects != manifest_effects:
-                errors.append(f"Timing page {page} effects differ from manifest")
-            for beat in row.get("beats", []):
-                if not isinstance(beat, dict):
-                    continue
-                start = beat.get("start_ms")
-                duration = beat.get("duration_ms")
-                if (
-                    isinstance(start, bool)
-                    or not isinstance(start, int)
-                    or start < 0
-                    or isinstance(duration, bool)
-                    or not isinstance(duration, int)
-                    or duration <= 0
-                    or start + duration > 1000
-                ):
-                    errors.append(
-                        f"Timing page {page} beat {beat.get('id')} "
-                        "falls outside the first second"
-                    )
-    elif needs_animation:
-        warnings.append("fast_animation_timing.json has not been generated")
+    if needs_animation and slides:
+        try:
+            build_timing({"slides": list(slides.values())})
+        except ValueError as exc:
+            errors.append(str(exc))
 
     audio_path = project / "video" / "audio_timeline.json"
     if needs_audio and audio_path.is_file():
@@ -728,10 +636,9 @@ def build_parser() -> argparse.ArgumentParser:
             "narration",
             "audio",
             "narration_audio",
-            "static_pptx",
-            "animated_pptx",
-            "narrated_pptx",
-            "video",
+            "static_html",
+            "animated_html",
+            "narrated_html",
         ),
         help="Validate only the selected current stage instead of the final deliverable",
     )

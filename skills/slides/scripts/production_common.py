@@ -8,6 +8,7 @@ import json
 import os
 import re
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -43,12 +44,15 @@ SAY_AS_TYPES = {
 }
 STATE_SCHEMA_VERSION = 1
 PROJECT_SCHEMA_VERSION = 2
-DELIVERABLES = {
-    "narration_audio",
-    "static_pptx",
-    "animated_pptx",
-    "narrated_pptx",
-    "video",
+HTML_DELIVERABLES = {"static_html", "animated_html", "narrated_html"}
+ANIMATION_DELIVERABLES = {"animated_html", "narrated_html"}
+NARRATION_DELIVERABLES = {"narration_audio", "narrated_html"}
+DELIVERABLES = HTML_DELIVERABLES | NARRATION_DELIVERABLES
+LEGACY_DELIVERABLES = {
+    "static_pptx": "static_html",
+    "animated_pptx": "animated_html",
+    "narrated_pptx": "narrated_html",
+    "video": "narrated_html",
 }
 APPROVAL_STAGES = {"content", "visual", "narration"}
 
@@ -73,7 +77,30 @@ def write_object(path: Path, payload: dict[str, Any]) -> None:
     ) as handle:
         handle.write(rendered)
         temporary = Path(handle.name)
-    os.replace(temporary, path)
+    try:
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+@contextmanager
+def project_lock(project: Path):
+    path = project / ".build" / "slides.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as handle:
+        if os.name == "nt":
+            import msvcrt
+
+            if path.stat().st_size == 0:
+                handle.write(b"\0")
+                handle.flush()
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
 
 
 def canonical_hash(payload: Any) -> str:
@@ -112,7 +139,9 @@ def load_project_config(project: Path) -> dict[str, Any]:
             "This skill supports only the current schema."
         )
     deliverable = config.get("deliverable")
-    if deliverable not in DELIVERABLES:
+    if isinstance(deliverable, str) and deliverable in LEGACY_DELIVERABLES:
+        raise ValueError("旧演示项目需先运行 migrate-html --project OLD --output NEW")
+    if not isinstance(deliverable, str) or deliverable not in DELIVERABLES:
         raise ValueError(
             "project.json deliverable must be one of "
             + ", ".join(sorted(DELIVERABLES))
@@ -203,15 +232,16 @@ def load_project_config(project: Path) -> dict[str, Any]:
             "project.json template.safe_area must fit inside 1600x900"
         )
 
-    outputs = config["outputs"]
-    for key in (
-        "static_pptx",
-        "animated_pptx",
-        "narrated_pptx",
-        "video",
-    ):
-        if not isinstance(outputs.get(key), str) or not outputs[key]:
-            raise ValueError(f"project.json outputs.{key} is required")
+    if deliverable in HTML_DELIVERABLES:
+        if Path(template["working"]).suffix.lower() != ".css":
+            raise ValueError("HTML projects require a CSS working template")
+        outputs = config["outputs"]
+        for key in ("html_dir", "html_zip", "video"):
+            if not isinstance(outputs.get(key), str) or not outputs[key]:
+                raise ValueError(f"project.json outputs.{key} is required")
+        seconds = config.get("seconds_per_page", 5)
+        if type(seconds) is not int or seconds <= 0:
+            raise ValueError("seconds_per_page must be a positive integer")
     paths = config["paths"]
     for key in ("voice_profile", "build_state"):
         if not isinstance(paths.get(key), str) or not paths[key]:
@@ -242,7 +272,7 @@ def project_paths(
     assert isinstance(outputs, dict)
     content = config["content"]
     template = config["template"]
-    return {
+    resolved = {
         "project": project / "project.json",
         "page_script": resolve_path(project, content["page_script"]),
         "binding_audit": resolve_path(
@@ -255,12 +285,13 @@ def project_paths(
         "template_source": (
             resolve_path(project, template["source"])
             if isinstance(template.get("source"), str)
-            else project / "inputs" / "template-source.pptx"
+            else project / "inputs" / "template-source.css"
         ),
         "template_working": resolve_path(project, template["working"]),
         "director": project / "video" / "narration_director.json",
         "manifest": project / "video" / "animation_manifest.json",
         "timing": project / "video" / "fast_animation_timing.json",
+        "layer_plan": project / "video" / "svg_layer_plan.json",
         "audio_timeline": project / "video" / "audio_timeline.json",
         "audio_dir": project / "video" / "audio",
         "scripts_dir": project / "video" / "scripts",
@@ -272,36 +303,11 @@ def project_paths(
             project,
             paths["build_state"],
         ),
-        "static_pptx": resolve_path(
-            project,
-            outputs["static_pptx"],
-        ),
-        "animated_pptx": resolve_path(
-            project,
-            outputs["animated_pptx"],
-        ),
-        "narrated_pptx": resolve_path(
-            project,
-            outputs["narrated_pptx"],
-        ),
-        "video": resolve_path(
-            project,
-            outputs["video"],
-        ),
     }
-
-
-def deliverable_pptx(project: Path) -> Path:
-    config = load_project_config(project)
-    paths = project_paths(project, config)
-    deliverable = config["deliverable"]
-    if deliverable == "narration_audio":
-        raise ValueError("narration_audio has no PPTX deliverable")
-    if deliverable == "static_pptx":
-        return paths["static_pptx"]
-    if deliverable == "animated_pptx":
-        return paths["animated_pptx"]
-    return paths["narrated_pptx"]
+    if config["deliverable"] in HTML_DELIVERABLES:
+        for key in ("html_dir", "html_zip", "video"):
+            resolved[key] = resolve_path(project, outputs[key])
+    return resolved
 
 
 def normalize_voice_profile(profile: dict[str, Any]) -> dict[str, Any]:
@@ -855,11 +861,6 @@ def load_state(path: Path) -> dict[str, Any]:
             "artifacts": {},
             "approvals": {},
             "qa": {},
-            "powerpoint": {
-                "opened": None,
-                "video_exported": None,
-                "human_watch": None,
-            },
         }
     state = load_object(path)
     if state.get("schema_version") != STATE_SCHEMA_VERSION:
@@ -871,14 +872,7 @@ def load_state(path: Path) -> dict[str, Any]:
         value = state.setdefault(key, {})
         if not isinstance(value, dict):
             raise ValueError(f"build_state.{key} must be an object")
-    state.setdefault(
-        "powerpoint",
-        {"opened": None, "video_exported": None, "human_watch": None},
-    )
-    if not isinstance(state["powerpoint"], dict):
-        raise ValueError("build_state.powerpoint must be an object")
-    for key in ("opened", "video_exported", "human_watch"):
-        state["powerpoint"].setdefault(key, None)
+    state.pop("powerpoint", None)
     return state
 
 
@@ -1022,6 +1016,7 @@ def visual_fingerprint(
             if path.is_file():
                 svg_hashes[source] = file_hash(path)
     timing = project / "video" / "fast_animation_timing.json"
+    layers = project / "video" / "svg_layer_plan.json"
     template = project_config["template"]
     template_working = resolve_path(project, template["working"])
     return canonical_hash(
@@ -1038,6 +1033,7 @@ def visual_fingerprint(
             },
             "manifest": visual_manifest,
             "svg": svg_hashes,
+            "layers": file_hash(layers) if include_timing and layers.is_file() else None,
             "timing": (
                 file_hash(timing)
                 if include_timing and timing.is_file()
@@ -1151,6 +1147,15 @@ def approval_fingerprint(
             for row in manifest.get("slides", [])
             if isinstance(row, dict)
         }
+        from html_assets import Assets
+        from html_fonts import ALIASES, CATALOG, INTERNAL_NAMES
+
+        project = project.resolve()
+        template_path = paths["template_working"].resolve()
+        if not template_path.is_relative_to(project):
+            raise ValueError("CSS 模板须在项目目录内")
+        assets = Assets(project)
+        assets.css(template_path.read_text(encoding="utf-8"), template_path.parent)
         samples: dict[str, str] = {}
         for page in selected_pages:
             slide = slide_map.get(page)
@@ -1166,19 +1171,28 @@ def approval_fingerprint(
             source_path = resolve_path(project, source)
             if not source_path.is_file():
                 raise FileNotFoundError(source_path)
+            source_path = source_path.resolve()
+            if not source_path.is_relative_to(project):
+                raise ValueError(f"第 {page} 页 SVG 须在项目目录内")
             samples[str(page)] = file_hash(source_path)
+            assets.svg(source_path, f"sample{page}", set())
         payload = {
             "content": canonical_hash(material_payload),
             "template_sha256": file_hash(paths["template_working"]),
             "safe_area": config["template"]["safe_area"],
             "visual": config["visual"],
             "samples": samples,
+            "visual_resources": assets.files,
+            "fonts": {
+                "catalog": file_hash(CATALOG),
+                "aliases": canonical_hash({"aliases": ALIASES, "names": INTERNAL_NAMES}),
+            },
         }
         return canonical_hash(payload), payload
 
     if not paths["director"].is_file():
         raise FileNotFoundError(paths["director"])
-    director = load_object(paths["director"])
+    load_object(paths["director"])
     voice = load_voice_profile(paths["voice_profile"])
     payload = {
         "content": canonical_hash(material_payload),
@@ -1285,7 +1299,6 @@ def record_approval(
     )
     if extra_evidence:
         evidence = {**evidence, **extra_evidence}
-    state = load_state(paths["build_state"])
     record = {
         "status": "approved",
         "fingerprint": fingerprint,
@@ -1295,6 +1308,8 @@ def record_approval(
     }
     if stage == "visual":
         record["pages"] = sorted(set(pages or []))
-    state["approvals"][stage] = record
-    write_object(paths["build_state"], state)
+    with project_lock(project):
+        state = load_state(paths["build_state"])
+        state["approvals"][stage] = record
+        write_object(paths["build_state"], state)
     return record

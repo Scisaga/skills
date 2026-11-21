@@ -1,0 +1,11 @@
+/* 浏览器、PDF 和视频共用的主题变量。 */
+:root {
+  --slide-background: #ffffff;
+  --slide-ink: #172334;
+  --slide-muted: #526479;
+}
+body[data-theme="dark"] {
+  --slide-background: #141e2b;
+  --slide-ink: #f3f6fd;
+  --slide-muted: #bac4d1;
+}

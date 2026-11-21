@@ -44,7 +44,7 @@
   "template": {
     "mode": "generated",
     "source": null,
-    "working": "template.pptx",
+    "working": "template.css",
     "safe_area": {"x": 120, "y": 150, "width": 1360, "height": 620}
   },
   "visual": {
@@ -60,15 +60,14 @@
     "build_state": "video/build_state.json"
   },
   "outputs": {
-    "static_pptx": "deliverables/Project_静态.pptx",
-    "animated_pptx": "deliverables/Project_动画.pptx",
-    "narrated_pptx": "deliverables/Project_自动旁白.pptx",
-    "video": "deliverables/Project_自动旁白.mp4"
+    "html_dir": "deliverables/Project_网页",
+    "html_zip": "deliverables/Project_网页.zip",
+    "video": "deliverables/Project_演示.mp4"
   }
 }
 ```
 
-`narration_audio` 仍使用同一 schema；模板和 PPTX 输出字段保持结构完整，但该交付链不得读取或生成这些视觉产物。
+`narration_audio` 使用同一 schema，兼容旧项目的模板和输出元数据。纯音频链只读取音频所需的输入。
 
 ## 来源与逐页稿绑定
 
@@ -99,23 +98,16 @@ identity 和 adapted 都要求逐页正文使用连续的 `## 第 N 页｜标题
 
 ## 交付目标
 
-`deliverable` 只允许：
-
-- `narration_audio`
-- `static_pptx`
-- `animated_pptx`
-- `narrated_pptx`
-- `video`
-
-| 目标 | 必需审批 | 最终 QA |
+| 目标 | 审批 | QA |
 |---|---|---|
 | `narration_audio` | content、narration | audio |
-| `static_pptx` | content、visual | static |
-| `animated_pptx` | content、visual | static（针对动画基线的结构 QA；实机播放另行人工确认） |
-| `narrated_pptx` | content、visual、narration | standard |
-| `video` | content、visual、narration | standard（检查旁白 PPTX；PowerPoint 导出后只做适用的 Office 2019 像素色阶重编码，不做视频画面 QA） |
+| `static_html` | content、visual | static |
+| `animated_html` | content、visual | static |
+| `narrated_html` | content、visual、narration | audio、static、standard |
 
-`template.mode` 为 `provided` 时保存 `inputs/template-source.pptx`；为 `generated` 时 `source` 为 `null`。安全区必须位于 `1600×900` 画布内。`narration_audio` 不要求模板文件实际存在。
+HTML 项目以 `template.css` 为工作模板。用户提供的 CSS 原件保存在 `inputs/template-source.css`，安全区在 `1600×900` 画布内。静音演示的 `seconds_per_page` 默认为 5 秒，导出可使用该设定生成匀速视频。
+
+旧 v2 演示使用 `migrate-html --project OLD --output NEW` 迁移，再按新目标组装。 [迁移说明](html-and-video.md)
 
 ## 目录与空状态
 
@@ -125,54 +117,45 @@ presentation-project/
 ├── page-script.md
 ├── input-gate.json
 ├── input-gate.md
-├── input-review.json                 # 非 page-narration 时存在
 ├── inputs/
 │   ├── source.md
-│   ├── page-script-binding.json      # 来源、保真和逐页差异证据
-│   └── template-source.pptx          # 提供用户模板时存在
-├── template.pptx                     # 视觉项目准备后存在
-├── assets/                            # 仅视觉项目
+│   └── page-script-binding.json
+├── template.css
+├── assets/
 │   └── NN_page.svg
 ├── video/
-│   ├── svg_layer_plan.json            # 仅视觉项目
+│   ├── animation_manifest.json
+│   ├── svg_layer_plan.json
 │   ├── narration_director.json
 │   ├── voice_profile.json
-│   ├── animation_manifest.json
-│   ├── narration_review.md
 │   ├── audio_timeline.json
 │   ├── build_state.json
 │   ├── qa_static.json
 │   ├── qa_audio.json
 │   ├── qa_standard.json
-│   ├── layers/                        # 仅视觉项目
-│   ├── scripts/
 │   └── audio/
 └── deliverables/
-    ├── <name>_静态.pptx
-    ├── <name>_动画.pptx
-    ├── <name>_自动旁白.pptx
-    └── <name>_自动旁白.mp4
+    ├── <name>_网页/
+    │   ├── index.html
+    │   ├── licenses/
+    │   └── narration.mp3
+    ├── <name>_网页.zip
+    └── <name>_演示.mp4
 ```
 
-初始化时派生状态必须为空：
+初始化写空导演稿、manifest 和图层计划。`build_state.json` 的审批、产物和 QA 均为空。模板和资产仅用于视觉项目，音频与验收文件在相应生产步骤出现。
 
-```json
-{"pages": []}
-```
-
-用于 `narration_director.json`；视觉/旁白 manifest 使用 `"slides": []` 和 `"slide_count": 0`；视觉项目的图层计划使用 `"pages": {}`；`build_state.json` 使用空的 `inputs`、`artifacts`、`approvals`、`qa`，PowerPoint 证据为 `null`。`narration_audio` 不创建 `assets/`、`svg_layer_plan.json` 或 `video/layers/`。
-
-空状态只表示“尚未派生”。旁白交付（`narration_audio`、`narrated_pptx`、`video`）在 content 审批后使用 `prepare-narration` 填充导演稿和旁白 manifest；纯静态/动画交付不运行该命令。视觉制作流程填充 `source_svg`、`beats` 与图层计划。
+显式分层用 `svg_layer_plan.json` 的 `layers[].file` 保存项目内相对路径。`beats[].start_ms` 与 `duration_ms` 可选，定义本页局部毫秒时点。 [图层和时间点](visual-and-animation.md)
 
 ## 三个审批
 
 审批写入 `video/build_state.json`，每条记录包含当前 fingerprint、审批人、时间和证据。
 
 - `content` 绑定源稿、`page-script.md`、门禁报告、可选语义复核、绑定审计及当前输入契约版本。审计证据记录页数、逐页稿 SHA、保真结果、来源路径及是否使用改写授权。
-- `visual` 绑定内容摘要、`template.pptx`、安全区、视觉配置和指定代表性 SVG。
+- `visual` 绑定内容摘要、CSS、关联资源、字体清单与映射、安全区、视觉配置和指定代表性 SVG。
 - `narration` 绑定内容字节、导演稿和影响生产声音的配置投影；试听文案、未命中的发音规则以及不进入 SSML 的角色说明不触发章节音频重建。它不绑定视觉，因此 `narration_audio` 不需要 visual 审批。
 
-content acceptance fingerprint 包含 profile、门禁、复核和绑定证据；视觉、旁白和二进制产物只绑定源稿与逐页稿的内容字节 fingerprint，不包含 profile。这样错误 profile 的修正或证据损坏会阻断/失效 content acceptance，但不会在内容字节未变时强迫重做视觉、音频和 PPTX。
+content acceptance fingerprint 包含 profile、门禁、复核和绑定证据；视觉、旁白和派生产物只绑定源稿与逐页稿的内容字节 fingerprint，不包含 profile。这样错误 profile 的修正或证据损坏会阻断/失效 content acceptance，但不会在内容字节未变时强迫重做视觉、音频和演示。
 
 生产命令实时重算摘要：
 
@@ -202,7 +185,7 @@ content acceptance fingerprint 包含 profile、门禁、复核和绑定证据�
 
 `narration_audio` 的 manifest 页面只需要页码和旁白字段。视觉项目再要求每页 `source_svg`；动画项目还要求 `beats[]` 和图层计划。不得因空视觉 manifest 阻断纯音频项目。
 
-静态和动画 PPTX 基线都必须记录 PPTX SHA、当前内容字节 fingerprint 和相应 visual fingerprint。SVG、模板、动画计划或 PPTX 变化后不能复用旧基线，也不能给一个未由当前视觉装配器生成的旧文件补盖“当前”状态。
+HTML 组装记录输入摘要、相关资源、时间轴、嵌入字体、目录文件和 ZIP 摘要。QA 和导出据此确认使用当前产物。
 
 声音和发音词典只在 `video/voice_profile.json` 维护。`provider` 支持默认的 `auto`（Qwen3 优先、不可用时整套回退 Azure）、`qwen3-tts-openai` 和 `azure-speech`；`qwen_voice` 绑定自托管音色 ID，`voice` 保留 Azure 音色。实例和可选鉴权只在 `.env` 配置，接入细节见 `qwen3-tts-openai.md`。provider、任一生产音色和发音词典均参与 narration 审批摘要，试听正文不参与。
 
@@ -231,7 +214,6 @@ content acceptance fingerprint 包含 profile、门禁、复核和绑定证据�
 - 原始输入、逐页稿、模板原件、工作模板和各级交付物分开保存。
 - 自动生成文件不反向成为事实源，外部来源路径不代替项目内源稿。
 - input gate 契约只用稳定 `contract_version` 失效，不因脚本注释或内部重构改变；源稿未变时通过 `refresh-input-gate` 更新证据。
-- `narration_audio` 不创建虚假 PPTX 或视觉完成状态。
-- 替换音频后，旧旁白 PPTX、视频和相关 PowerPoint 证据失效。
+- 替换音频后重新计算网页与视频状态，按需显式导出 MP4。
 - 二进制交付物使用 Git LFS 或放在仓库外交付目录。
 - 其他独立产物保留自己的 schema 版本，不因 `project.json` 版本变化而无意义改号。

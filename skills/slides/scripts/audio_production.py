@@ -16,6 +16,7 @@ from build_manifest import build_manifest, render_review
 from narration_pitch import require_narration_pitch
 from qwen_tts_client import QwenTTSClient, QwenTTSError, load_tts_environment
 from production_common import (
+    NARRATION_DELIVERABLES,
     canonical_hash,
     chapter_audio_fingerprint,
     chapter_groups,
@@ -26,6 +27,7 @@ from production_common import (
     load_voice_profile,
     normalize_director_pages,
     normalize_voice_profile,
+    project_lock,
     project_paths,
     require_approvals,
     render_chapter_ssml,
@@ -416,13 +418,9 @@ def synthesize_groups(
 def synthesize_command(args: argparse.Namespace) -> int:
     project = args.project.expanduser().resolve()
     config = load_project_config(project)
-    if config["deliverable"] not in {
-        "narration_audio",
-        "narrated_pptx",
-        "video",
-    }:
+    if config["deliverable"] not in NARRATION_DELIVERABLES:
         raise RuntimeError(
-            "Synthesis requires narration_audio, narrated_pptx, or video"
+            "Synthesis requires narration_audio or narrated_html"
         )
     if any((args.voice, args.rate, args.pitch)):
         raise ValueError(
@@ -465,7 +463,6 @@ def synthesize_command(args: argparse.Namespace) -> int:
             f"Pages are not in the presentation: {sorted(selected - set(expected_pages))}"
         )
     groups = chapter_groups(pages)
-    state = load_state(paths["build_state"])
     client, synthesis, fallback_reason = None, None, None
     if args.dry_run:
         print(f"PLAN service preference: {profile['provider']}; no network requests")
@@ -504,15 +501,17 @@ def synthesize_command(args: argparse.Namespace) -> int:
         )
     if not args.dry_run:
         audio_files = sorted(paths["audio_dir"].glob("[0-9][0-9].mp3"))
-        state["artifacts"]["audio"] = {
-            path.name: file_hash(path) for path in audio_files
-        }
-        state["artifacts"]["audio_voice_sha256"] = canonical_hash(
-            voice_synthesis_projection(profile)
-        )
-        state["artifacts"]["audio_synthesis"] = synthesis
-        state["artifacts"]["audio_fallback_reason"] = fallback_reason
-        write_object(paths["build_state"], state)
+        with project_lock(project):
+            state = load_state(paths["build_state"])
+            state["artifacts"]["audio"] = {
+                path.name: file_hash(path) for path in audio_files
+            }
+            state["artifacts"]["audio_voice_sha256"] = canonical_hash(
+                voice_synthesis_projection(profile)
+            )
+            state["artifacts"]["audio_synthesis"] = synthesis
+            state["artifacts"]["audio_fallback_reason"] = fallback_reason
+            write_object(paths["build_state"], state)
     print(
         f"OK  synthesis: generated={generated}, reused={reused}, "
         f"planned={len(groups) if args.dry_run else 0}"
@@ -523,13 +522,9 @@ def synthesize_command(args: argparse.Namespace) -> int:
 def audition_command(args: argparse.Namespace) -> int:
     project = args.project.expanduser().resolve()
     config = load_project_config(project)
-    if config["deliverable"] not in {
-        "narration_audio",
-        "narrated_pptx",
-        "video",
-    }:
+    if config["deliverable"] not in NARRATION_DELIVERABLES:
         raise RuntimeError(
-            "Voice audition requires narration_audio, narrated_pptx, or video"
+            "Voice audition requires narration_audio or narrated_html"
         )
     paths = project_paths(project)
     base_profile = load_voice_profile(paths["voice_profile"])
@@ -641,11 +636,7 @@ def list_voices_command(args: argparse.Namespace) -> int:
 def configure_voice_command(args: argparse.Namespace) -> int:
     project = args.project.expanduser().resolve()
     config = load_project_config(project)
-    if config["deliverable"] not in {
-        "narration_audio",
-        "narrated_pptx",
-        "video",
-    }:
+    if config["deliverable"] not in NARRATION_DELIVERABLES:
         raise RuntimeError("Voice configuration requires a narration deliverable")
     paths = project_paths(project)
     current = load_voice_profile(paths["voice_profile"])

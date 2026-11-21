@@ -21,11 +21,11 @@ SUPPORTED_EFFECTS = {
 def build_timing(
     manifest: dict[str, Any],
     *,
-    duration_ms: int,
-    first_content_start_ms: int,
-    start_step_ms: int,
-    animation_window_ms: int,
-    advance_safety_ms: int,
+    duration_ms: int = 280,
+    first_content_start_ms: int = 120,
+    start_step_ms: int = 130,
+    animation_window_ms: int = 1000,
+    advance_safety_ms: int = 150,
 ) -> dict[str, Any]:
     raw_slides = manifest.get("slides")
     if not isinstance(raw_slides, list) or not raw_slides:
@@ -52,28 +52,31 @@ def build_timing(
                 raise ValueError(f"Page {page} beat {index} is missing id")
             if effect not in SUPPORTED_EFFECTS:
                 raise ValueError(f"Page {page} {name} has unsupported effect {effect}")
-            start_ms = (
+            default_start_ms = (
                 0
                 if index == 0
                 else first_content_start_ms + (index - 1) * start_step_ms
             )
+            start_ms = beat.get("start_ms", default_start_ms)
+            duration = beat.get("duration_ms", duration_ms)
+            if type(start_ms) is not int or start_ms < 0:
+                raise ValueError(f"Page {page} {name} start_ms must be a nonnegative integer")
+            if type(duration) is not int or duration <= 0:
+                raise ValueError(f"Page {page} {name} duration_ms must be a positive integer")
+            if "start_ms" not in beat and "duration_ms" not in beat and start_ms + duration > animation_window_ms:
+                raise ValueError(f"Page {page} {name} exceeds the automatic animation window")
             timed_beats.append(
                 {
                     "id": name,
                     "effect": effect,
                     "start_ms": start_ms,
-                    "duration_ms": duration_ms,
+                    "duration_ms": duration,
                 }
             )
 
         final_end_ms = max(
             beat["start_ms"] + beat["duration_ms"] for beat in timed_beats
         )
-        if not 500 <= final_end_ms <= animation_window_ms:
-            raise ValueError(
-                f"Page {page} animation ends at {final_end_ms}ms; "
-                f"expected 500-{animation_window_ms}ms"
-            )
         slides.append(
             {
                 "page": page,
@@ -87,7 +90,7 @@ def build_timing(
 
     return {
         "schema_version": 1,
-        "strategy": "fast-parallel-entrance",
+        "strategy": "page-entrance",
         "defaults": {
             "audio_start_ms": 0,
             "duration_ms": duration_ms,

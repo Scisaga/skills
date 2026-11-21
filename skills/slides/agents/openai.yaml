@@ -1,7 +1,7 @@
 interface:
   display_name: "Slides"
-  short_description: "从讲稿制作技术图示、动画与旁白演示，支持模板复用、术语发音、逐页 MP3、PPTX 和视频"
+  short_description: "从讲稿制作技术图示、动画与旁白演示，支持模板复用、术语发音、离线 HTML、PDF、MP4 和逐页 MP3"
   icon_small: "./assets/logo.svg"
   icon_large: "./assets/logo.svg"
   brand_color: "#A78BFA"
-  default_prompt: "使用 $scisaga:slides 保真绑定逐页演讲稿，按用途和内容设计视觉，专业技术图示可按需参考示例获得启发；按需生成 MP3、PPTX 或视频，配音优先 Qwen3、不可用时回退 Azure。"
+  default_prompt: "使用 $scisaga:slides 保真绑定逐页演讲稿，按用途和内容设计视觉，专业技术图示可按需参考示例获得启发；按需生成逐页 MP3、离线 HTML、PDF 或 MP4，配音优先 Qwen3、不可用时回退 Azure。"

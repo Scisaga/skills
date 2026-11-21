@@ -1,0 +1,4 @@
+azure-cognitiveservices-speech>=1.37.0
+lameenc>=1.7.0
+mutagen>=1.47.0
+python-dotenv>=1.0.0

@@ -522,7 +522,7 @@ class InputBindingTests(unittest.TestCase):
 
     def test_narration_audio_does_not_require_visual_assets_or_approval(self) -> None:
         project = self.initialize_audio_project()
-        self.assertFalse((project / "template.pptx").exists())
+        self.assertFalse((project / "template.css").exists())
 
         self.approve(project, "content")
         self.assertEqual(validate(project, stage="content")[0], [])

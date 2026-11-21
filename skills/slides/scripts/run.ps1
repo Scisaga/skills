@@ -43,13 +43,13 @@ function Show-Usage {
   $RunCommand = "& '" + (Join-Path $ScriptDir 'run.ps1').Replace("'", "''") + "'"
   @"
 Usage:
-  $RunCommand bootstrap
-  $RunCommand doctor [--stage static|audio|video]
+  $RunCommand bootstrap [--stage static|audio|narrated|video|all]
+  $RunCommand doctor [--stage static|audio|narrated|video|all]
   $RunCommand inspect-input --document source.md --markdown-output input-preflight.md
   $RunCommand prepare-input-review --document source.md --output input-review.json
   $RunCommand validate-input --document source.md [--review input-review.json] --markdown-output input-gate.md
   $RunCommand refresh-input-gate --project C:\work\presentation [--input-profile auto|page-narration|narrative-plan|execution-plan|presentation-source] [--input-review input-review.json]
-  $RunCommand init --output C:\work\presentation --name "Project" --deliverable narration_audio|static_pptx|animated_pptx|narrated_pptx|video --input-document source.md [--input-review input-review.json] [--page-script-source page-script.md] [--template-source template.pptx] [--allow-substantial-rewrite]
+  $RunCommand init --output C:\work\presentation --name "Project" --deliverable narration_audio|static_html|animated_html|narrated_html --input-document source.md [--input-review input-review.json] [--page-script-source page-script.md] [--template-source template.css] [--seconds-per-page N] [--allow-substantial-rewrite]
   $RunCommand approve --project C:\work\presentation --stage content|visual|narration --approved-by NAME [--pages 3,7,10] [--allow-substantial-rewrite]
   $RunCommand prepare-narration --project C:\work\presentation [--chapter-max-seconds 240] [--performance-plan plan.json] [--force]
   $RunCommand manifest [--visual animation_manifest.json] --director narration_director.json --voice-profile voice_profile.json --output animation_manifest.json --review narration_review.md
@@ -60,9 +60,10 @@ Usage:
   $RunCommand voice-audition --project C:\work\presentation [--provider qwen3-tts-openai|azure-speech] [--voices voice-a,voice-b]
   $RunCommand synthesize --project C:\work\presentation
   $RunCommand replace-audio --project C:\work\presentation
-  $RunCommand assemble-pptx --project C:\work\presentation
-  $RunCommand export-video --project C:\work\presentation [--color-range-fix auto|on|off]
-  $RunCommand export-pages --project C:\work\presentation --pages 8,9,14 --format pdf --output C:\work\selected.pdf
+  $RunCommand assemble-html --project C:\work\presentation
+  $RunCommand export-video --project C:\work\presentation
+  $RunCommand export-pages --project C:\work\presentation [--pages 8,9,14] --format pdf|png|jpg --output C:\work\selected.pdf
+  $RunCommand migrate-html --project OLD --output NEW [--template-source theme.css]
   $RunCommand qa --project C:\work\presentation --level static|audio|standard
   $RunCommand rebuild --project C:\work\presentation --scope audio --qa standard
   $RunCommand validate --project C:\work\presentation [--stage content|visual|animation|narration|audio]
@@ -127,16 +128,19 @@ switch ($Command) {
     & $Python (Join-Path $ScriptDir "audio_production.py") "list-voices" @CommandArgs
   }
   "replace-audio" {
-    & $Python (Join-Path $ScriptDir "pptx_production.py") "replace-audio" @CommandArgs
+    & $Python (Join-Path $ScriptDir "html_production.py") "--replace-audio" @CommandArgs
   }
-  "assemble-pptx" {
-    & $Python (Join-Path $ScriptDir "pptx_production.py") "assemble-pptx" @CommandArgs
+  "assemble-html" {
+    & $Python (Join-Path $ScriptDir "html_production.py") @CommandArgs
   }
   "export-video" {
-    & $Python (Join-Path $ScriptDir "powerpoint_production.py") "export-video" @CommandArgs
+    & $Python (Join-Path $ScriptDir "html_export.py") "export-video" @CommandArgs
   }
   "export-pages" {
-    & $Python (Join-Path $ScriptDir "powerpoint_production.py") "export-pages" @CommandArgs
+    & $Python (Join-Path $ScriptDir "html_export.py") "export-pages" @CommandArgs
+  }
+  "migrate-html" {
+    & $Python (Join-Path $ScriptDir "migrate_html.py") @CommandArgs
   }
   "qa" {
     & $Python (Join-Path $ScriptDir "qa_presentation.py") @CommandArgs

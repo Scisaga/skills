@@ -90,7 +90,7 @@ run.sh prepare-input-review \
 run.sh init \
   --output PROJECT \
   --name "项目名称" \
-  --deliverable narrated_pptx \
+  --deliverable narrated_html \
   --input-document source.md \
   --input-review input-review.json \
   --page-script-source prepared-page-script.md
@@ -179,4 +179,4 @@ run.sh refresh-input-gate --project PROJECT \
 - `page-script.md` 变化：内容审批及其下游失效；`page-narration` 还要重新检查保真。
 - 只修改音色、全局语速、音高或发音词典：不重新运行输入门禁，只使旁白审批和音频下游失效。
 
-门禁失败时只修改被点名的源稿或逐页稿，不生成替代摘要，不提前制作 SVG、PPTX 或音频。自动规则与用户明确指定的输入身份冲突时，先修正规则或显式 profile，而不是改写用户内容迎合检测器。
+门禁失败时只修改被点名的源稿或逐页稿，不生成替代摘要，不提前制作 SVG、HTML 或音频。自动规则与用户明确指定的输入身份冲突时，先修正规则或显式 profile，而不是改写用户内容迎合检测器。

@@ -131,7 +131,7 @@ run.sh configure-voice --project PROJECT \
   --replace-pronunciations
 ```
 
-`configure-voice` 更新声音配置并停止；导演稿非空且现有 manifest 可合并时同时刷新旁白 manifest 与 `narration_review.md`。它不修改源稿、逐页稿或导演稿，也不请求 TTS，也不要求视觉审批或动画 PPTX 基线。损坏或未完成的视觉 manifest 不阻断声音配置写入，命令会明确 warning 派生审阅稿未刷新，之后 narration 审批仍会阻断陈旧派生物；空导演稿则明确说明尚无 review。voice、rate 或 pitch 的生产投影实际变化时，旧 narration 审批自动失效；no-op 配置保持 current。`synthesize` 不接受临时声音覆盖；所有生产声音都必须先进入 `voice_profile.json` 并完成审阅。
+`configure-voice` 更新声音配置并停止；导演稿非空且现有 manifest 可合并时同时刷新旁白 manifest 与 `narration_review.md`。它不修改源稿、逐页稿或导演稿，也不请求 TTS，也不要求视觉审批或动画 HTML 基线。损坏或未完成的视觉 manifest 不阻断声音配置写入，命令会明确 warning 派生审阅稿未刷新，之后 narration 审批仍会阻断陈旧派生物；空导演稿则明确说明尚无 review。voice、rate 或 pitch 的生产投影实际变化时，旧 narration 审批自动失效；no-op 配置保持 current。`synthesize` 不接受临时声音覆盖；所有生产声音都必须先进入 `voice_profile.json` 并完成审阅。
 
 全局与局部 rate、pitch 按数值相加；pitch 必须按上一节检查最终值。声音变化不触发输入门禁或内容审批，但会重新计算全部段落的最终音高，并使 narration 审批、全部章节缓存及音频下游失效。若新全局音高导致任一段越界，`configure-voice` 直接失败且不写入配置。
 
@@ -232,7 +232,7 @@ run.sh approve --project PROJECT \
 
 ## 章节连续、按页交付
 
-PowerPoint 和逐页音频交付都要求每页一个 MP3。禁止一个 MP3 跨页播放。相邻页面可使用相同 `chapter` 统一编排和重建。Qwen3 每章提交一个 SSML 任务，按自然句或短段生成、拼接；下载实际 PCM 时间轴后切页，不能宣称跨句声学上下文连续或字级对齐。Azure 的连续生成链路为：
+逐页音频交付按页生成 MP3，网页组装时根据真实时长拼成带页间静音的播放音轨。相邻页面可使用相同 `chapter` 统一编排和重建。Qwen3 每章提交一个 SSML 任务，按自然句或短段生成、拼接；下载实际 PCM 时间轴后切页，不能宣称跨句声学上下文连续或字级对齐。Azure 的连续生成链路为：
 
 ```text
 整章生成一个 SSML
@@ -309,20 +309,12 @@ run.sh qa --project PROJECT --level audio
 
 ### `narration_audio`
 
-audio QA 通过即完成。不得要求 visual 审批，不得读取模板、SVG 或 PowerPoint，也不得创建 `assets/`、SVG 图层计划、占位 PPTX 或其他视觉完成状态。
+audio QA 通过即完成。不得要求 visual 审批，不得读取模板、SVG 或 HTML，也不得创建 `assets/`、SVG 图层计划、占位 HTML 或其他视觉完成状态。
 
-### `narrated_pptx`
+### `narrated_html`
 
-在有效 visual 审批基础上，将逐页 MP3 和真实换页时间写入独立的自动旁白 PPTX，再执行 standard QA。
+audio QA 通过后运行 `assemble-html`。播放器使用拼好的 MP3 和时间轴自动换页。static 和 standard QA 通过后可显式导出 MP4。 [HTML 与导出](html-and-video.md)
 
-### `video`
+## 重配旁白
 
-standard QA 后由 Windows PowerPoint 导出 MP4。Office 2019 按导出报告身份把 full-range 像素映射为 limited range 并重新编码 H.264，音频保持 stream copy；Office 2021/2022 或更新版本跳过。随后直接交付，不做 ffprobe、抽帧、观看或 release QA。
-
-只改音频时可使用：
-
-```bash
-run.sh rebuild --project PROJECT --scope audio --qa audio
-```
-
-`narration_audio` 固定停在 audio；`narrated_pptx` 可使用 `--qa standard`；`video` 按需继续导出。更换声音时先通过 `configure-voice` 写入配置并刷新审阅稿，再重新批准旁白；试听是推荐的人工质量步骤。
+先运行 `configure-voice`，审阅编排与术语，再批准当前旁白。`rebuild --scope audio --qa standard` 重用有效的章节缓存，更新网页和时间轴，并重新验收。纯音频项目使用 `--qa audio`。

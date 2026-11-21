@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if command -v ffmpeg >/dev/null 2>&1; then
-  ffmpeg -version | head -n 1
+if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
+  ffmpeg -version | sed -n "1p"
   exit 0
 fi
 
@@ -33,8 +33,8 @@ else
   exit 1
 fi
 
-if ! command -v ffmpeg >/dev/null 2>&1; then
+if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
   echo "Error: ffmpeg was installed but is not available on PATH; open a new shell and retry." >&2
   exit 1
 fi
-ffmpeg -version | head -n 1
+ffmpeg -version | sed -n "1p"

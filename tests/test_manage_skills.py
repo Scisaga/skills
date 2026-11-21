@@ -296,6 +296,8 @@ class InstallTests(unittest.TestCase):
             path = self.root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("SECRET-SENTINEL")
+        for stage in ("audio", "html"):
+            (self.root / "skills" / "slides" / f"requirements-{stage}.txt").write_text("fixture\n")
         archive_path = self.base / "release.zip"
         repo.package(self.root, archive_path)
         extracted = self.base / "unpacked"
@@ -306,6 +308,9 @@ class InstallTests(unittest.TestCase):
         clean_source = cli.load_source(str(extracted / "scisaga"), "main", self.state, self.manager.runner)
         self.manager.standalone("codex", clean_source, ["slides"], {}, True)
         self.assertTrue(self.manager.usable(self.manager.records()[0]))
+        installed = self.home / ".agents" / "skills" / "ss-slides"
+        for stage in ("audio", "html"):
+            self.assertTrue((installed / f"requirements-{stage}.txt").is_file())
 
     def test_gate_failure_reports_input_digest(self):
         (self.root / "skills/speech/assets/logo.svg").unlink()

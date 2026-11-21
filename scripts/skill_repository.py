@@ -29,7 +29,10 @@ DENIED = {".git", ".venv", ".venv-win", "venv", "env", "__pycache__",
           ".pytest_cache", ".mypy_cache", ".ruff_cache", ".cache", ".build",
           "node_modules", "out", "output", "outputs", "tmp", "temp"}
 RESOURCE_DIRS = {"scripts", "references", "assets", "agents", "tests"}
-ROOT_FILES = {"SKILL.md", "requirements.txt", "requirements-azure.txt"}
+ROOT_FILES = {
+    "SKILL.md", "requirements.txt", "requirements-azure.txt",
+    "requirements-audio.txt", "requirements-html.txt",
+}
 
 
 def yaml_module():
