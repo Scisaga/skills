@@ -1,0 +1,111 @@
+diff --git a/lorie/src/main/aidl/com/termux/x11/ICmdEntryInterface.aidl b/lorie/src/main/aidl/com/termux/x11/ICmdEntryInterface.aidl
+index c73edca..6c735c8 100644
+--- a/lorie/src/main/aidl/com/termux/x11/ICmdEntryInterface.aidl
++++ b/lorie/src/main/aidl/com/termux/x11/ICmdEntryInterface.aidl
+@@ -7,4 +7,6 @@ interface ICmdEntryInterface {
+     void reportFatalError(String message);
+     void windowChanged(in Surface surface);
+     void cursorWindowChanged(in Surface surface);
++    boolean supportsImeText();
++    int commitImeText(in byte[] text);
+ }
+\ No newline at end of file
+diff --git a/lorie/src/main/java/com/termux/x11/CmdEntryPoint.java b/lorie/src/main/java/com/termux/x11/CmdEntryPoint.java
+index 6196631..3548bad 100644
+--- a/lorie/src/main/java/com/termux/x11/CmdEntryPoint.java
++++ b/lorie/src/main/java/com/termux/x11/CmdEntryPoint.java
+@@ -36,6 +36,15 @@ public class CmdEntryPoint extends ICmdEntryInterface.Stub {
+     public static Context ctx;
+     private final Intent intent = createIntent();
+     private boolean broadcastPending;
++    private final String imeSocket = System.getenv("TABLET_VSCODE_IME_SOCKET");
++
++    @Override public boolean supportsImeText() {
++        return imeSocket != null;
++    }
++
++    @Override public int commitImeText(byte[] text) {
++        return ImeTextBridge.commit(imeSocket, text);
++    }
+ 
+     /**
+      * Command-line entry point.
+diff --git a/lorie/src/main/java/com/termux/x11/LorieView.java b/lorie/src/main/java/com/termux/x11/LorieView.java
+index a190cf2..81b9abe 100644
+--- a/lorie/src/main/java/com/termux/x11/LorieView.java
++++ b/lorie/src/main/java/com/termux/x11/LorieView.java
+@@ -18,6 +18,7 @@ import android.graphics.Region;
+ import android.graphics.drawable.ColorDrawable;
+ import android.opengl.GLES20;
+ import android.os.Build;
++import android.os.RemoteException;
+ import android.os.Handler;
+ import android.os.Looper;
+ import android.os.Message;
+@@ -89,6 +90,31 @@ public class LorieView extends FrameLayout implements InputStub {
+     boolean commitedText = false;
+     private final InputConnection mConnection = new BaseInputConnection(this, false) {
+         private CharSequence currentComposingText = null;
++        private ICmdEntryInterface imeServer;
++        private boolean imeSupported;
++
++        private int commitThroughGtk(CharSequence text) {
++            ICmdEntryInterface server = activity.service;
++            if (server == null || !ImeTextBridge.isTextCommit(text))
++                return ImeTextBridge.UNAVAILABLE;
++            if (server != imeServer) {
++                imeServer = server;
++                try {
++                    imeSupported = server.supportsImeText();
++                } catch (RemoteException oldServer) {
++                    imeSupported = false;
++                }
++            }
++            if (!imeSupported)
++                return ImeTextBridge.UNAVAILABLE;
++            if (!hasWindowFocus())
++                return ImeTextBridge.STALE;
++            try {
++                return server.commitImeText(text.toString().getBytes(UTF_8));
++            } catch (RemoteException disconnected) {
++                return ImeTextBridge.STALE;
++            }
++        }
+ 
+         // We can not inspect X windows and get currently edited text
+         // or even check if currently focused element in window is editable.
+@@ -230,7 +256,10 @@ public class LorieView extends FrameLayout implements InputStub {
+             }
+ 
+             currentComposingText = reuse ? newText : null;
++            return textSent();
++        }
+ 
++        private boolean textSent() {
+             if (activity.useTermuxEKBarBehaviour && activity.mExtraKeys != null)
+                 activity.mExtraKeys.unsetSpecialKeys();
+             commitedText = true;
+@@ -265,6 +294,12 @@ public class LorieView extends FrameLayout implements InputStub {
+ 
+         @Override
+         public boolean commitText(CharSequence text, int newPos) {
++            // Legacy composing text has already been mirrored into X11 as keystrokes.
++            int result = ImeTextBridge.UNAVAILABLE;
++            if (newPos == 1 && (currentComposingText == null || currentComposingText.length() == 0))
++                result = commitThroughGtk(text);
++            if (result == ImeTextBridge.STALE)
++                return false;
+             if (newPos > 0)
+                 currentPos = Math.max(1, newPos - 1 + currentPos + text.length());
+             else
+@@ -273,6 +308,10 @@ public class LorieView extends FrameLayout implements InputStub {
+                 // beginBatchEdit was not called so it will not be reported otherwise
+                 sendCursorPosition();
+ 
++            if (result == ImeTextBridge.COMMITTED) {
++                currentComposingText = null;
++                return textSent();
++            }
+             return replaceText(text, false);
+         }
+ 

@@ -37,11 +37,13 @@ Dock 与缩略图复用白底蓝色应用图标。应用名为 **VSCode**。宿�
 
 ### 构建与更新
 
-在构建主机安装标准 JDK 21 和 Android SDK 的 `platforms;android-34`、`build-tools;36.0.0`。从已安装的 Linux Code 取得 `/usr/share/code/resources/app/resources/linux/code.png`。构建器只接受匹配固定源码的官方 APK，校验摘要后复用原 ARM64 渲染库。宿主和 loader 使用单独的签名，构建产物和签名目录保存在仓库外。 [Android SDK 工具](https://developer.android.com/tools/sdkmanager)
+在构建主机安装标准 JDK 21 和 Android SDK 的 `platforms;android-34`、`build-tools;36.0.0`。从已安装的 Linux Code 取得 `/usr/share/code/resources/app/resources/linux/code.png`。包含中文上屏修复的版本先在 Linux 或 WSL 安装 Android NDK `29.0.14206865`、CMake 3.22 及以上、Ninja、Bison 和 M4，构建 ARM64 原生库。打包时传入生成的库，并把 `native-manifest.json` 放在库的同一目录。`--upstream-apk` 仍可用于重建使用官方库的 1.4.1 版本。宿主和 loader 用同一组独立签名，构建产物和签名目录保存在仓库外。 [Android SDK 工具](https://developer.android.com/tools/sdkmanager)
 
 ```bash
+python skills/termux/scripts/build_vscode_host.py native --android-ndk /path/to/ndk \
+  --output /private/vscode-native
 python skills/termux/scripts/build_vscode_host.py --android-sdk /path/to/sdk \
-  --java-home /path/to/jdk --upstream-apk /path/to/official-x11.apk \
+  --java-home /path/to/jdk --native-library /private/vscode-native/libXlorie.so \
   --code-icon /path/to/code.png --output /private/vscode-host
 adb -s SERIAL install -r /private/vscode-host/vscode-host.apk
 ```
@@ -54,6 +56,37 @@ bash skills/termux/scripts/run.sh standalone-code launcher --dock-loader /path/t
 ```
 
 主窗口沿用隔离配置的 `code/`。额外窗口首次创建时复制主窗口的设置和快捷键，并将各自的编辑器状态与登录存到 `windows/<编号>/code/`。同一 Debian 用户和已安装的扩展目录供这些窗口使用。仅覆盖安装 Android 宿主时，先记录现有标签、Linux PID 与窗口标题，再把失联的 Android 界面挂回原 X11 会话，核对原项目与编辑状态。
+
+原生库升级后，现有 X11 进程会继续使用已加载的库。保存编辑内容和未发送的草稿，再正常关闭并重开需要验证的窗口。在临时编辑标签和新的 Codex 输入框分别提交整词「更新项目」，多次输入包含不同汉字的长句，对照候选、实际文字和字符顺序。X11 动态键映射更新后需要让客户端读取新映射，后续键盘事件通过同一队列派发。 [Termux:X11 问题 #1124](https://github.com/termux/termux-x11/issues/1124) · [上游修复提案 #1125](https://github.com/termux/termux-x11/pull/1125)
+
+Y900 上的 1.4.2 已实测。模拟蓝牙键盘经 Gboard 提交的 6 次拼音，以及直接送入 X11 的 8 段长文本，在 Codex 输入框逐字回读共 218 个字符，内容和顺序一致。
+
+#### 整段上屏试验
+
+1.4.3 试验将普通 Gboard 候选串通过宿主与 X11 已建立的 Binder 连接送到 GTK。GTK 在准备接收时记录输入焦点，在提交前再次核对焦点，再把文本一次交给 VSCode。每个窗口有独立的本机套接字。旧宿主、未启用 GTK 模块和已按旧方式处理的合成文本继续走 1.4.2 的键盘事件路径。 [Android 文本提交接口](https://developer.android.com/reference/android/view/inputmethod/InputConnection#commitText(java.lang.CharSequence,int)) · [GTK 文本提交接口](https://docs.gtk.org/gtk3/signal.IMContext.commit.html)
+
+在 VSCode 所在的 Linux guest 中，从包含 Termux skill 源码的目录构建 GTK 模块。缺依赖时执行 `sudo apt install gcc pkg-config libgtk-3-dev`，按 guest 的权限方式执行安装。
+
+```bash
+python3 skills/termux/scripts/build_vscode_ime.py --output /private/im-tablet-vscode.so
+```
+
+Android 宿主沿用前面的构建命令，额外传入 `--ime-bridge`。用 `--ime-test` 生成独立包 `com.scisaga.tabletvscode.imetest`。为隔离包启动匹配的 loader，分配专属 X11 标签、显示号和临时 VSCode 配置，再把该标签挂接到测试 Activity。载入前把测试 loader 设为只读（例如权限 `0400`）。Y900 的 Android 17 会拒绝加载可写的 DEX。正式宿主与 GTK 模块通过同一个 launcher 配置显式启用。
+
+```bash
+bash skills/termux/scripts/run.sh standalone-code launcher --dock-loader /path/to/vscode-loader.apk \
+  --ime-gtk-module /private/im-tablet-vscode.so --apply
+```
+
+先用实际蓝牙键盘或模拟蓝牙 HID 核对 Gboard 候选，再回读普通编辑区和 Codex 临时草稿中的实际内容。模拟 HID 注册后等输入法就绪再发首键。验收覆盖整词「更新项目」、连续上屏、长句与中英文和 emoji 混合输入。用对应 X11 进程的 `TabletIme` 日志确认整段路径，日志只记录成功提交的字节数。上屏文字完整时仍需核对这条日志，以区分直接提交与键盘事件回退。
+
+多窗口复测时保留尚未选中的候选词，切换到另一 Android 窗口后按确认键，回读两个窗口各自的内容。随后在两边分别提交新词，并检查编辑器焦点、重连旧服务和常用快捷键。去掉 `--ime-gtk-module` 并正常重开窗口可恢复键盘事件路径。
+
+常见回退点在 Android 与 GTK 之间。先确认当前编辑框有焦点且对应套接字可读取就绪响应。`LocalSocket` 要先连接再设置读取超时，否则返回 `socket not created` 并走键盘事件路径。测试日志记录提交结果和字节数，实际内容从输入框回读。
+
+Y900 的 1.4.3 隔离包已实测。模拟蓝牙键盘经 Gboard 向右侧 Codex 输入框提交 6 次「更新项目」，回读 24 字均完整，宿主日志记录 6 次直接提交。「保存位置」处于候选状态时切换到另一个 Android 窗口并按空格，另一窗口只收到空格，Codex 草稿仍是原来的 24 字。随后两个窗口都能独立提交「保存位置」。
+
+本机 Electron 43.8.6 对照已验证普通文本框、富文本输入、长文本和焦点失效。该版本对应 VS Code 1.146.0。 [VS Code 构建版本](https://github.com/microsoft/vscode/blob/1.146.0/package.json#L5-L11)
 
 以下命令用于重新挂接已确认仍在运行的会话，将 `vscode-N` 换成原标签。
 
@@ -87,6 +120,18 @@ done
 若新建时窗口或 SSH 同时消失，查看同一时段 `ActivityManager` 的 `Trimming phantom processes` 日志，逐个确认回收的 PID。正常结束本次测试窗口后，用原 profile 和原槽位恢复保存的工作区。可在该 profile 的 `User/globalStorage/storage.json` 查 `windowsState.lastActiveWindow`。主屏入口可能先返回其他存活会话，按实际工作区确认恢复目标。
 
 如旧 X11 锁或 socket 阻止复用显示号，先在 native 环境核对会话锁已释放、记录的 Xserver 已退出、socket 已无监听，再备份移走这两个已确认的遗留记录。SSH 同时被回收时，可沿已有 USB/ADB 打开临时 Termux 终端，由已部署的 runit 恢复服务，再通过 `sv status "$PREFIX/var/service/sshd"` 和原通道复核。分别记录重新打开的工作区和仍待确认的未保存编辑。
+
+#### 运行日志与残留进程
+
+每个窗口每次启动写一份 `last.log`，最多保留 4 MiB。达到上限后写入截断提示，并继续排空管道。
+
+排查旧日志时用 `df` 和 `du` 核对可用空间与实际占用，再用文件设备号、inode 和 `/proc/PID/fd` 确认写入者。处理前保留少量有代表性的报错，记录 PID、原 tracer 和所属会话，只清理用户授权的文件。旧描述符继续写入时可能形成稀疏文件，清理结果以实际分配空间和分区可用量为准。Y900 此前两个窗口的日志合计占用约 181 GiB。
+
+Y900 的隔离复现中，单独结束 VSCode 主进程时 zygote 正常退出。让 PRoot 跟踪进程突然退出时，两个 zygote 留在系统里并高频报错。PRoot 的 seccomp 过滤器会将 `recvmsg()` 交给 tracer。tracer 消失后，Linux 返回 `ENOSYS`。Chromium 对这个错误记录日志并回到轮询。历史故障中终止 PRoot 的事件没有留存。 [PRoot 5.1.107.102 的过滤表](https://github.com/termux/proot/blob/v5.1.107.102/src/syscall/seccomp.c#L306-L330) · [Linux seccomp 文档](https://docs.kernel.org/userspace-api/seccomp_filter.html#return-values) · [Chromium zygote 的读取处理](https://github.com/chromium/chromium/blob/150.0.7871.250/content/zygote/zygote_linux.cc#L212-L228)
+
+独立窗口的启动器在已有的 `--no-sandbox` 参数旁加上 `--no-zygote`，让 Electron 直接创建子进程。启动器还为每个窗口单独启用 Linux 子进程收养。PRoot 退出后，只回收被此窗口接管的子进程，例如 D-Bus、GVfs 和 Xfce 配置服务。新启动的窗口使用这两项设置。 [Chromium 启动参数](https://github.com/chromium/chromium/blob/150.0.7871.250/content/public/common/content_switches.cc)
+
+故障注入使用限量日志和临时配置，分别对照正常退出、主进程退出和 PRoot 突然退出。逐项复核该会话的子进程、显示号和日志，确认日常窗口仍能使用。Y900 使用独立 VSCode 的原 GPU 参数完成了编辑、保存、Codex 扩展激活和正常退出的复测。强制终止隔离 PRoot 后，启动器约 0.12 秒退出，该会话的进程已回收，日志中没有出现上述循环报错。
 
 需要回到官方 X11 入口时，先正常结束窗口，再执行不带 `--dock-loader` 的 `launcher --apply`。
 

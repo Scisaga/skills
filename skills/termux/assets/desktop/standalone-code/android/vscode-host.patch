@@ -26,8 +26,8 @@ index b807268..11be7af 100644
          targetSdkVersion 34
 -        versionCode 15
 -        versionName termuxX11VersionName
-+        versionCode 6
-+        versionName "1.4.1"
++        versionCode(providers.gradleProperty("vscodeImeBridge").isPresent() ? 8 : (providers.gradleProperty("vscodeImeFix").isPresent() ? 7 : 6))
++        versionName(providers.gradleProperty("vscodeImeBridge").isPresent() ? "1.4.3" : (providers.gradleProperty("vscodeImeFix").isPresent() ? "1.4.2" : "1.4.1"))
      }
  
 @@ -55,5 +54,5 @@ android {

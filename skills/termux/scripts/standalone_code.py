@@ -81,7 +81,7 @@ def replace_config_if_current(path, expected, replacement, mode):
 
 
 def code_arguments(profile):
-    args = ["/usr/share/code/code", "--no-sandbox", "--disable-dev-shm-usage", "--ozone-platform=x11"]
+    args = ["/usr/share/code/code", "--no-sandbox", "--no-zygote", "--disable-dev-shm-usage", "--ozone-platform=x11"]
     if profile["gpu_backend"] != "freedreno-kgsl":
         return args + ["--disable-gpu"]
     if profile["code_angle_backend"] == "gles":
@@ -89,7 +89,7 @@ def code_arguments(profile):
     return ["/usr/local/bin/tablet-gpu-run", *args]
 
 
-def render_launcher(prefix, profile, display, dock=None):
+def render_launcher(prefix, profile, display, dock=None, ime_bridge=False):
     if not re.fullmatch(r":[0-9]{1,2}", display) or int(display[1:]) == int(profile["display"][1:]):
         raise ValueError("Use a separate numeric X11 display, such as :2")
     assets = ASSETS / "standalone-code"
@@ -110,9 +110,11 @@ fi'''
         "CODE_GUARD": indent(CODE_GUARD.rstrip("\n"), "    "),
         "PROFILE_DIR": PROFILE_DIR,
         "STATE_DIR": STATE_DIR,
+        "DOCK_HOME": DOCK_HOME,
         "ANDROID_PACKAGE": DOCK_PACKAGE if dock else "com.termux.x11",
         "X11_COMMAND": shlex.quote(str(dock / "x11" if dock else prefix / "bin/termux-x11")),
         "TITLE_BRIDGE": shlex.quote(str(dock / "dock_titles.py") if dock else ""),
+        "IME_BRIDGE": "1" if dock and ime_bridge else "0",
         "WINDOW_SETUP": (assets / "dock-window-setup.sh").read_text(encoding="utf-8").rstrip() if dock else legacy_setup,
     }
     template = (assets / "launch.sh").read_text(encoding="utf-8")
@@ -159,7 +161,7 @@ exec /system/bin/app_process -Xnoimage-dex2oat / --nice-name="termux-x11 {DOCK_P
 """
 
 
-def install_dock(prefix, home, root, profile, dock, script, loader, writer):
+def install_dock(prefix, home, root, profile, dock, script, loader, writer, ime_module=None):
     wrapper = dock_loader(prefix, dock)
     run([prefix / "bin/bash", "-n"], script=wrapper, timeout=8)
     guest_base = f"/home/{profile['user']}/{PROFILE_DIR}"
@@ -175,14 +177,27 @@ def install_dock(prefix, home, root, profile, dock, script, loader, writer):
     writer.put(scoped_path(dock / "x11", home), wrapper, 0o700)
     writer.put(scoped_path(dock / "dock_titles.py", home),
                (ASSETS / "standalone-code/dock_titles.py").read_bytes(), 0o600)
+    if ime_module:
+        library = f"{guest_base}/ime/im-tablet-vscode.so"
+        cache = f'\n"{library}"\n"tablet-vscode" "Tablet VS Code" "" "" ""\n\n'
+        writer.put(scoped_path(base / "ime/im-tablet-vscode.so", base), ime_module, 0o600)
+        writer.put(scoped_path(base / "ime/immodules.cache", base), cache.encode("utf-8"), 0o600)
     writer.put(scoped_path(dock / "open", home), script, 0o700)
 
 
 def shortcut(prefix, home, root, profile, writer, args):
     dock_file = getattr(args, "dock_loader", None)
+    ime_file = getattr(args, "ime_gtk_module", None)
+    ime_module = None
+    if ime_file:
+        if not dock_file:
+            raise ValueError("Direct IME input requires the signed Android host and --dock-loader")
+        ime_module = ime_file.read_bytes()
+        if len(ime_module) < 64 or ime_module[:6] != b"\x7fELF\x02\x01" or ime_module[16:20] != b"\x03\x00\xb7\x00":
+            raise ValueError("Build the ARM64 GTK module in the VS Code guest using build_vscode_ime.py")
     dependencies = (
         ("bash", "bash"), ("flock", "util-linux"), ("am", "termux-am"),
-        ("proot-distro", "proot-distro"), ("xprop", "xorg-xprop"),
+        ("proot-distro", "proot-distro"), ("xprop", "xorg-xprop"), ("python", "python"),
     )
     if not dock_file:
         dependencies += (("termux-x11", "termux-x11-nightly"),)
@@ -208,7 +223,7 @@ def shortcut(prefix, home, root, profile, writer, args):
         installed = run(["/system/bin/cmd", "package", "path", DOCK_PACKAGE], check=False, timeout=8)
         if installed.returncode or not installed.stdout.startswith("package:"):
             raise ValueError("Install the signed vscode-host.apk from the same build first")
-    script = render_launcher(prefix, profile, args.display, dock)
+    script = render_launcher(prefix, profile, args.display, dock, ime_bridge=ime_module is not None)
     icon = (root / "usr/share/code/resources/app/resources/linux/code.png").read_bytes()
     if not icon.startswith(b"\x89PNG\r\n\x1a\n"):
         raise ValueError("The installed Code icon is invalid")
@@ -229,8 +244,10 @@ def shortcut(prefix, home, root, profile, writer, args):
         with exclusive_lock(lock, busy), exclusive_lock(dock_lock, busy):
             for directory in (shortcuts, entry.parent, image.parent):
                 directory.mkdir(mode=0o700, exist_ok=True)
+            supervisor = scoped_path(home / DOCK_HOME / "session.py", home)
+            writer.put(supervisor, (ASSETS / "standalone-code/session.py").read_bytes(), 0o600)
             if dock:
-                install_dock(prefix, home, root, profile, dock, script, loader, writer)
+                install_dock(prefix, home, root, profile, dock, script, loader, writer, ime_module)
                 am = shlex.quote(str(prefix / "bin/am"))
                 script = (f"#!{prefix}/bin/bash\n# Managed by standalone_code.py\n"
                           f"exec {am} start --user 0 -a android.intent.action.MAIN "
@@ -459,6 +476,7 @@ def main(argv=None):
     launch = sub.add_parser("launcher", help="create the Termux:Widget script for the independent window")
     launch.add_argument("--display", default=":2")
     launch.add_argument("--dock-loader", type=Path, help="select a signed VS Code Android host and its matching loader")
+    launch.add_argument("--ime-gtk-module", type=Path, help="opt in to the direct GTK text input bridge")
     plugins = sub.add_parser("extensions", help="install selected extensions in the isolated Code profile")
     plugins.add_argument("ids", nargs="*")
     browser = sub.add_parser("android-chrome", help="send loopback HTTP preview URLs to Android Chrome")

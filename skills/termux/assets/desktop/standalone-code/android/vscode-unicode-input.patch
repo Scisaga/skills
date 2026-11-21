@@ -1,0 +1,285 @@
+diff --git a/lorie/src/main/cpp/lorie/InputXKB.c b/lorie/src/main/cpp/lorie/InputXKB.c
+index a6f99a0..bdb9785 100644
+--- a/lorie/src/main/cpp/lorie/InputXKB.c
++++ b/lorie/src/main/cpp/lorie/InputXKB.c
+@@ -742,9 +742,38 @@ static KeyCode lorieAddKeysym(KeySym keysym, unused unsigned state) {
+ 
+ 	XkbSendNotification(master, &changes, &cause);
+ 
++	/* A later device switch copies the slave map back to the master. */
++	if (master != lorieKeyboard && !XkbCopyDeviceKeymap(lorieKeyboard, master))
++		LogMessageVerb(X_WARNING, 0, "Failed to synchronize the Lorie keyboard map\n");
++
+ 	return key;
+ }
+ 
++static void lorieActivateKeyboard(void) {
++    InternalEvent event;
++    int count = 0;
++
++    input_lock();
++    UpdateFromMaster(&event, lorieKeyboard, DEVCHANGE_KEYBOARD_EVENT, &count);
++    if (count)
++        mieqEnqueue(lorieKeyboard, &event);
++    input_unlock();
++
++    if (count)
++        mieqProcessInputEvents();
++}
++
++Bool loriePrepareKeysym(KeySym keysym);
++Bool loriePrepareKeysym(KeySym keysym) {
++    mieqProcessInputEvents();
++    lorieActivateKeyboard();
++
++    unsigned state = lorieGetKeyboardState();
++    if (lorieKeysymToKeycode(keysym, state, NULL))
++        return FALSE;
++    return lorieAddKeysym(keysym, state) != 0;
++}
++
+ /*
+  * lorieKeysymKeyboardEvent() - work out the best keycode corresponding
+  * to the keysym sent by the viewer. This is basically impossible in
+@@ -799,18 +828,7 @@ void lorieKeysymKeyboardEvent(KeySym keysym, int down) {
+      * keysym: otherwise the first QueueKeyboardEvents() copies the slave's
+      * map over the master map we just modified.
+      */
+-    {
+-        InternalEvent event;
+-        int count = 0;
+-
+-        input_lock();
+-        UpdateFromMaster(&event, lorieKeyboard, DEVCHANGE_KEYBOARD_EVENT, &count);
+-        if (count)
+-            mieqEnqueue(lorieKeyboard, &event);
+-        input_unlock();
+-        if (count)
+-            mieqProcessInputEvents();
+-    }
++    lorieActivateKeyboard();
+ 
+     state = lorieGetKeyboardState();
+ 
+diff --git a/lorie/src/main/cpp/lorie/cmdentrypoint.cpp b/lorie/src/main/cpp/lorie/cmdentrypoint.cpp
+index f48a24d..56210b1 100644
+--- a/lorie/src/main/cpp/lorie/cmdentrypoint.cpp
++++ b/lorie/src/main/cpp/lorie/cmdentrypoint.cpp
+@@ -42,6 +42,7 @@ extern DeviceIntPtr lorieMouse, lorieTouch, lorieKeyboard, loriePen, lorieEraser
+ extern ScreenPtr pScreenPtr;
+ extern "C" int ucs2keysym(long ucs);
+ extern "C" void lorieKeysymKeyboardEvent(KeySym keysym, int down);
++extern "C" Bool loriePrepareKeysym(KeySym keysym);
+ 
+ char *xtrans_unix_path_x11 = nullptr;
+ char *xtrans_unix_dir_x11 = nullptr;
+@@ -258,6 +259,128 @@ static Bool handleTouchEvent(__unused ClientPtr pClient, void *closure) {
+     return TRUE;
+ }
+ 
++// Only the X server thread reads or changes this queue.
++struct PendingKeyboardEvent {
++    lorieEvent event;
++    PendingKeyboardEvent* next;
++};
++
++static PendingKeyboardEvent *keyboardHead = nullptr, *keyboardTail = nullptr;
++static OsTimerPtr keyboardTimer = nullptr;
++static uintptr_t keyboardGeneration = 0;
++static bool keyboardWaiting = false;
++static bool unicodeMappingPrepared = false;
++static constexpr CARD32 unicodeGraceMs = 30;
++
++static Bool resumeKeyboardEvents(ClientPtr, void *closure);
++
++static CARD32 keyboardDelayExpired(OsTimerPtr, CARD32, void*) {
++    // Timer callbacks may hold the input lock. Resume in normal server work.
++    if (!QueueWorkProc(resumeKeyboardEvents, nullptr, (void*) keyboardGeneration))
++        return unicodeGraceMs;
++    lorieWakeServer();
++    return 0;
++}
++
++static bool waitForUnicodeClients() {
++    keyboardTimer = TimerSet(keyboardTimer, 0, unicodeGraceMs, keyboardDelayExpired, nullptr);
++    keyboardWaiting = keyboardTimer != nullptr;
++    return keyboardWaiting;
++}
++
++static void drainKeyboardEvents() {
++    while (keyboardHead) {
++        const lorieEvent& event = keyboardHead->event;
++        bool unicode = event.type == EVENT_UNICODE;
++        bool nonAscii = unicode && event.unicode.code >= 128;
++        if (unicode) {
++            auto keysym = ucs2keysym((long) event.unicode.code);
++            if (nonAscii && !unicodeMappingPrepared && loriePrepareKeysym(keysym)) {
++                // Let clients read the changed map before its first key event.
++                unicodeMappingPrepared = true;
++                if (waitForUnicodeClients())
++                    return;
++            }
++
++            lorieKeysymKeyboardEvent(keysym, TRUE);
++            lorieKeysymKeyboardEvent(keysym, FALSE);
++        } else if (event.type == EVENT_KEY) {
++            const auto keycode = event.key.key;
++            if (keycode > 255) {
++                for (size_t i = 0; i < lorieExtendedKeysCount; i++)
++                    if (lorieExtendedKeys[i].code == keycode - 8)
++                        lorieKeysymKeyboardEvent(lorieExtendedKeys[i].keysym, event.key.state);
++            } else {
++                QueueKeyboardEvents(lorieKeyboard, event.key.state ? KeyPress : KeyRelease, keycode);
++                mieqProcessInputEvents();
++            }
++        } else if (event.type == EVENT_LOCK_KEYS_STATE) {
++            lorieSyncLockKeysState(event.lockKeysState.state);
++        } else if (event.type == EVENT_SYNC) {
++            // Confirm the barrier only after preceding keyboard events and mieq.
++            mieqProcessInputEvents();
++            lorieSendSyncReply(event.sync.serial);
++        }
++
++        auto* delivered = keyboardHead;
++        keyboardHead = delivered->next;
++        if (!keyboardHead)
++            keyboardTail = nullptr;
++        free(delivered);
++        unicodeMappingPrepared = false;
++
++        // Preserve the mapping until clients have processed the key event.
++        if (nonAscii && waitForUnicodeClients())
++            return;
++    }
++}
++
++static Bool resumeKeyboardEvents(ClientPtr, void *closure) {
++    if ((uintptr_t) closure == keyboardGeneration) {
++        keyboardWaiting = false;
++        drainKeyboardEvents();
++    }
++    return TRUE;
++}
++
++static Bool appendKeyboardEvent(ClientPtr, void *closure) {
++    auto* pending = (PendingKeyboardEvent*) closure;
++    if (keyboardTail)
++        keyboardTail->next = pending;
++    else
++        keyboardHead = pending;
++    keyboardTail = pending;
++    if (!keyboardWaiting)
++        drainKeyboardEvents();
++    return TRUE;
++}
++
++static void queueKeyboardEvent(const lorieEvent& event) {
++    auto* pending = (PendingKeyboardEvent*) calloc(1, sizeof(PendingKeyboardEvent));
++    if (!pending)
++        return;
++    pending->event = event;
++    if (!QueueWorkProc(appendKeyboardEvent, nullptr, pending)) {
++        free(pending);
++        return;
++    }
++    lorieWakeServer();
++}
++
++static void resetKeyboardEvents() {
++    ++keyboardGeneration;
++    TimerCancel(keyboardTimer);
++    while (keyboardHead) {
++        auto* pending = keyboardHead;
++        keyboardHead = pending->next;
++        free(pending);
++    }
++    keyboardTail = nullptr;
++    keyboardWaiting = false;
++    unicodeMappingPrepared = false;
++    lorieReleaseAllKeys();
++}
++
+ void handleLorieEvents(int fd, __unused int ready, __unused void *ignored) {
+     ValuatorMask mask;
+     lorieEvent e = {0};
+@@ -269,7 +392,7 @@ void handleLorieEvents(int fd, __unused int ready, __unused void *ignored) {
+         conn_fd = -1;
+         lorieEnableClipboardSync(FALSE);
+         QueueWorkProc(+[](__unused ClientPtr pClient, __unused void *closure) -> Bool {
+-            lorieReleaseAllKeys();
++            resetKeyboardEvents();
+             return TRUE;
+         }, nullptr, nullptr);
+         lorieWakeServer();
+@@ -384,33 +507,11 @@ void handleLorieEvents(int fd, __unused int ready, __unused void *ignored) {
+                 break;
+             }
+             case EVENT_KEY:
+-            case EVENT_UNICODE: {
+-                // UTF-32 code points span at most 21 bits (max 0x10FFFF), so shifting left by 1 is safe even on a 32-bit uintptr_t.
+-                uintptr_t payload = e.type == EVENT_KEY ? 1u | ((uintptr_t) e.key.state << 1) | ((uintptr_t) e.key.key << 2) : ((uintptr_t) e.unicode.code << 1);
+-                QueueWorkProc(+[](__unused ClientPtr pClient, void *closure) -> Bool {
+-                    // This must be done only on X server thread (touches XKB state directly).
+-                    uintptr_t payload = (uintptr_t) closure;
+-                    if (payload & 1) {
+-                        uintptr_t keycode = payload >> 2;
+-                        if (keycode > 255) {
+-                            for (size_t i = 0; i < lorieExtendedKeysCount; i++)
+-                                if (lorieExtendedKeys[i].code == keycode - 8)
+-                                    lorieKeysymKeyboardEvent(lorieExtendedKeys[i].keysym, payload >> 1 & 1);
+-                            return TRUE;
+-                        }
+-                        QueueKeyboardEvents(lorieKeyboard, (payload >> 1 & 1) ? KeyPress : KeyRelease, keycode);
+-                        mieqProcessInputEvents();
+-                    } else {
+-                        int ks = ucs2keysym((long) (payload >> 1));
+-                        __android_log_print(ANDROID_LOG_DEBUG, "LorieNative", "Trying to input keysym %d\n", ks);
+-                        lorieKeysymKeyboardEvent(ks, TRUE);
+-                        lorieKeysymKeyboardEvent(ks, FALSE);
+-                    }
+-                    return TRUE;
+-                }, nullptr, (void*) payload);
+-                lorieWakeServer();
++            case EVENT_UNICODE:
++            case EVENT_LOCK_KEYS_STATE:
++            case EVENT_SYNC:
++                queueKeyboardEvent(e);
+                 break;
+-            }
+             case EVENT_CLIPBOARD_ENABLE:
+                 lorieEnableClipboardSync(e.clipboardEnable.enable);
+                 break;
+@@ -438,32 +539,7 @@ void handleLorieEvents(int fd, __unused int ready, __unused void *ignored) {
+                 renderer.applyView();
+                 break;
+             }
+-            case EVENT_SYNC: {
+-                auto serial = (uintptr_t) e.sync.serial;
+-                QueueWorkProc(+[](__unused ClientPtr pClient, void *closure) -> Bool {
+-                    // This must be done only on X server thread. Forces mieq to drain everything
+-                    // enqueued before this marker, so the reply is a reliable "the server has
+-                    // applied every event sent so far" barrier.
+-                    mieqProcessInputEvents();
+-                    lorieSendSyncReply((uint32_t) (uintptr_t) closure);
+-                    return TRUE;
+-                }, nullptr, (void*) serial);
+-                lorieWakeServer();
+-                break;
+-            }
+-            case EVENT_LOCK_KEYS_STATE: {
+-                auto *copy = (lorieEvent*) calloc(1, sizeof(lorieEvent));
+-                memcpy(copy, &e, sizeof(e));
+-                QueueWorkProc(+[](__unused ClientPtr pClient, void *closure) -> Bool {
+-                    // This must be done only on X server thread (touches XKB state directly).
+-                    auto *e = (lorieEvent*) closure;
+-                    lorieSyncLockKeysState(e->lockKeysState.state);
+-                    free(e);
+-                    return TRUE;
+-                }, nullptr, copy);
+-                lorieWakeServer();
+-                break;
+-            }
++
+         }
+ 
+         int n;

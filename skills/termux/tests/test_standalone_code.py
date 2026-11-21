@@ -2,6 +2,7 @@
 import argparse
 import json
 from pathlib import Path, PurePosixPath
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -131,6 +132,8 @@ class LauncherAndPreviewTests(unittest.TestCase):
         profile = dict(load_profile(), gpu_backend="freedreno-kgsl", code_angle_backend="gles", display=":1")
         launcher = code.render_launcher(prefix, profile, ":2")
         self.assertIn("/usr/local/bin/tablet-gpu-run /usr/share/code/code", launcher)
+        self.assertIn("--no-sandbox --no-zygote", launcher)
+        self.assertIn('"$HOME/.local/libexec/tablet-vscode/session.py"', launcher)
         self.assertIn('"$@" --user-data-dir', launcher)
         self.assertIn('start --user 0 -n "$activity" -d "$tag"', launcher)
         self.assertIn("x11_args=()", launcher)
@@ -139,6 +142,32 @@ class LauncherAndPreviewTests(unittest.TestCase):
         self.assertNotIn("--wait", launcher)
         with self.assertRaises(ValueError):
             code.render_launcher(prefix, profile, ":01")
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux child subreaper")
+    def test_session_reaps_a_child_after_abrupt_exit(self):
+        helper = code.ASSETS / "standalone-code/session.py"
+        command = """import os
+import signal
+import time
+
+read_fd, write_fd = os.pipe()
+child = os.fork()
+if not child:
+    os.close(read_fd)
+    os.setsid()
+    os.close(1)
+    os.write(write_fd, b"R")
+    time.sleep(5)
+    os._exit(0)
+os.close(write_fd)
+assert os.read(read_fd, 1) == b"R"
+print(child, flush=True)
+os.kill(os.getpid(), signal.SIGKILL)
+"""
+        result = subprocess.run([sys.executable, helper, sys.executable, "-c", command],
+                                capture_output=True, text=True, timeout=6)
+        self.assertEqual(result.returncode, 137, result.stderr)
+        self.assertFalse(Path(f"/proc/{int(result.stdout)}").exists())
 
     def test_dock_launcher_targets_separate_host_and_isolates_secondary_user_data(self):
         prefix = PurePosixPath("/data/data/com.termux/files/usr")
@@ -154,6 +183,18 @@ class LauncherAndPreviewTests(unittest.TestCase):
         self.assertIn('broadcast --user 0 -a "$android_package.WINDOW_READY"', launcher)
         self.assertIn('--es editor_title "$window_title"', launcher)
         self.assertLess(launcher.index("title_args=(initial"), launcher.index('show_window "$tag" "$title" "$editor_token"'))
+
+    def test_ime_bridge_uses_a_private_socket_only_for_opted_in_dock_windows(self):
+        prefix = PurePosixPath("/data/data/com.termux/files/usr")
+        dock = prefix.parent / "home" / code.DOCK_HOME
+        profile = dict(load_profile(), display=":3")
+        self.assertIn("if [[ 0 == 1 ]]; then", code.render_launcher(prefix, profile, ":2", dock))
+        self.assertIn("if [[ 0 == 1 ]]; then", code.render_launcher(prefix, profile, ":2", ime_bridge=True))
+        launcher = code.render_launcher(prefix, profile, ":2", dock, ime_bridge=True)
+        self.assertIn('ime_dir=$(mktemp -d "$TMPDIR/vscode-ime.XXXXXX")', launcher)
+        self.assertIn('guest_ime_socket="/tmp/${ime_dir##*/}/commit"', launcher)
+        self.assertIn('"$editor_token" "$guest_ime_socket"', launcher)
+        self.assertIn('export GTK_IM_MODULE=tablet-vscode', launcher)
 
     def test_dock_title_keeps_the_file_and_project_without_duplicate_branding(self):
         self.assertEqual(dock_titles.parse_title('_NET_WM_NAME = "Welcome - sample-project - Visual Studio Code"'),

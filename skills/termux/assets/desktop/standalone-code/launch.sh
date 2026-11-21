@@ -58,7 +58,32 @@ mkdir -p "$state"
 
 socket_path="$TMPDIR/.X11-unix/X${display#:}"
 lock_path="$TMPDIR/.X${display#:}-lock"
-exec >"$state/last.log" 2>&1
+
+start_log() {
+    local temporary payload_limit=$((4 * 1024 * 1024 - 96))
+    if ! temporary=$(mktemp "$state/.last.log.XXXXXX"); then
+        exec >/dev/null 2>&1
+        return
+    fi
+    if ! mv -fT -- "$temporary" "$state/last.log"; then
+        rm -f -- "$temporary"
+        exec >/dev/null 2>&1
+        return
+    fi
+    exec 6>"$state/last.log"
+    exec > >(
+        exec 7>&- 8>&- 9>&-
+        head -c "$payload_limit" >&6 || true
+        if [[ "$(stat -Lc '%s' /proc/self/fd/6 2>/dev/null || printf 0)" -ge "$payload_limit" ]]; then
+            printf '\n[VSCode log limit reached. Additional output omitted.]\n' >&6 || true
+        fi
+        exec 6>&-
+        exec cat >/dev/null
+    ) 2>&1
+    exec 6>&-
+}
+
+start_log
 if [[ -e "$socket_path" || -L "$socket_path" || -e "$lock_path" || -L "$lock_path" ]]; then
     printf 'Display %s already has a socket or lock. Inspect its owner.\n' "$display" >&2
     exit 1
@@ -66,6 +91,7 @@ fi
 
 server_pid=
 title_pid=
+ime_dir=
 socket_identity=
 lock_identity=
 remember_display() {
@@ -95,11 +121,22 @@ close_display() {
         "$prefix/bin/am" broadcast --user 0 -a com.termux.x11.ACTION_STOP -p "$android_package" \
             --es document_tag "$tag" >/dev/null 2>&1 || true
     fi
+    if [[ -n "$ime_dir" ]]; then
+        rm -f -- "$ime_dir/commit"
+        rmdir -- "$ime_dir"
+    fi
 }
 
 trap close_display EXIT
 trap 'exit 130' HUP INT TERM
 unset TERMUX_X11_XSTARTUP
+unset TABLET_VSCODE_IME_SOCKET
+guest_ime_socket=
+if [[ @IME_BRIDGE@ == 1 ]]; then
+    ime_dir=$(mktemp -d "$TMPDIR/vscode-ime.XXXXXX")
+    export TABLET_VSCODE_IME_SOCKET="$ime_dir/commit"
+    guest_ime_socket="/tmp/${ime_dir##*/}/commit"
+fi
 "${x11_command[@]}" "$display" -tag "$tag" -nolisten tcp "${x11_args[@]}" 7>&- 9>&- &
 server_pid=$!
 for attempt in {1..50}; do
@@ -123,8 +160,9 @@ if [[ -n "$dock_tag" ]]; then
     title_pid=$!
 fi
 
-"$prefix/bin/proot-distro" login "$container" --user "$user" --shared-tmp -- \
-    /bin/bash -s -- "$display" "$scale" "$slot" "$dock_tag" "$fresh" "$workspace" "$editor_token" "${code_args[@]}" 7>&- 9>&- <<'GUEST'
+"$prefix/bin/python" "$HOME/@DOCK_HOME@/session.py" \
+    "$prefix/bin/proot-distro" login "$container" --user "$user" --shared-tmp -- \
+    /bin/bash -s -- "$display" "$scale" "$slot" "$dock_tag" "$fresh" "$workspace" "$editor_token" "$guest_ime_socket" "${code_args[@]}" 7>&- 9>&- <<'GUEST'
 set -euo pipefail
 umask 077
 root="$HOME/@PROFILE_DIR@"
@@ -137,7 +175,12 @@ if [[ -n "$4" ]]; then
 fi
 fresh=$5
 workspace=$6
-shift 7
+ime_socket=$8
+shift 8
+unset TABLET_VSCODE_IME_SOCKET
+if [[ -n "$ime_socket" ]]; then
+    export TABLET_VSCODE_IME_SOCKET="$ime_socket"
+fi
 export GDK_GL=disable NO_AT_BRIDGE=1
 export XDG_CONFIG_HOME="$root/config" XDG_DATA_HOME="$root/data" XDG_CACHE_HOME="$root/cache" XDG_RUNTIME_DIR="$root/run"
 unset SESSION_MANAGER DBUS_SESSION_BUS_ADDRESS DBUS_STARTER_ADDRESS DBUS_STARTER_BUS_TYPE
@@ -187,6 +230,10 @@ exec /usr/bin/dbus-run-session -- /bin/bash -s -- "$@" <<'SESSION'
 @CODE_GUARD@
     if [[ -f "$HOME/.local/share/tablet-desktop/android-keyring/master.sealed" ]]; then
         set -- "$@" --password-store=gnome-libsecret
+    fi
+    if [[ -n "${TABLET_VSCODE_IME_SOCKET:-}" ]]; then
+        export GTK_IM_MODULE=tablet-vscode GTK_IM_MODULE_FILE="$VSCODE_STANDALONE_HOME/ime/immodules.cache"
+        set -- "$@" --gtk-version=3
     fi
     "$@" --user-data-dir "$VSCODE_STANDALONE_DATA" --extensions-dir "$VSCODE_STANDALONE_HOME/extensions" \
         ${VSCODE_STANDALONE_WORKSPACE:+"$VSCODE_STANDALONE_WORKSPACE"}
