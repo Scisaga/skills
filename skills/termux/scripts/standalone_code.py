@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the optional Android VS Code shortcut and configure its isolated profile."""
+"""Set up and troubleshoot the independent Android VS Code entry."""
 from __future__ import annotations
 
 import argparse
@@ -20,6 +20,7 @@ from desktop_profile import ASSETS, guest_root, load_profile, profile_digest
 from desktop_setup import Writer, require_termux, run
 from jsonc_settings import merge as merge_settings, parse as parse_settings
 from keyring_setup import CODE_GUARD
+from vscode_runtime import inspect_runtime
 
 
 OFFICE_ID = "cweijan.vscode-office"
@@ -255,6 +256,8 @@ def shortcut(prefix, home, root, profile, writer, args):
             hint = " Enable the X11 repository with pkg install x11-repo first." if executable in ("termux-x11", "xprop") else ""
             raise ValueError(f"Missing {executable}. Run pkg install {package}.{hint}")
     needed = ["/usr/bin/dbus-run-session", "/usr/bin/xfwm4", "/usr/bin/xprop", "/usr/share/code/code"]
+    if dock_file and not (root / "usr/bin/wmctrl").is_file():
+        raise ValueError("Install wmctrl in the configured Debian guest for normal Android task close")
     if profile["gpu_backend"] == "freedreno-kgsl":
         needed.append("/usr/local/bin/tablet-gpu-run")
     if any(not (root / name.lstrip("/")).is_file() for name in needed):
@@ -375,6 +378,22 @@ def supervise_launcher(home, bash, writer, apply, entry="dock"):
         writer.put(supervisor, content, 0o600)
         writer.put(launcher, updated, 0o700)
     return {"launcher": str(launcher), "session_supervisor": str(supervisor)}
+
+
+def update_code_package(prefix, home, profile, args):
+    proot = prefix / "bin/proot-distro"
+    if not proot.is_file():
+        raise ValueError("Missing proot-distro. Run pkg install proot-distro")
+    mode = "apply" if args.apply else "prepare" if args.prepare else "preview"
+    script = (ASSETS / "guest/vscode-package-update.py").read_text(encoding="utf-8")
+    command = [proot, "login", profile["container"], "--", "/usr/bin/python3", "-",
+               mode, args.version or "", profile["code_version"]]
+    if args.apply:
+        busy = "Close the standalone Code windows normally before applying the package update"
+        with exclusive_lock(scoped_path(home / STATE_DIR / "session.lock", home), busy), \
+                exclusive_lock(scoped_path(home / STATE_DIR / "dock-settings.lock", home), busy):
+            return json.loads(run(command, script=script).stdout)
+    return json.loads(run(command, script=script, timeout=570 if args.prepare else 75).stdout)
 
 
 def extension_registry(base):
@@ -600,13 +619,28 @@ def main(argv=None):
     browser = sub.add_parser("android-chrome", help="send loopback HTTP preview URLs to Android Chrome")
     touch_menu = sub.add_parser("scm-touch-menu", help="repair the Commit dropdown for touch in standalone windows")
     lifecycle = sub.add_parser("supervise", aliases=["supervise-dock"], help="tie each standalone window to its editor process")
+    inspect = sub.add_parser("inspect", help="read standalone leases and selected native process identities")
+    inspect.add_argument("--pid", action="append", type=int, default=[], help="inspect this PID; repeat for multiple PIDs")
+    update = sub.add_parser("update", help="check or update the signed Microsoft Debian Code package")
+    operation = update.add_mutually_exclusive_group()
+    operation.add_argument("--prepare", action="store_true", help="refresh the Microsoft source and download Code")
+    operation.add_argument("--apply", action="store_true", help="install the prepared Code package after normal exit")
+    update.add_argument("--version", help="select an exact Debian package version returned by --prepare")
     for command in (touch_menu, lifecycle):
         command.add_argument("--entry", choices=("dock", "widget"), default="dock")
     for command in (launch, plugins, browser, touch_menu, lifecycle):
         command.add_argument("--apply", action="store_true", help="apply the previewed changes")
     args = parser.parse_args(argv)
+    if args.action == "update":
+        if args.apply and not args.version:
+            parser.error("standalone-code update --apply needs the exact --version printed by --prepare")
+        if args.version and not (args.apply or args.prepare):
+            parser.error("standalone-code update --version needs --prepare or --apply")
     try:
         prefix, home = require_termux()
+        if args.action == "inspect":
+            print(json.dumps(inspect_runtime(scoped_path(home / STATE_DIR, home), args.pid), ensure_ascii=False))
+            return 0
         profile = load_profile(home / ".config/tablet-desktop/config.json")
         root = guest_root(prefix, profile["container"])
         guest_base = f"/home/{profile['user']}/{PROFILE_DIR}"
@@ -615,7 +649,7 @@ def main(argv=None):
             raise ValueError("The configured Debian rootfs or standalone profile path is unavailable")
         writer = Writer(home, prefix, root)
         lock = (exclusive_lock(scoped_path(home / STATE_DIR / "setup.lock", home), "Another standalone Code setup is running")
-                if args.apply else nullcontext())
+                if args.apply or getattr(args, "prepare", False) else nullcontext())
         with lock:
             if args.action == "launcher":
                 result = shortcut(prefix, home, root, profile, writer, args)
@@ -623,6 +657,8 @@ def main(argv=None):
                 result = scm_touch_menu(home, base, prefix / "bin/bash", writer, args.apply, args.entry)
             elif args.action in ("supervise", "supervise-dock"):
                 result = supervise_launcher(home, prefix / "bin/bash", writer, args.apply, args.entry)
+            elif args.action == "update":
+                result = update_code_package(prefix, home, profile, args)
             else:
                 guest = guest_env(prefix, profile, guest_base)
                 if args.action == "extensions":

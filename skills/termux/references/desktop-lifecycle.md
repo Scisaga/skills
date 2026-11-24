@@ -50,6 +50,8 @@ desktop manage --terminal
 
 `manager-events.jsonl` 有大小轮换；采样历史在明确的会话切换时清空。诊断时先看事件和 PID 身份；不要按进程名或 PPID=1 大范围清理。
 
+独立 VS Code 的 Codex 残留依靠会话标签、UID、创建 ticks 和 tracer 判断归属。近期异常掉电可对照放电历史与 CPU 采样。 [VS Code 与 Codex 排查](vscode-troubleshooting.md)
+
 ## 息屏与功耗
 
 切回 Android、关闭启动终端或息屏，不会主动触发桌面 logout。Android/厂商仍可能回收后台进程；物理息屏、普通锁屏和重启后首次解锁必须分开测试。

@@ -105,6 +105,9 @@ remember_display() {
 
 close_display() {
     rm -f -- "$state/editor.pid" "$state/editor.pid.tmp"
+    if [[ -n "$dock_tag" ]]; then
+        rm -f -- "$state/editor-token"
+    fi
     if [[ -n "$title_pid" ]]; then
         kill "$title_pid" 2>/dev/null || true
         wait "$title_pid" 2>/dev/null || true
@@ -132,13 +135,18 @@ trap close_display EXIT
 trap 'exit 130' HUP INT TERM
 unset TERMUX_X11_XSTARTUP
 unset TABLET_VSCODE_IME_SOCKET
+unset TABLET_VSCODE_WINDOW_TOKEN
+if [[ -n "$dock_tag" ]]; then
+    export TABLET_VSCODE_WINDOW_TOKEN="$editor_token" TABLET_VSCODE_CLOSE_HELPER="$title_bridge"
+    export TABLET_VSCODE_CLOSE_STATE="$state" TABLET_VSCODE_CLOSE_CONTAINER="$container" TABLET_VSCODE_CLOSE_USER="$user"
+fi
 guest_ime_socket=
 if [[ @IME_BRIDGE@ == 1 ]]; then
     ime_dir=$(mktemp -d "$TMPDIR/vscode-ime.XXXXXX")
     export TABLET_VSCODE_IME_SOCKET="$ime_dir/commit"
     guest_ime_socket="/tmp/${ime_dir##*/}/commit"
 fi
-"${x11_command[@]}" "$display" -tag "$tag" -nolisten tcp "${x11_args[@]}" 7>&- 9>&- &
+DISPLAY="$display" "${x11_command[@]}" "$display" -tag "$tag" -nolisten tcp "${x11_args[@]}" 7>&- 9>&- &
 server_pid=$!
 for attempt in {1..50}; do
     kill -0 "$server_pid" 2>/dev/null || { printf '%s\n' 'The tagged X11 server exited.' >&2; exit 1; }

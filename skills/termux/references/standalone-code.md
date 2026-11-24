@@ -17,6 +17,10 @@ bash skills/termux/scripts/run.sh standalone-code launcher --apply
 
 小米平板 7 的 HyperOS 若拒绝固定图标，在 Termux:Widget 的「其他权限」中临时允许「桌面快捷方式」。完成固定后可恢复该权限并再点一次图标验证。点击后若编辑器已启动但设备仍停在主屏，检查 `ActivityTaskManager` 的后台启动记录。小米平板 7 上要让 Termux 从后台显示 X11 窗口，需在 Termux 的应用权限中允许「后台弹出界面」和「显示在其他应用上层」。若 HyperOS 以小窗打开编辑器，可下拉小窗底部横条切到全屏。
 
+HyperOS 上划清理后仍有 Linux Code 或 Codex 时，可将原 VS Code Widget 指向专用宿主 1.4.6。安装同一次构建的宿主和 loader，核对专用宿主的 `RUN_COMMAND` 权限和 Termux → VSCode 关联启动，再从原 Widget 验证。 [签名构建和启动器更新](#构建与更新)
+
+USB 安装曾报 `INSTALL_FAILED_USER_RESTRICTED`。先核对当前 Android 用户的有效限制和安装器回显。主用户允许安装且拦截发生在 USB 路径时，校验签名和摘要后用「文件」打开 APK，核对包标识及版本并使用本次安装许可。
+
 独立入口启动带 `vscode` 标签的 X11、最小 Xfwm 和 Code 图形进程。重复点击只返回现有窗口。Code 用户设置、扩展和 XDG 目录在 guest 的 `~/.local/share/tablet-vscode`，项目仍用同一 Debian 用户访问。在 Code 文件选择器中可打开 `~/Desktop/skills`，也可访问已授予 Termux 存储权限的 `/sdcard/Download` 和 `/sdcard/Documents`。如需启用已有 Android 保护的 GNOME Keyring，按 [桌面凭据配置](desktop-credentials.md) 验证解锁。登录或同步由当前用户在隔离配置中完成。 [VS Code 配置隔离](https://code.visualstudio.com/docs/configure/command-line#_isolating-vs-code-instances)
 
 ## Y900 的 Dock 图标和独立窗口
@@ -97,7 +101,15 @@ adb -s SERIAL shell am start -W \
 
 ### 多窗口验收与恢复
 
-先按 [子进程限制](android-permissions-and-power.md#phantom-process-killer--子进程限制) 回读有效上限和当前进程情况。将 Android 最近任务与原生 Termux 已占用的 `dock/<编号>/session.lock` 对照，并用 X11 窗口的 `_NET_WM_PID` 验证实际会话。关掉 ZUI 的缩略图可能只移除 Android 任务，独立 X11 和编辑器仍在运行。接近上限时，可先用已有会话检查切换，把新建测试安排在有余量时。
+先按 [子进程限制](android-permissions-and-power.md#phantom-process-killer--子进程限制) 回读有效上限和当前进程情况。将 Android 最近任务与原生 Termux 已占用的 `dock/<编号>/session.lock` 对照，并用 X11 窗口的 `_NET_WM_PID` 验证实际会话。接近上限时，可先用已有会话检查切换，把新建测试安排在有余量时。
+
+宿主 1.4.4 将移除 Android 任务转成对应 Linux 编辑器的正常关闭请求。若 ZUI 同时结束 Android 宿主，宿主从 X11 重连广播恢复后会核对旧任务、退出记录和该会话标识，再请求关闭。切换、最小化及配置变更保留会话。安装同一次构建的宿主和 loader，并用 `launcher --dock-loader ... --apply` 更新启动器。Debian guest 需要 `wmctrl`。
+
+HyperOS 可能在上划时将专用宿主设为停止状态。1.4.6 由仍在运行的 Termux X11 服务监听已连接宿主的 Binder。宿主退出且系统回读为停止时，仅在一个独立会话持有锁的情形下发出正常关闭请求。多个会话仍可逐窗通过编辑器正常关闭。
+
+小米平板 7 已从原 Widget 实测 1.4.6。返回主屏时 Code 和 Codex 的 PID 保留。随后在最近任务上划，HyperOS 记录 `SwipeUpClean / FORCE STOP`，Termux 的 X11 进程收到宿主停止并请求正常关闭。扩展宿主以状态 0 退出，Codex、X11、显示号和会话锁均已回收。
+
+Y900 实测两个独立窗口都启动了 Codex。返回桌面后两个编辑器 PID 不变。关闭其中一张任务卡片时，对应的 Code 和 Codex 退出，另一窗口保留。关闭最后一张卡片时，Android 记录 `REMOVE TASK` 并结束宿主，Linux 日志仍收到正常关闭请求，扩展宿主以状态 0 退出。
 
 ```bash
 # 主机，使用当前已连接的设备
@@ -123,11 +135,13 @@ done
 
 ## 窗口退出、标题与会话恢复
 
+出现 `Not connected`、新窗口与旧会话不一致、Codex 遗留或 Linux 更新按钮消失时，按 [VS Code 与 Codex 排查](vscode-troubleshooting.md) 取证和验收。
+
 卡住的旧画面可能来自已经退出的编辑器。将 Android 任务的标签对应到 X11 显示号，在原生 Termux 查询该显示号的 `_NET_CLIENT_LIST` 和窗口的 `_NET_WM_PID`，再核对 PID 的启动时间及所属进程树。Android 还有卡片、会话锁仍持有，以及 X11 屏幕还能截图，都无法替代这项核对。
 
 - 编辑器已退出时，先查看同一配置的 `Backups`、`windowsState.lastActiveWindow` 和该会话的启动日志。只回收身份已核实的残留会话，再从日常入口恢复对应工作区。保留未保存内容和其他活会话。
 - 编辑器仍在且 X11 窗口为 `_NET_WM_STATE_HIDDEN` 时，核对窗口 ID、标题及 PID 后，可用 `xdotool windowactivate --sync XID` 恢复原窗口。再用日常入口切换，确认键盘、触屏和 Android 标题一致。
-- 测试窗口使用独立配置或可清理的临时工作区。通过 Code 的退出命令关闭测试窗口。在删除测试目录前，先移除该目录的最近项目条目。日常退出用 **File → Exit**，Android 划掉缩略图可能只关掉卡片。
+- 测试窗口使用独立配置或可清理的临时工作区。分别用 **File → Exit** 和移除 Android 任务验证租约、X11、Code 与 Codex 一同退出，同时核对另一窗口。关闭遇到 VS Code 保存对话框时，主屏图标可挂回原会话处理。删除测试目录前先移除该目录的最近项目条目。
 
 ### 运行日志与残留进程
 

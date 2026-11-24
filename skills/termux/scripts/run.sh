@@ -19,7 +19,7 @@ Commands:
   deploy-bluetooth  Install/provision the Bluetooth companion (initial ADB only)
   desktop-plan      Show the optional desktop profile without changing a device
   desktop-install   Install/configure Debian/Xfce and selected applications in native Termux
-  standalone-code   Set up the Android VS Code shortcut and its isolated profile
+  standalone-code   Set up, inspect or update the independent VS Code environment
   build-vscode-host Build the Android host and matching loader for standalone VS Code tasks
   desktop-doctor    Check desktop components without starting a desktop
   desktop-verify    Gate effective policy, boot, screen-off and GPU evidence

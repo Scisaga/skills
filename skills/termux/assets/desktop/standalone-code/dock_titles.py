@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish the normal VS Code window's X11 title to its Android task."""
+"""Publish VS Code task titles and send normal X11 close requests."""
 import argparse
 import codecs
 import os
@@ -36,19 +36,85 @@ def xprop(env, *args):
                           text=True, encoding="utf-8", errors="replace", timeout=5)
 
 
-def find_editor(env):
+def editor_windows(env):
     clients = xprop(env, "-root", "_NET_CLIENT_LIST")
     if clients.returncode:
         raise ConnectionError("X11 display closed")
     for window in re.findall(r"0x[0-9a-fA-F]+", clients.stdout):
-        props = xprop(env, "-id", window, "WM_CLASS", "_NET_WM_WINDOW_TYPE", "_NET_WM_NAME").stdout
+        props = xprop(env, "-id", window, "WM_CLASS", "_NET_WM_WINDOW_TYPE", "_NET_WM_NAME", "_NET_WM_PID").stdout
         if '"com.microsoft.vscode"' not in props.lower() or "_NET_WM_WINDOW_TYPE_NORMAL" not in props:
             continue
+        yield window, props
+
+
+def find_editor(env):
+    for window, props in editor_windows(env):
         for line in props.splitlines():
             title = parse_title(line)
             if title is not None:
                 return window, title
     return None, None
+
+
+def editor_identity(state):
+    from session import editor_start_time
+
+    try:
+        pid, started = map(int, (state / "editor.pid").read_text(encoding="ascii").split())
+    except (OSError, ValueError):
+        return None
+    if pid > 1 and started > 0 and editor_start_time(pid) == started:
+        return pid, started
+    return None
+
+
+def sibling_window_is_active(state):
+    import fcntl
+
+    for lease in state.parent.glob("*/session.lock"):
+        if lease.parent == state or not re.fullmatch(r"[0-9]{1,2}", lease.parent.name):
+            continue
+        try:
+            with lease.open("rb") as file:
+                fcntl.flock(file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return True
+    return False
+
+
+def close_editor(env, state, container, user, *, sole_session=False):
+    token = env.get("TABLET_VSCODE_WINDOW_TOKEN", "")
+    if not re.fullmatch(r"[0-9a-f]{32}", token):
+        raise ValueError("Missing the current editor session token")
+
+    def same_session():
+        try:
+            return (state / "editor-token").read_text(encoding="ascii").strip() == token
+        except OSError:
+            return False
+
+    deadline = time.monotonic() + 20
+    while same_session() and time.monotonic() < deadline:
+        identity = editor_identity(state)
+        if identity is not None:
+            windows = [window for window, props in editor_windows(env)
+                       if re.search(rf"^_NET_WM_PID = {identity[0]}$", props, re.M)]
+            if windows:
+                prefix = Path(env["PREFIX"])
+                command = [str(prefix / "bin/proot-distro"), "login", container, "--user", user, "--shared-tmp", "--",
+                           "/usr/bin/env", f"DISPLAY={env['DISPLAY']}", "/usr/bin/wmctrl", "-i", "-c"]
+                for window in windows:
+                    if not same_session() or editor_identity(state) != identity:
+                        break
+                    if sole_session and sibling_window_is_active(state):
+                        print("Keeping the editor open because another standalone session is active", flush=True)
+                        return
+                    subprocess.run(command + [window], env=env, stdin=subprocess.DEVNULL, check=True, timeout=8)
+                    print(f"Requested normal close on {env['DISPLAY']} for editor PID {identity[0]}", flush=True)
+                return
+        time.sleep(0.25)
 
 
 def initial_title(env, state, workspace, fresh):
@@ -112,16 +178,24 @@ def watch(env, tag, state):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("initial", "watch"))
+    parser.add_argument("action", choices=("initial", "watch", "close"))
     parser.add_argument("display")
     parser.add_argument("tag")
     parser.add_argument("state", type=Path)
     parser.add_argument("--workspace")
     parser.add_argument("--fresh", action="store_true")
+    parser.add_argument("--container")
+    parser.add_argument("--user")
+    parser.add_argument("--sole-session", action="store_true")
     args = parser.parse_args()
     if not re.fullmatch(r":[0-9]{1,2}", args.display) or not re.fullmatch(r"vscode-[0-9]{1,2}", args.tag):
         parser.error("Expected a local X11 display and a VS Code window tag")
     env = dict(os.environ, DISPLAY=args.display, LC_ALL="C.UTF-8")
+    if args.action == "close":
+        if not args.container or not args.user:
+            parser.error("A close request requires the configured guest and user")
+        close_editor(env, args.state, args.container, args.user, sole_session=args.sole_session)
+        return
     if args.action == "initial":
         print(initial_title(env, args.state, args.workspace, args.fresh))
         return

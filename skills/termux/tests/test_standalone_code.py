@@ -127,6 +127,63 @@ class OfficeAssociationsTests(unittest.TestCase):
 
 
 class LauncherAndPreviewTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "linux", "requires native session locks")
+    def test_stopped_host_close_preserves_editor_when_a_sibling_session_is_active(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            state = root / "dock/0"
+            state.mkdir(parents=True)
+            lease = root / "dock/1/session.lock"
+            session = "a" * 32
+            env = {"TABLET_VSCODE_WINDOW_TOKEN": session, "PREFIX": folder, "DISPLAY": ":9"}
+            (state / "editor-token").write_text(session, encoding="ascii")
+            with patch.object(dock_titles, "editor_identity", return_value=(661, 888)), \
+                    patch.object(dock_titles, "editor_windows", return_value=[("0x103", "_NET_WM_PID = 661")]), \
+                    patch.object(dock_titles.subprocess, "run") as send:
+                with code.exclusive_lock(lease, "unexpected lock"):
+                    dock_titles.close_editor(env, state, "debian", "developer", sole_session=True)
+                    send.assert_not_called()
+                dock_titles.close_editor(env, state, "debian", "developer", sole_session=True)
+                send.assert_called_once()
+
+    def test_android_close_resolves_only_the_verified_normal_editor_window(self):
+        with tempfile.TemporaryDirectory() as folder:
+            state = Path(folder)
+            session = "a" * 32
+            env = {"TABLET_VSCODE_WINDOW_TOKEN": session, "PREFIX": folder, "DISPLAY": ":9"}
+            (state / "editor-token").write_text(session + "\n", encoding="ascii")
+            class_name = 'WM_CLASS = "code", "com.microsoft.VSCode"\n'
+            normal = class_name + "_NET_WM_WINDOW_TYPE = _NET_WM_WINDOW_TYPE_NORMAL\n"
+            dialog = class_name + "_NET_WM_WINDOW_TYPE = _NET_WM_WINDOW_TYPE_DIALOG\n"
+            windows = [
+                SimpleNamespace(returncode=0, stdout="_NET_CLIENT_LIST = 0x101, 0x102, 0x103"),
+                SimpleNamespace(stdout=normal + "_NET_WM_PID = 660"),
+                SimpleNamespace(stdout=dialog + "_NET_WM_PID = 661"),
+                SimpleNamespace(stdout=normal + "_NET_WM_PID = 661"),
+            ]
+            with patch.object(dock_titles, "editor_identity", return_value=(661, 888)), \
+                    patch.object(dock_titles, "xprop", side_effect=windows), \
+                    patch.object(dock_titles.subprocess, "run") as send:
+                dock_titles.close_editor(env, state, "debian", "developer")
+            send.assert_called_once()
+            self.assertEqual(send.call_args.args[0][-5:], ["DISPLAY=:9", "/usr/bin/wmctrl", "-i", "-c", "0x103"])
+
+    def test_android_close_rejects_an_older_slot_token_or_changed_editor_identity(self):
+        with tempfile.TemporaryDirectory() as folder:
+            state = Path(folder)
+            env = {"TABLET_VSCODE_WINDOW_TOKEN": "a" * 32, "PREFIX": folder, "DISPLAY": ":9"}
+            token = state / "editor-token"
+            token.write_text("b" * 32, encoding="ascii")
+            with patch.object(dock_titles, "editor_windows", return_value=[("0x103", "_NET_WM_PID = 661")]) as windows, \
+                    patch.object(dock_titles, "editor_identity", side_effect=[(661, 888), (661, 999)]), \
+                    patch.object(dock_titles.subprocess, "run") as send:
+                dock_titles.close_editor(env, state, "debian", "developer")
+                windows.assert_not_called()
+                token.write_text("a" * 32, encoding="ascii")
+                dock_titles.close_editor(env, state, "debian", "developer")
+                windows.assert_called_once()
+                send.assert_not_called()
+
     def test_launcher_uses_direct_gui_and_rejects_xfce_display(self):
         prefix = PurePosixPath("/data/data/com.termux/files/usr")
         profile = dict(load_profile(), gpu_backend="freedreno-kgsl", code_angle_backend="gles", display=":1")

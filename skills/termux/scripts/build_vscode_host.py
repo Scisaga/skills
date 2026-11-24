@@ -149,6 +149,7 @@ def build(args):
         host_patch.write_text((ASSETS / "vscode-host.patch").read_text(encoding="utf-8").replace(PACKAGE, package),
                               encoding="utf-8", newline="\n")
         run(["git", "-C", source, "apply", host_patch])
+        run(["git", "-C", source, "apply", ASSETS / "vscode-task-close.patch"])
         certificate = source / "vscode-signing-cert.der"
         key, password = signing_key(jdk, keys, certificate)
         library = source / "vscode-jni/arm64-v8a/libXlorie.so"
@@ -165,9 +166,18 @@ def build(args):
         (java / "CodeLauncher.java").write_text(
             (ASSETS / "CodeLauncher.java").read_text(encoding="utf-8").replace(PACKAGE, package),
             encoding="utf-8")
+        shutil.copy2(ASSETS / "EditorTaskClose.java", java)
         if ime_bridge:
             run(["git", "-C", source, "apply", ASSETS / "vscode-ime-bridge.patch"])
             shutil.copy2(ASSETS / "ImeTextBridge.java", java)
+        # Append the methods after the base and optional IME transactions.
+        aidl = main / "aidl/com/termux/x11/ICmdEntryInterface.aidl"
+        body = aidl.read_text(encoding="utf-8").rstrip()
+        if not body.endswith("}"):
+            raise ValueError("Unexpected X11 Binder interface")
+        aidl.write_text(body[:-1] + "    String editorSessionToken();\n"
+                        "    boolean closeEditor(String sessionToken);\n"
+                        "    void watchEditorHost(IBinder lifetime);\n}\n", encoding="utf-8")
         for values in ("values", "values-zh-rCN", "xml"):
             target = main / "res" / values
             target.mkdir(exist_ok=True)

@@ -65,6 +65,9 @@ if [[ -z "$dock_tag" ]]; then
     exit 1
 fi
 editor_token="$launch_request"
+if [[ -z "$editor_token" ]]; then
+    editor_token=$("$prefix/bin/python" -c 'import secrets; print(secrets.token_hex(16))')
+fi
 token_file=$(mktemp "$state/.editor-token.XXXXXX")
 printf '%s\n' "$editor_token" >"$token_file"
 mv -fT -- "$token_file" "$state/editor-token"

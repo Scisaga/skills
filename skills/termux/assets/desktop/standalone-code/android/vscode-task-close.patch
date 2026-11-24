@@ -1,0 +1,89 @@
+diff --git a/lorie-app/build.gradle b/lorie-app/build.gradle
+index 4af4f88..7010da4 100644
+--- a/lorie-app/build.gradle
++++ b/lorie-app/build.gradle
+@@ -29,6 +29,6 @@ android {
+         minSdkVersion 24
+         targetSdkVersion 34
+-        versionCode(providers.gradleProperty("vscodeImeBridge").isPresent() ? 8 : (providers.gradleProperty("vscodeImeFix").isPresent() ? 7 : 6))
+-        versionName(providers.gradleProperty("vscodeImeBridge").isPresent() ? "1.4.3" : (providers.gradleProperty("vscodeImeFix").isPresent() ? "1.4.2" : "1.4.1"))
++        versionCode 11
++        versionName "1.4.6"
+     }
+
+diff --git a/lorie/src/main/java/com/termux/x11/CmdEntryPoint.java b/lorie/src/main/java/com/termux/x11/CmdEntryPoint.java
+index 6196631..9bc89f7 100644
+--- a/lorie/src/main/java/com/termux/x11/CmdEntryPoint.java
++++ b/lorie/src/main/java/com/termux/x11/CmdEntryPoint.java
+@@ -178,4 +178,38 @@ public class CmdEntryPoint extends ICmdEntryInterface.Stub {
+     }
+
++    @Override
++    public String editorSessionToken() {
++        return EditorTaskClose.termuxSessionToken();
++    }
++
++    @Override
++    public boolean closeEditor(String sessionToken) {
++        return EditorTaskClose.closeInTermux(intent.getStringExtra(EXTRA_DOCUMENT_TAG), sessionToken);
++    }
++
++    private IBinder editorHost;
++
++    @Override
++    public void watchEditorHost(IBinder lifetime) {
++        if (lifetime == null || EditorTaskClose.termuxSessionToken() == null)
++            return;
++        handler.post(() -> {
++            if (editorHost == lifetime)
++                return;
++            editorHost = lifetime;
++            IBinder.DeathRecipient death = () -> handler.postDelayed(() -> {
++                if (editorHost != lifetime)
++                    return;
++                editorHost = null;
++                EditorTaskClose.closeStoppedHost(intent.getStringExtra(EXTRA_DOCUMENT_TAG));
++            }, 700);
++            try {
++                lifetime.linkToDeath(death, 0);
++            } catch (RemoteException alreadyDead) {
++                death.binderDied();
++            }
++        });
++    }
++
+     public native boolean start(String[] args);
+     public native void windowChanged(Surface surface);
+diff --git a/lorie/src/main/java/com/termux/x11/LorieApp.java b/lorie/src/main/java/com/termux/x11/LorieApp.java
+index a9039b8..88b3bb4 100644
+--- a/lorie/src/main/java/com/termux/x11/LorieApp.java
++++ b/lorie/src/main/java/com/termux/x11/LorieApp.java
+@@ -146,4 +146,6 @@ public class LorieApp extends Application {
+                 if (binder == null)
+                     break;
++                if (activity == null)
++                    EditorTaskClose.reconnect(this, tag, binder);
+
+                 IBinder activeService = activity != null && activity.service != null ? activity.service.asBinder() : null;
+@@ -181,4 +183,5 @@ public class LorieApp extends Application {
+             }
+             case MainActivity.ACTION_STOP:
++                EditorTaskClose.forget(this, tag);
+                 CodeLauncher.clearTaskTitle(this, tag);
+                 if (activity != null)
+diff --git a/lorie/src/main/java/com/termux/x11/MainActivity.java b/lorie/src/main/java/com/termux/x11/MainActivity.java
+index 6bf5a27..76afb7b 100644
+--- a/lorie/src/main/java/com/termux/x11/MainActivity.java
++++ b/lorie/src/main/java/com/termux/x11/MainActivity.java
+@@ -436,4 +436,5 @@ public class MainActivity extends AppCompatActivity {
+     @Override
+     protected void onDestroy() {
++        EditorTaskClose.finished(this);
+         handler.removeCallbacks(connectRetry);
+         handler.removeCallbacks(screenIdleTimeoutCheck);
+@@ -731,4 +732,5 @@ public class MainActivity extends AppCompatActivity {
+         try {
+             if (service != null && service.asBinder().isBinderAlive()) {
++                EditorTaskClose.attached(this);
+                 Log.v("MainActivity", "Extracting logcat fd.");
+                 ParcelFileDescriptor logcatOutput = service.getLogcatOutput();
